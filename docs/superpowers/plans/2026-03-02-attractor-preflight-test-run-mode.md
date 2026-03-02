@@ -4,7 +4,7 @@
 
 **Goal:** Add a `--preflight` mode (alias `--test-run`) to `kilroy attractor run` that executes all pre-run validations/preflights and exits without starting pipeline execution.
 
-**Architecture:** Reuse the exact `RunWithConfig` pre-run pipeline by extracting a shared bootstrap path and adding an execution gate before `eng.run()`. Surface preflight-only mode through CLI flags that keep existing safety gates (`--confirm-stale-build`, CLI headless warning, `--allow-test-shim` policy, provider preflight, model catalog checks, CXDB readiness) while explicitly preventing run startup side effects (no run branch/worktree traversal, no node execution, no final status). Keep behavior deterministic by funneling both normal runs and preflight-only runs through one code path with a small mode switch.
+**Architecture:** Reuse the exact `RunWithConfig` pre-run pipeline by extracting a shared pre-execution bootstrap and a run-only execution bootstrap boundary. The shared path must include config defaulting/override merge (`applyDefaults`), parse/validate, provider/model policy checks, provider preflight, and CXDB readiness probing. The run-only path must contain execution-only side effects (registry bundle publish, context creation, sink wiring, engine allocation, traversal). Surface preflight-only mode through CLI flags that keep existing safety gates (`--confirm-stale-build`, CLI headless warning, `--allow-test-shim` policy, provider preflight, model catalog checks, CXDB readiness) while explicitly preventing run startup side effects (no run branch/worktree traversal, no node execution, no final status). Keep behavior deterministic by funneling both normal runs and preflight-only runs through one shared bootstrap with an explicit execution boundary.
 
 **Tech Stack:** Go (`cmd/kilroy`, `internal/attractor/engine`), existing test harnesses (`cmd/kilroy/main_exit_codes_test.go`, `internal/attractor/engine/run_with_config*_test.go`), Markdown docs (`README.md`, `docs/strongdm/attractor/README.md`).
 
@@ -23,8 +23,6 @@ This is one subsystem change: **run startup contract and CLI ergonomics for pref
   - Responsibility: regression tests for flag parsing, usage text, and no-run side effects in preflight-only mode.
 
 ### Engine Bootstrap / Execution Boundary
-- Modify: `internal/attractor/engine/engine.go`
-  - Responsibility: add run option(s) needed for preflight-only mode routing.
 - Modify: `internal/attractor/engine/run_with_config.go`
   - Responsibility: centralize shared pre-run checks and short-circuit before `eng.run()` when preflight-only mode is enabled.
 - Create: `internal/attractor/engine/preflight_with_config.go`
@@ -46,7 +44,6 @@ This is one subsystem change: **run startup contract and CLI ergonomics for pref
 
 **Files:**
 - Create: `internal/attractor/engine/preflight_with_config.go`
-- Modify: `internal/attractor/engine/engine.go`
 - Modify: `internal/attractor/engine/run_with_config.go`
 - Modify: `internal/attractor/engine/run_with_config_test.go`
 
@@ -79,12 +76,6 @@ Expected: FAIL (API/mode not implemented yet).
 - [ ] **Step 3: Implement preflight-only mode using a shared bootstrap path**
 
 ```go
-// engine.go
-type RunOptions struct {
-    // existing fields...
-    PreflightOnly bool // execute parse/validate/preflight/bootstrap checks only
-}
-
 // preflight_with_config.go
 type PreflightResult struct {
     RunID               string
@@ -99,17 +90,23 @@ type runBootstrap struct {
     Graph    *model.Graph
     Dot      []byte
     Config   *RunConfigFile
-    Options  RunOptions
+    Options  RunOptions // applyDefaults already called; RunID/LogsRoot/WorktreeDir finalized
     Registry *HandlerRegistry
     Catalog  *modeldb.Catalog
     Runtimes map[string]ProviderRuntime
-    Sink     *CXDBSink
+    CXDBClient *cxdb.Client
+    CXDBBin    *cxdb.BinaryClient
     Startup  *CXDBStartupInfo
     Warnings []string
 }
 
 func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfigFile, overrides RunOptions) (*runBootstrap, error) {
-    // one source of truth for parse/validate + provider/model/cxdb preflight.
+    // one source of truth for:
+    // - applyConfigDefaults + override merge + opts.applyDefaults()
+    // - parse/validate + provider/model policy + provider preflight report
+    // - CXDB readiness (ensureCXDBReady) when DisableCXDB=false
+    // this function must NOT publish registry bundle, create CXDB context/sink,
+    // allocate Engine, or start traversal.
 }
 
 func RunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfigFile, overrides RunOptions) (*Result, error) {
@@ -117,21 +114,27 @@ func RunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfigFile, ov
     if err != nil {
         return nil, err
     }
+    // defer CXDB bin close + startup shutdown for all returns when readiness started processes.
+    // run-only bootstrap: publish registry bundle, create context, build sink.
     // normal execution path: newBaseEngine(...), eng.run(...)
 }
 
 func PreflightWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfigFile, overrides RunOptions) (*PreflightResult, error) {
-    overrides.PreflightOnly = true
     boot, err := bootstrapRunWithConfig(ctx, dotSource, cfg, overrides)
     if err != nil {
         return nil, err
+    }
+    // defer CXDB bin close + startup shutdown for all returns when readiness started processes.
+    cxdbUI := ""
+    if boot.Startup != nil {
+        cxdbUI = strings.TrimSpace(boot.Startup.UIURL)
     }
     return &PreflightResult{
         RunID:               boot.Options.RunID,
         LogsRoot:            boot.Options.LogsRoot,
         PreflightReportPath: filepath.Join(boot.Options.LogsRoot, "preflight_report.json"),
         Warnings:            append([]string{}, boot.Warnings...),
-        CXDBUIURL:           strings.TrimSpace(anyStartupUIURL(boot.Startup)),
+        CXDBUIURL:           cxdbUI,
     }, nil
 }
 ```
@@ -144,7 +147,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit task changes**
 
 ```bash
-git add internal/attractor/engine/preflight_with_config.go internal/attractor/engine/engine.go internal/attractor/engine/run_with_config.go internal/attractor/engine/run_with_config_test.go
+git add internal/attractor/engine/preflight_with_config.go internal/attractor/engine/run_with_config.go internal/attractor/engine/run_with_config_test.go
 git commit -m "feat(engine): add preflight-only RunWithConfig bootstrap path"
 ```
 
@@ -180,6 +183,11 @@ Expected: FAIL before implementation is complete.
 // - do NOT call newBaseEngine(...)
 // - do NOT call eng.run(...)
 // - ensure branch/worktree creation methods are unreachable in preflight-only mode.
+// - shared bootstrap includes opts.applyDefaults() and CXDB readiness checks.
+// - preflight path always closes CXDB binary client and shuts down managed startup/UI processes.
+//
+// In RunWithConfig-only path:
+// - publish registry bundle, create context, and construct CXDB sink after shared bootstrap succeeds.
 //
 // In integration tests, assert matrix explicitly:
 // present: preflight_report.json
@@ -367,7 +375,7 @@ digraph G {
   graph [goal="preflight smoke"]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
-  a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="hi"]
+  a [shape=box, llm_provider=openai, llm_model=gpt-5.2-codex, prompt="hi"]
   start -> a -> exit
 }
 DOT
@@ -415,7 +423,6 @@ Expected:
 ```bash
 git add \
   internal/attractor/engine/preflight_with_config.go \
-  internal/attractor/engine/engine.go \
   internal/attractor/engine/run_with_config.go \
   internal/attractor/engine/run_with_config_test.go \
   internal/attractor/engine/run_with_config_integration_test.go \
@@ -429,6 +436,7 @@ git commit -m "test/ci: validate preflight-only run mode end-to-end"
 ## Risks and Guardrails
 
 - Keep one bootstrap path for both run and preflight-only modes to prevent drift in what gets validated.
+- Keep bootstrap boundaries explicit: shared bootstrap validates/preflights, run-only bootstrap performs execution side effects.
 - Avoid partial duplicate logic in CLI and engine; CLI should route to engine API only.
 - Do not weaken existing production/test-shim safety policy checks; preflight mode must enforce the same policy.
 - Keep `--detach` rejected in preflight mode to avoid ambiguous “detached no-op run” behavior.
