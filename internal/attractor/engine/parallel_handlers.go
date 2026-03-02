@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -588,6 +589,29 @@ func (h *FanInHandler) Execute(ctx context.Context, exec *Execution, node *model
 		}
 	}
 
+	lineageRunHead := ""
+	if exec != nil && exec.Engine != nil {
+		var conflicts []InputSnapshotConflict
+		var mergeErr error
+		lineageRunHead, conflicts, mergeErr = exec.Engine.mergeRunScopedFanInState(results)
+		if mergeErr != nil {
+			if isInputSnapshotConflictError(mergeErr) {
+				return runtime.Outcome{
+					Status:        runtime.StatusFail,
+					FailureReason: "input_snapshot_conflict",
+					Meta: map[string]any{
+						"conflicts":     conflictsToMeta(conflicts),
+						"failure_class": failureClassDeterministic,
+					},
+					ContextUpdates: map[string]any{
+						"failure_class": failureClassDeterministic,
+					},
+				}, nil
+			}
+			return runtime.Outcome{Status: runtime.StatusFail, FailureReason: mergeErr.Error()}, nil
+		}
+	}
+
 	losers := []map[string]any{}
 	for _, r := range results {
 		if r.BranchKey == winner.BranchKey && r.HeadSHA == winner.HeadSHA {
@@ -604,22 +628,314 @@ func (h *FanInHandler) Execute(ctx context.Context, exec *Execution, node *model
 		})
 	}
 
+	contextUpdates := map[string]any{
+		"parallel.fan_in.best_id":                winner.BranchKey,
+		"parallel.fan_in.best_outcome":           winner.Outcome,
+		"parallel.fan_in.best_head_sha":          winner.HeadSHA,
+		"parallel.fan_in.best_cxdb_context_id":   winner.CXDBContextID,
+		"parallel.fan_in.best_cxdb_head_turn_id": winner.CXDBHeadTurnID,
+		"parallel.fan_in.losers":                 losers,
+	}
+	if strings.TrimSpace(lineageRunHead) != "" {
+		contextUpdates["input_lineage.run_head_revision"] = strings.TrimSpace(lineageRunHead)
+	}
+
 	return runtime.Outcome{
-		Status: runtime.StatusSuccess,
-		Notes:  fmt.Sprintf("fan-in selected %s (%s)", winner.BranchKey, winner.Outcome.Status),
-		ContextUpdates: map[string]any{
-			"parallel.fan_in.best_id":                winner.BranchKey,
-			"parallel.fan_in.best_outcome":           winner.Outcome,
-			"parallel.fan_in.best_head_sha":          winner.HeadSHA,
-			"parallel.fan_in.best_cxdb_context_id":   winner.CXDBContextID,
-			"parallel.fan_in.best_cxdb_head_turn_id": winner.CXDBHeadTurnID,
-			"parallel.fan_in.losers":                 losers,
-		},
+		Status:         runtime.StatusSuccess,
+		Notes:          fmt.Sprintf("fan-in selected %s (%s)", winner.BranchKey, winner.Outcome.Status),
+		ContextUpdates: contextUpdates,
 	}, nil
 }
 
 // ManagerLoopHandler is defined in manager_loop.go.
 type ManagerLoopHandler struct{}
+
+type fanInBranchRevisionSource struct {
+	RevisionID string
+	LogsRoot   string
+}
+
+func (e *Engine) mergeRunScopedFanInState(results []parallelBranchResult) (string, []InputSnapshotConflict, error) {
+	if e == nil || !e.inputMaterializationEnabled() {
+		return "", nil, nil
+	}
+	promotePatterns := fanInPromoteRunScopedPatterns(e.RunConfig)
+	if len(promotePatterns) == 0 {
+		return "", nil, nil
+	}
+	if err := e.ensureLineageLoaded(); err != nil {
+		return "", nil, err
+	}
+	if e.inputLineage == nil {
+		return "", nil, fmt.Errorf("input snapshot lineage is not initialized")
+	}
+
+	runHeadBefore := strings.TrimSpace(e.inputLineage.RunHead)
+	beforeDigest := map[string]string{}
+	if runHeadBefore != "" {
+		rev, ok := e.inputLineage.Revisions[runHeadBefore]
+		if !ok {
+			return "", nil, fmt.Errorf("unknown run head revision %q", runHeadBefore)
+		}
+		beforeDigest = normalizeDigestMap(rev.FileDigest)
+	}
+
+	branchRevs, branchSources, err := collectFanInBranchRevisions(results, e.inputLineage)
+	if err != nil {
+		return "", nil, err
+	}
+	if len(branchRevs) == 0 {
+		return strings.TrimSpace(e.inputLineage.RunHead), nil, nil
+	}
+
+	newHead, conflicts, err := e.inputLineage.MergePromotedPaths(promotePatterns, branchRevs)
+	if err != nil {
+		return "", conflicts, err
+	}
+	newHead = strings.TrimSpace(newHead)
+	if newHead == "" {
+		return "", nil, fmt.Errorf("fan-in promotion merge produced empty run head")
+	}
+
+	if err := applyFanInPromotedPathsToRunScopedWorktree(e, beforeDigest, newHead, branchRevs, branchSources); err != nil {
+		return "", nil, err
+	}
+	if err := persistRevisionSnapshot(e.LogsRoot, newHead, e.WorktreeDir, e.Options.RunID); err != nil {
+		return "", nil, err
+	}
+	if err := e.inputLineage.SaveAtomic(e.LogsRoot); err != nil {
+		return "", nil, err
+	}
+	return newHead, nil, nil
+}
+
+func fanInPromoteRunScopedPatterns(cfg *RunConfigFile) []string {
+	if cfg == nil {
+		return nil
+	}
+	return normalizePromotePatterns(cfg.Inputs.Materialize.FanIn.PromoteRunScoped)
+}
+
+func collectFanInBranchRevisions(
+	results []parallelBranchResult,
+	runLineage *InputSnapshotLineage,
+) (map[string]string, map[string]fanInBranchRevisionSource, error) {
+	ordered := append([]parallelBranchResult{}, results...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].BranchKey != ordered[j].BranchKey {
+			return ordered[i].BranchKey < ordered[j].BranchKey
+		}
+		return ordered[i].StartNodeID < ordered[j].StartNodeID
+	})
+
+	branchRevs := map[string]string{}
+	branchSources := map[string]fanInBranchRevisionSource{}
+	for _, result := range ordered {
+		branchKey := strings.TrimSpace(result.BranchKey)
+		if branchKey == "" {
+			continue
+		}
+		branchLogsRoot := strings.TrimSpace(result.LogsRoot)
+		if branchLogsRoot == "" {
+			continue
+		}
+		lineage, err := LoadInputSnapshotLineage(branchLogsRoot)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && result.Outcome.Status == runtime.StatusFail {
+				continue
+			}
+			return nil, nil, fmt.Errorf("load branch lineage %q: %w", branchKey, err)
+		}
+		if lineage == nil {
+			if result.Outcome.Status == runtime.StatusFail {
+				continue
+			}
+			return nil, nil, fmt.Errorf("branch %q has empty lineage", branchKey)
+		}
+		revID := resolveFanInBranchHeadRevision(result, lineage)
+		if revID == "" {
+			if result.Outcome.Status == runtime.StatusFail {
+				continue
+			}
+			return nil, nil, fmt.Errorf("branch %q missing head revision", branchKey)
+		}
+		rev, ok := lineage.Revisions[revID]
+		if !ok {
+			return nil, nil, fmt.Errorf("branch %q head revision %q missing from lineage", branchKey, revID)
+		}
+		if runLineage != nil {
+			if runLineage.Revisions == nil {
+				runLineage.Revisions = map[string]InputSnapshotRev{}
+			}
+			for id, branchRev := range lineage.Revisions {
+				if _, exists := runLineage.Revisions[id]; exists {
+					continue
+				}
+				runLineage.Revisions[id] = branchRev
+			}
+			runLineage.Revisions[revID] = rev
+		}
+		branchRevs[branchKey] = revID
+		branchSources[branchKey] = fanInBranchRevisionSource{
+			RevisionID: revID,
+			LogsRoot:   branchLogsRoot,
+		}
+	}
+	return branchRevs, branchSources, nil
+}
+
+func resolveFanInBranchHeadRevision(result parallelBranchResult, lineage *InputSnapshotLineage) string {
+	if manifest, err := loadInputManifest(inputRunManifestPath(result.LogsRoot)); err == nil {
+		if revID := strings.TrimSpace(manifest.BranchHeadRevision); revID != "" {
+			return revID
+		}
+	}
+	if lineage == nil {
+		return ""
+	}
+	branchKey := strings.TrimSpace(result.BranchKey)
+	if revID := strings.TrimSpace(lineage.BranchHeads[branchKey]); revID != "" {
+		return revID
+	}
+	if len(lineage.BranchHeads) == 1 {
+		for _, revID := range lineage.BranchHeads {
+			if head := strings.TrimSpace(revID); head != "" {
+				return head
+			}
+		}
+	}
+	for _, key := range sortedMapKeys(lineage.BranchHeads) {
+		if revID := strings.TrimSpace(lineage.BranchHeads[key]); revID != "" {
+			return revID
+		}
+	}
+	return ""
+}
+
+func applyFanInPromotedPathsToRunScopedWorktree(
+	e *Engine,
+	beforeDigest map[string]string,
+	newHead string,
+	branchRevs map[string]string,
+	branchSources map[string]fanInBranchRevisionSource,
+) error {
+	if e == nil || e.inputLineage == nil {
+		return nil
+	}
+	rev, ok := e.inputLineage.Revisions[strings.TrimSpace(newHead)]
+	if !ok {
+		return fmt.Errorf("unknown merged run head revision %q", newHead)
+	}
+	afterDigest := normalizeDigestMap(rev.FileDigest)
+	if len(afterDigest) == 0 {
+		return nil
+	}
+
+	changed := make([]string, 0, len(afterDigest))
+	for path, digest := range afterDigest {
+		path = strings.TrimSpace(path)
+		digest = strings.TrimSpace(digest)
+		if path == "" || digest == "" {
+			continue
+		}
+		if strings.TrimSpace(beforeDigest[path]) == digest {
+			continue
+		}
+		changed = append(changed, path)
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	sort.Strings(changed)
+
+	runRoot := runScopedWorktreeRoot(e.WorktreeDir, e.Options.RunID)
+	if err := os.MkdirAll(runRoot, 0o755); err != nil {
+		return err
+	}
+	branchKeys := sortedMapKeys(branchRevs)
+	for _, relPath := range changed {
+		digest := strings.TrimSpace(afterDigest[relPath])
+		srcFile := ""
+		for _, branchKey := range branchKeys {
+			revID := strings.TrimSpace(branchRevs[branchKey])
+			if revID == "" {
+				continue
+			}
+			branchRev, ok := e.inputLineage.Revisions[revID]
+			if !ok {
+				continue
+			}
+			if strings.TrimSpace(branchRev.FileDigest[relPath]) != digest {
+				continue
+			}
+			sourceInfo, ok := branchSources[branchKey]
+			if !ok {
+				continue
+			}
+			candidate := filepath.Join(inputRevisionRoot(sourceInfo.LogsRoot, revID), filepath.FromSlash(relPath))
+			if !isRegularFile(candidate) {
+				continue
+			}
+			srcFile = candidate
+			break
+		}
+		if srcFile == "" {
+			return fmt.Errorf("promoted run-scoped path %q missing branch snapshot source", relPath)
+		}
+		dstFile := filepath.Join(runRoot, filepath.FromSlash(relPath))
+		if err := copyInputFile(srcFile, dstFile); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isInputSnapshotConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(msg, "input_snapshot_conflict")
+}
+
+func conflictsToMeta(conflicts []InputSnapshotConflict) []map[string]any {
+	if len(conflicts) == 0 {
+		return nil
+	}
+	ordered := append([]InputSnapshotConflict{}, conflicts...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return strings.TrimSpace(ordered[i].Path) < strings.TrimSpace(ordered[j].Path)
+	})
+
+	out := make([]map[string]any, 0, len(ordered))
+	for _, conflict := range ordered {
+		pairs := append([]InputSnapshotConflictDigestPair{}, conflict.BranchDigests...)
+		sort.SliceStable(pairs, func(i, j int) bool {
+			if pairs[i].BranchKey != pairs[j].BranchKey {
+				return pairs[i].BranchKey < pairs[j].BranchKey
+			}
+			return pairs[i].RevisionID < pairs[j].RevisionID
+		})
+
+		branches := make([]string, 0, len(pairs))
+		metaPairs := make([]map[string]any, 0, len(pairs))
+		for _, pair := range pairs {
+			branchKey := strings.TrimSpace(pair.BranchKey)
+			branches = append(branches, branchKey)
+			metaPairs = append(metaPairs, map[string]any{
+				"branch_key":  branchKey,
+				"revision_id": strings.TrimSpace(pair.RevisionID),
+				"digest":      strings.TrimSpace(pair.Digest),
+			})
+		}
+		out = append(out, map[string]any{
+			"path":           strings.TrimSpace(conflict.Path),
+			"branches":       branches,
+			"branch_digests": metaPairs,
+		})
+	}
+	return out
+}
 
 func decodeParallelResults(raw any) ([]parallelBranchResult, error) {
 	switch v := raw.(type) {
