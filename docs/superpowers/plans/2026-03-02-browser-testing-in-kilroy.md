@@ -167,17 +167,19 @@ func TestToolHandler_CollectsBrowserArtifacts_OnFailure(t *testing.T) {}
 func TestToolHandler_BrowserArtifactCollectionFailure_IsNonFatal(t *testing.T) {}
 func TestToolHandler_BrowserArtifactSummary_EmitsProgressEvent(t *testing.T) {}
 func TestToolHandler_BrowserFailureReasonUsesStderrExcerpt_WhenCommandFails(t *testing.T) {}
+func TestToolHandler_BrowserFailureReasonFallsBackToStdout_WhenStderrEmpty(t *testing.T) {}
 func TestToolHandler_NonBrowserFailureReason_RemainsExitStatus(t *testing.T) {}
 func TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting(t *testing.T) {}
 func TestArchiveAttemptDir_PreservesBrowserArtifactDirectories(t *testing.T) {}
 func TestIsBrowserVerificationNode(t *testing.T) {}
+func TestIsBrowserVerificationNode_WrapperCommands(t *testing.T) {}
 func TestIsBrowserSetupCommand(t *testing.T) {}
 ```
 
 - [ ] **Step 2: Run failing ToolHandler tests**
 
 Run: `go test ./internal/attractor/browsergate -run 'TestIsBrowserVerificationNode|TestIsBrowserSetupCommand' -v`
-Run: `go test ./internal/attractor/engine -run 'TestToolHandler_CollectsBrowserArtifacts|TestToolHandler_BrowserArtifactCollectionFailure_IsNonFatal|TestToolHandler_BrowserArtifactSummary_EmitsProgressEvent|TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|TestArchiveAttemptDir_PreservesBrowserArtifactDirectories' -v`
+Run: `go test ./internal/attractor/engine -run 'TestToolHandler_CollectsBrowserArtifacts|TestToolHandler_BrowserArtifactCollectionFailure_IsNonFatal|TestToolHandler_BrowserArtifactSummary_EmitsProgressEvent|TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|TestToolHandler_BrowserFailureReasonFallsBackToStdout|TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|TestArchiveAttemptDir_PreservesBrowserArtifactDirectories' -v`
 Expected: FAIL (collector/attempt-archive integration and failure-reason plumbing missing)
 
 - [ ] **Step 3: Call collector from ToolHandler after command completion paths**
@@ -189,7 +191,8 @@ Expected: FAIL (collector/attempt-archive integration and failure-reason plumbin
 //   - IsBrowserVerificationNode(cmd, node id/label, attrs)
 //   - IsSetupInstallCommand(cmd)
 //   criteria: command contains browser verification runner tokens
-//   (`playwright test`, `cypress run`, `selenium`, `webdriver`) OR
+//   (`playwright test`, `cypress run`, `selenium`, `webdriver`,
+//   `npm run e2e`, `pnpm test:e2e`, `yarn test:e2e`, `make e2e`, `make ui-test`) OR
 //   node id/label matches `(browser|e2e|ui)` + `(verify|validate|check|test)`,
 //   with explicit override attr collect_browser_artifacts=true
 //   and setup/install commands are excluded.
@@ -200,7 +203,8 @@ Expected: FAIL (collector/attempt-archive integration and failure-reason plumbin
 // - append collector summary to progress events
 // - never fail stage solely because artifact copy partially fails (warn + continue)
 // - on command failure:
-//   - browser verification nodes: set FailureReason from stderr excerpt (first actionable line) when present
+//   - browser verification nodes: set FailureReason from stderr excerpt first;
+//     if stderr has no actionable line, fall back to stdout excerpt, then runErr.Error()
 //   - non-browser nodes: preserve existing FailureReason behavior (runErr.Error())
 //   keep raw exit-status text in metadata/context for postmortem.
 //
@@ -212,7 +216,7 @@ Expected: FAIL (collector/attempt-archive integration and failure-reason plumbin
 - [ ] **Step 4: Re-run ToolHandler tests**
 
 Run: `go test ./internal/attractor/browsergate -run 'TestIsBrowserVerificationNode|TestIsBrowserSetupCommand' -v`
-Run: `go test ./internal/attractor/engine -run 'TestToolHandler_CollectsBrowserArtifacts|TestToolHandler_BrowserArtifactCollectionFailure_IsNonFatal|TestToolHandler_BrowserArtifactSummary_EmitsProgressEvent|TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|TestArchiveAttemptDir_PreservesBrowserArtifactDirectories' -v`
+Run: `go test ./internal/attractor/engine -run 'TestToolHandler_CollectsBrowserArtifacts|TestToolHandler_BrowserArtifactCollectionFailure_IsNonFatal|TestToolHandler_BrowserArtifactSummary_EmitsProgressEvent|TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|TestToolHandler_BrowserFailureReasonFallsBackToStdout|TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|TestArchiveAttemptDir_PreservesBrowserArtifactDirectories' -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit chunk progress**
@@ -228,12 +232,13 @@ git commit -m "engine/tool: preserve browser artifacts across retries and plumb 
 - Modify: `internal/attractor/engine/loop_restart_policy.go`
 - Modify: `internal/attractor/engine/failure_classification_regression_test.go`
 
-- [ ] **Step 1: Add failing table tests for browser infra transient signatures**
+- [ ] **Step 1: Add failing table tests for browser failure signatures**
 
 ```go
-{name: "transient: playwright browser launch failed (missing deps)", failureReason: "browserType.launch: Host system is missing dependencies", want: failureClassTransientInfra}
-{name: "transient: playwright executable missing", failureReason: "browserType.launch: Executable doesn't exist at /home/user/.cache/ms-playwright/chromium", want: failureClassTransientInfra}
-{name: "transient: playwright install hint", failureReason: "Please run the following command to download new browsers: npx playwright install", want: failureClassTransientInfra}
+{name: "deterministic: playwright browser launch failed (missing deps)", failureReason: "browserType.launch: Host system is missing dependencies", want: failureClassDeterministic}
+{name: "deterministic: playwright executable missing", failureReason: "browserType.launch: Executable doesn't exist at /home/user/.cache/ms-playwright/chromium", want: failureClassDeterministic}
+{name: "deterministic: playwright install hint", failureReason: "Please run the following command to download new browsers: npx playwright install", want: failureClassDeterministic}
+{name: "transient: net::ERR_INTERNET_DISCONNECTED", failureReason: "page.goto failed: net::ERR_INTERNET_DISCONNECTED", want: failureClassTransientInfra}
 // Also update TestTransientInfraReasonHints_Count after adding new hints.
 ```
 
@@ -246,10 +251,9 @@ Expected: FAIL on new browser cases
 
 ```go
 // Add normalized hints such as:
-// "host system is missing dependencies",
-// "browsertype.launch: executable doesn't exist",
-// "please run the following command to download new browsers",
-// "net::err_name_not_resolved"
+// "net::err_internet_disconnected"
+// Keep browser setup/install failures deterministic (no transient hint additions for
+// missing dependencies / missing executables / playwright install prompts).
 // Do NOT add ambiguous hints like "websocket closed" or
 // "target page, context or browser has been closed" (high false-positive risk).
 // Update TestTransientInfraReasonHints_Count expected value to match the new slice length.
@@ -479,18 +483,18 @@ git commit -m "docs: add browser testing runtime and artifact guidance"
 run_test_checked "[8/10] browser artifact collector + safety" \
   go test ./internal/attractor/engine -run '^TestDiscoverBrowserArtifacts|^TestCollectBrowserArtifacts' -count=1
 run_test_checked "[9/10] browser tool handler + retry routing" \
-  go test ./internal/attractor/engine -run '^TestToolHandler_CollectsBrowserArtifacts|^TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|^TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|^TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|^TestArchiveAttemptDir_PreservesBrowserArtifactDirectories' -count=1
+  go test ./internal/attractor/engine -run '^TestToolHandler_CollectsBrowserArtifacts|^TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|^TestToolHandler_BrowserFailureReasonFallsBackToStdout|^TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|^TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|^TestArchiveAttemptDir_PreservesBrowserArtifactDirectories' -count=1
 run_test_checked "[10/10] browser validator lint coverage" \
   go test ./internal/attractor/validate -run '^TestLintValidateScriptFailureContract|^TestLintBrowserInlineToolCommandContract' -count=1
 ```
 
-Run: `rg -n \"DiscoverBrowserArtifacts|CollectBrowserArtifacts|ArchiveAttemptDir_PreservesBrowserArtifactDirectories|BrowserFailureReasonUsesStderrExcerpt|NonBrowserFailureReason_RemainsExitStatus|LoopRestart_UsesToolFailureReason|LintBrowserInlineToolCommandContract|LintValidateScriptFailureContract\" scripts/e2e-guardrail-matrix.sh`
+Run: `rg -n \"DiscoverBrowserArtifacts|CollectBrowserArtifacts|ArchiveAttemptDir_PreservesBrowserArtifactDirectories|BrowserFailureReasonUsesStderrExcerpt|BrowserFailureReasonFallsBackToStdout|NonBrowserFailureReason_RemainsExitStatus|LoopRestart_UsesToolFailureReason|LintBrowserInlineToolCommandContract|LintValidateScriptFailureContract\" scripts/e2e-guardrail-matrix.sh`
 Expected: engine + validator browser-hardening command families are present
 
 - [ ] **Step 2: Run engine-focused tests**
 
 Run: `go test ./internal/attractor/browsergate -run 'TestIsBrowserVerificationNode|TestIsBrowserSetupCommand' -v`
-Run: `go test ./internal/attractor/engine -run 'TestDiscoverBrowserArtifacts|TestToolHandler_CollectsBrowserArtifacts|TestArchiveAttemptDir_PreservesBrowserArtifactDirectories|TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|TestClassifyFailureClass_AllHeuristicPatterns|TestTransientInfraReasonHints_Count' -v`
+Run: `go test ./internal/attractor/engine -run 'TestDiscoverBrowserArtifacts|TestToolHandler_CollectsBrowserArtifacts|TestArchiveAttemptDir_PreservesBrowserArtifactDirectories|TestToolHandler_BrowserFailureReasonUsesStderrExcerpt|TestToolHandler_BrowserFailureReasonFallsBackToStdout|TestToolHandler_NonBrowserFailureReason_RemainsExitStatus|TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting|TestClassifyFailureClass_AllHeuristicPatterns|TestTransientInfraReasonHints_Count' -v`
 Expected: PASS
 
 - [ ] **Step 3: Run validate-focused tests**
