@@ -113,6 +113,151 @@ digraph G {
 	}
 }
 
+func TestPreflightWithConfig_RunsProviderChecksAndWritesReport(t *testing.T) {
+	repo := initTestRepo(t)
+	logsRoot := t.TempDir()
+	codexCLI := writeFakeCodexHelpCLI(t)
+
+	cfg := &RunConfigFile{Version: 1}
+	cfg.Repo.Path = repo
+	cfg.CXDB.BinaryAddr = "127.0.0.1:9"
+	cfg.CXDB.HTTPBaseURL = "http://127.0.0.1:9"
+	cfg.LLM.CLIProfile = "test_shim"
+	cfg.LLM.Providers = map[string]ProviderConfig{
+		"openai": {Backend: BackendCLI, Executable: codexCLI},
+	}
+	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
+	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
+	cfg.Git.RunBranchPrefix = "attractor/run"
+
+	dot := []byte(`
+digraph G {
+  graph [goal="preflight provider checks"]
+  start [shape=Mdiamond]
+  exit  [shape=Msquare]
+  a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
+  start -> a -> exit
+}
+`)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pf, err := PreflightWithConfig(ctx, dot, cfg, RunOptions{
+		RunID:         "preflight-provider-checks",
+		LogsRoot:      logsRoot,
+		AllowTestShim: true,
+		DisableCXDB:   true,
+	})
+	if err != nil {
+		t.Fatalf("PreflightWithConfig: %v", err)
+	}
+	if pf == nil {
+		t.Fatal("PreflightWithConfig returned nil result")
+	}
+
+	reportPath := filepath.Join(logsRoot, "preflight_report.json")
+	if got, want := pf.PreflightReportPath, reportPath; got != want {
+		t.Fatalf("PreflightReportPath: got %q want %q", got, want)
+	}
+	b, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("read preflight report: %v", err)
+	}
+	var report struct {
+		Summary struct {
+			Pass int `json:"pass"`
+			Warn int `json:"warn"`
+			Fail int `json:"fail"`
+		} `json:"summary"`
+		Checks []struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal(b, &report); err != nil {
+		t.Fatalf("decode preflight report: %v", err)
+	}
+	if total := report.Summary.Pass + report.Summary.Warn + report.Summary.Fail; total == 0 {
+		t.Fatalf("expected non-empty preflight summary, got %+v", report.Summary)
+	}
+	foundProviderCheck := false
+	for _, check := range report.Checks {
+		if check.Name == "provider_cli_presence" && check.Status == "pass" {
+			foundProviderCheck = true
+			break
+		}
+	}
+	if !foundProviderCheck {
+		t.Fatalf("expected provider_cli_presence pass check, got %+v", report.Checks)
+	}
+}
+
+func TestPreflightWithConfig_InitializesAndShutsDownCXDBWithoutRunStart(t *testing.T) {
+	repo := initTestRepo(t)
+	logsRoot := t.TempDir()
+	cxdbSrv := newCXDBTestServer(t)
+
+	cfg := &RunConfigFile{Version: 1}
+	cfg.Repo.Path = repo
+	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
+	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
+	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
+	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
+	cfg.Git.RunBranchPrefix = "attractor/run"
+
+	dot := []byte(`
+digraph G {
+  graph [goal="preflight cxdb path"]
+  start [shape=Mdiamond]
+  exit  [shape=Msquare]
+  start -> exit
+}
+`)
+
+	startupCalled := false
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err := PreflightWithConfig(ctx, dot, cfg, RunOptions{
+		RunID:    "preflight-cxdb-no-run",
+		LogsRoot: logsRoot,
+		OnCXDBStartup: func(info *CXDBStartupInfo) {
+			if info == nil {
+				return
+			}
+			startupCalled = true
+		},
+	})
+	if err != nil {
+		t.Fatalf("PreflightWithConfig: %v", err)
+	}
+	if !startupCalled {
+		t.Fatalf("expected OnCXDBStartup callback")
+	}
+
+	assertExists(t, filepath.Join(logsRoot, "preflight_report.json"))
+
+	for _, rel := range []string{"final.json", "checkpoint.json", "manifest.json", "run.pid"} {
+		p := filepath.Join(logsRoot, rel)
+		if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+			t.Fatalf("expected %s to be absent; stat err=%v", p, statErr)
+		}
+	}
+	for _, stage := range []string{"start", "exit"} {
+		p := filepath.Join(logsRoot, stage)
+		if _, statErr := os.Stat(p); !os.IsNotExist(statErr) {
+			t.Fatalf("expected stage directory %s to be absent; stat err=%v", p, statErr)
+		}
+	}
+	worktreeDir := filepath.Join(logsRoot, "worktree")
+	if _, statErr := os.Stat(worktreeDir); !os.IsNotExist(statErr) {
+		t.Fatalf("expected worktree dir to be absent; stat err=%v", statErr)
+	}
+	runBranch := "attractor/run/preflight-cxdb-no-run"
+	if got := strings.TrimSpace(runCmdOut(t, repo, "git", "branch", "--list", runBranch)); got != "" {
+		t.Fatalf("expected run branch %q to be absent, got %q", runBranch, got)
+	}
+}
+
 func TestRunWithConfig_CLIBackend_StatusContractEnvInjected(t *testing.T) {
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
