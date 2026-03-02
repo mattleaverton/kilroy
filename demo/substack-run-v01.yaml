@@ -25,11 +25,11 @@ llm:
   cli_profile: real
   providers:
     google:
-      backend: api
+      backend: cli
     anthropic:
-      backend: api
+      backend: cli
     openai:
-      backend: api
+      backend: cli
 
 modeldb:
   openrouter_model_info_path: /home/user/code/kilroy/internal/attractor/modeldb/pinned/openrouter_models.json
