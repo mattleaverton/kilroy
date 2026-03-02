@@ -82,6 +82,7 @@ func (a *Adapter) Complete(ctx context.Context, req llm.Request) (llm.Response, 
 		// Avoid short client-level timeouts; rely on request context deadlines instead.
 		a.Client = &http.Client{Timeout: 0}
 	}
+	req = llm.ApplyExecutionPolicy(req, llm.ExecutionPolicy(a.Name(), req.Model))
 
 	system, contents, err := toGeminiContents(req.Messages)
 	if err != nil {
@@ -209,6 +210,7 @@ func (a *Adapter) Stream(ctx context.Context, req llm.Request) (llm.Stream, erro
 	if a.Client == nil {
 		a.Client = &http.Client{Timeout: 0}
 	}
+	req = llm.ApplyExecutionPolicy(req, llm.ExecutionPolicy(a.Name(), req.Model))
 	sctx, cancel := context.WithCancel(ctx)
 
 	system, contents, err := toGeminiContents(req.Messages)

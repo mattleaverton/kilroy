@@ -518,7 +518,7 @@ func runProviderAPIPromptProbeTargetWithPolicy(ctx context.Context, client *llm.
 	if strings.TrimSpace(target.Request.Model) == "" {
 		target.Request.Model = target.Model
 	}
-	execPolicy := llm.ExecutionPolicy(target.Provider)
+	execPolicy := llm.ExecutionPolicy(target.Provider, target.Request.Model)
 	target.Request = llm.ApplyExecutionPolicy(target.Request, execPolicy)
 	if execPolicy.ForceStream {
 		result.Transport = preflightAPIPromptProbeTransportStream
