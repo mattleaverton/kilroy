@@ -573,6 +573,8 @@ The graph traversal is single-threaded. Only one node executes at a time in the 
 
 Parallelism exists within specific node handlers (`parallel`, `parallel.fan_in`) that manage concurrent execution internally. Each parallel branch receives an isolated clone of the context. Branch results are collected but individual branch context changes are not merged back into the parent -- only the handler's outcome and its `context_updates` are applied.
 
+When a `parallel` dispatch converges into a `shape=box` node (rather than `shape=tripleoctagon`), the runtime treats it as a manual merge handoff. Branch locations (`branch_key`, `worktree_dir`, `logs_root`, `head_sha`) are passed to the box-node LLM prompt, and that node is responsible for manually inspecting and merging branch outputs. Automatic winner fast-forward semantics apply only to `parallel.fan_in` (`shape=tripleoctagon`).
+
 ---
 
 ## 4. Node Handlers

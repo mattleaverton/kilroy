@@ -53,6 +53,9 @@ to: `claude-sonnet-4.6` (anthropic), `gemini-3-flash-preview` (google),
 3. Choose topology from template first.
 - Start from `reference_template.dot` for node shapes, routing, and loop structure.
 - If user says `no fanout` or `single path`, remove fan-out/fan-in branch families.
+- Fan-in semantics are shape-dependent:
+  - `shape=tripleoctagon` (`parallel.fan_in`) uses `FanInHandler` winner selection/fast-forward semantics.
+  - Converging branches into a `shape=box` node is a **manual merge handoff**: branch worktrees are passed to the LLM in that box node, and the prompt must instruct the node to manually inspect and merge branch outputs (including git-based workflows such as `git diff`, commit inspection, and merge/cherry-pick by branch `head_sha` when appropriate).
 - **graph-level retry_target**: Set graph-level retry_target to the earliest node that
   preserves already-completed work on re-entry. For pipelines with an analysis or planning
   phase, point to plan_work or debate_consolidate so re-entry can reuse completed design

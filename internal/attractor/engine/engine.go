@@ -194,6 +194,12 @@ type Engine struct {
 	// resetting would defeat the breaker in impl-succeeds/verify-fails cycles.
 	loopFailureSignatures map[string]int
 
+	// parallelDispatchCounts tracks how many times each fan-out node has been
+	// dispatched in this run. Incremented once per dispatch call. Used to
+	// produce unique pass-numbered branch names so each re-visit of a fan-out
+	// is independently reviewable in git.
+	parallelDispatchCounts map[string]int
+
 	progressMu sync.Mutex
 	// Guarded by progressMu.
 	lastProgressAt time.Time
@@ -205,6 +211,16 @@ type Engine struct {
 	forceNextFidelityUsed bool        // true once the override has been consumed
 	lastResolvedFidelity  string      // last resolved LLM fidelity for checkpoint/resume
 	lastResolvedThreadKey string      // thread key when fidelity=full (best-effort)
+}
+
+// nextParallelPassCount increments and returns the dispatch count for nodeID.
+// The first call for a given nodeID returns 1, the second returns 2, etc.
+func (e *Engine) nextParallelPassCount(nodeID string) int {
+	if e.parallelDispatchCounts == nil {
+		e.parallelDispatchCounts = map[string]int{}
+	}
+	e.parallelDispatchCounts[nodeID]++
+	return e.parallelDispatchCounts[nodeID]
 }
 
 func (e *Engine) Warn(msg string) {
@@ -398,6 +414,14 @@ func (e *Engine) run(ctx context.Context) (res *Result, err error) {
 	_ = gitutil.RemoveWorktree(e.Options.RepoPath, e.WorktreeDir)
 	if err := gitutil.AddWorktree(e.Options.RepoPath, e.WorktreeDir, e.RunBranch); err != nil {
 		return nil, err
+	}
+	// Copy gitignored files (e.g. .env, secrets, local configs) from the
+	// source repo into the run worktree. These are not committed to git so
+	// they don't survive worktree creation; agents that rely on them (e.g. for
+	// API keys or environment config) need them present without us committing
+	// sensitive material.
+	if err := gitutil.CopyIgnoredFiles(e.Options.RepoPath, e.WorktreeDir); err != nil {
+		e.Warn(fmt.Sprintf("copy ignored files to run worktree: %v", err))
 	}
 	if err := e.materializeRunStartupInputs(ctx); err != nil {
 		return nil, err
@@ -687,8 +711,9 @@ func (e *Engine) runLoop(ctx context.Context, current string, completed []string
 					_ = writeJSON(filepath.Join(stageDir, "parallel_results.json"), results)
 
 					e.Context.ApplyUpdates(map[string]any{
-						"parallel.join_node": joinID,
-						"parallel.results":   results,
+						"parallel.join_node":        joinID,
+						parallelMergeModeContextKey: classifyJoinMergeMode(e.Graph, joinID),
+						"parallel.results":          results,
 					})
 					e.appendProgress(map[string]any{
 						"event":       "implicit_fan_out",

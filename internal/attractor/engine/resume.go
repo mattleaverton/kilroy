@@ -386,8 +386,9 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 			_ = writeJSON(filepath.Join(stageDir, "parallel_results.json"), results)
 
 			eng.Context.ApplyUpdates(map[string]any{
-				"parallel.join_node": joinID,
-				"parallel.results":   results,
+				"parallel.join_node":        joinID,
+				parallelMergeModeContextKey: classifyJoinMergeMode(eng.Graph, joinID),
+				"parallel.results":          results,
 			})
 			eng.appendProgress(map[string]any{
 				"event":       "implicit_fan_out",

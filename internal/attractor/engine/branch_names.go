@@ -1,6 +1,9 @@
 package engine
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 func buildRunBranch(prefix, runID string) string {
 	trimmedPrefix := strings.Trim(strings.TrimSpace(prefix), "/")
@@ -15,12 +18,19 @@ func buildRunBranch(prefix, runID string) string {
 	}
 }
 
-func buildParallelBranch(prefix, runID, fanNodeID, childNodeID string) string {
+// buildParallelBranch constructs the git branch name for a parallel branch.
+// passNum is the 1-based count of how many times this fan-out node has been
+// dispatched in the current run, producing names like:
+//
+//	attractor/run/{runID}/parallel/{fanNodeID}/pass1/{childNodeID}
+//	attractor/run/{runID}/parallel/{fanNodeID}/pass2/{childNodeID}  (re-visit)
+func buildParallelBranch(prefix, runID, fanNodeID string, passNum int, childNodeID string) string {
 	runID = strings.Trim(strings.TrimSpace(runID), "/")
 	fanNodeID = sanitizeRefComponent(fanNodeID)
 	childNodeID = sanitizeRefComponent(childNodeID)
+	pass := fmt.Sprintf("pass%d", passNum)
 	parts := []string{"parallel"}
-	for _, p := range []string{runID, fanNodeID, childNodeID} {
+	for _, p := range []string{runID, fanNodeID, pass, childNodeID} {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}

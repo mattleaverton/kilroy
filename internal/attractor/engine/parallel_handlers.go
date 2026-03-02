@@ -42,7 +42,28 @@ type parallelBranchResult struct {
 const (
 	branchStaleWarningThreshold = 5 * time.Minute
 	branchStaleWarningInterval  = 1 * time.Minute
+	parallelMergeModeContextKey = "parallel.merge_mode"
+	parallelMergeModeFanIn      = "fan_in_handler"
+	parallelMergeModeManualBox  = "manual_box_fan_in"
 )
+
+func classifyJoinMergeMode(g *model.Graph, joinID string) string {
+	if g == nil {
+		return parallelMergeModeManualBox
+	}
+	joinNode := g.Nodes[strings.TrimSpace(joinID)]
+	if joinNode == nil {
+		return parallelMergeModeManualBox
+	}
+	t := strings.TrimSpace(joinNode.TypeOverride())
+	if t == "" {
+		t = shapeToType(joinNode.Shape())
+	}
+	if t == "parallel.fan_in" {
+		return parallelMergeModeFanIn
+	}
+	return parallelMergeModeManualBox
+}
 
 func branchHeartbeatKeepaliveInterval(stallTimeout time.Duration) time.Duration {
 	const (
@@ -144,8 +165,9 @@ func (h *ParallelHandler) Execute(ctx context.Context, exec *Execution, node *mo
 		Notes:         fmt.Sprintf("parallel fan-out complete (%d branches), join=%s; %s", len(results), joinID, policyOutcome.Notes),
 		FailureReason: policyOutcome.FailureReason,
 		ContextUpdates: map[string]any{
-			"parallel.join_node": joinID,
-			"parallel.results":   contextResults,
+			"parallel.join_node":            joinID,
+			parallelMergeModeContextKey:     classifyJoinMergeMode(exec.Graph, joinID),
+			"parallel.results":              contextResults,
 		},
 		Meta: map[string]any{
 			"kilroy.git_checkpoint_sha": baseSHA,
@@ -185,6 +207,11 @@ func dispatchParallelBranches(
 		return nil, "", err
 	}
 
+	// Increment the per-node dispatch count so each pass through this fan-out
+	// produces a unique branch name (pass1, pass2, …) that is independently
+	// reviewable in git.
+	passNum := exec.Engine.nextParallelPassCount(sourceNodeID)
+
 	maxParallel := parseInt(sourceNode.Attr("max_parallel", ""), 4)
 	if maxParallel <= 0 {
 		maxParallel = 4
@@ -211,7 +238,7 @@ func dispatchParallelBranches(
 			if e == nil {
 				continue
 			}
-			res := h.runBranch(ctx, exec, sourceNode, baseSHA, joinID, j.idx, e, &gitMu)
+			res := h.runBranch(ctx, exec, sourceNode, baseSHA, joinID, j.idx, e, passNum, &gitMu)
 			results[j.idx] = res
 		}
 	}
@@ -241,7 +268,7 @@ func dispatchParallelBranches(
 	return results, baseSHA, nil
 }
 
-func (h *ParallelHandler) runBranch(ctx context.Context, exec *Execution, parallelNode *model.Node, baseSHA, joinID string, idx int, edge *model.Edge, gitMu *sync.Mutex) parallelBranchResult {
+func (h *ParallelHandler) runBranch(ctx context.Context, exec *Execution, parallelNode *model.Node, baseSHA, joinID string, idx int, edge *model.Edge, passNum int, gitMu *sync.Mutex) parallelBranchResult {
 	key := sanitizeRefComponent(edge.To)
 	if key == "" {
 		key = fmt.Sprintf("branch-%d", idx+1)
@@ -265,8 +292,10 @@ func (h *ParallelHandler) runBranch(ctx context.Context, exec *Execution, parall
 	// IMPORTANT: git ref namespace rules forbid creating refs under an existing ref path.
 	// Since the main run branch is typically "attractor/run/<run_id>", parallel branches
 	// MUST NOT be nested under that ref. Use a sibling namespace instead.
-	branchName := buildParallelBranch(prefix, exec.Engine.Options.RunID, parallelNode.ID, key)
-	branchRoot := filepath.Join(exec.LogsRoot, "parallel", parallelNode.ID, fmt.Sprintf("%02d-%s", idx+1, key))
+	// passNum is included so each re-visit of the fan-out node creates distinct
+	// branches (pass1, pass2, …) that are independently reviewable in git.
+	branchName := buildParallelBranch(prefix, exec.Engine.Options.RunID, parallelNode.ID, passNum, key)
+	branchRoot := filepath.Join(exec.LogsRoot, "parallel", parallelNode.ID, fmt.Sprintf("pass%d", passNum), fmt.Sprintf("%02d-%s", idx+1, key))
 	worktreeDir := filepath.Join(branchRoot, "worktree")
 	var activityMu sync.Mutex
 	lastProgressEvent := "branch_initialized"
@@ -452,6 +481,13 @@ func (h *ParallelHandler) runBranch(ctx context.Context, exec *Execution, parall
 	// worktree, which may overwrite the .git file with the parent's slot reference.
 	// Repair the .git file so git operations in this branch use the correct slot.
 	_ = gitutil.RepairWorktree(exec.Engine.Options.RepoPath, worktreeDir)
+	// Copy gitignored files (e.g. .env, secrets, local configs) from the parent
+	// worktree into the branch worktree. These are not committed to git and
+	// therefore not present after worktree creation; agents need them without us
+	// ever committing sensitive material.
+	if err := gitutil.CopyIgnoredFiles(exec.WorktreeDir, worktreeDir); err != nil {
+		emitBranchProgress("branch_ignored_files_warning", map[string]any{"warning": err.Error()})
+	}
 	if branchEng.CXDB != nil {
 		if _, err := os.Stat(inputRunManifestPath(branchRoot)); err == nil {
 			_, _ = branchEng.CXDB.PutArtifactFile(ctx, "", inputManifestFileName, inputRunManifestPath(branchRoot))

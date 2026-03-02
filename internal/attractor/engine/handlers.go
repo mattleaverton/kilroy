@@ -255,6 +255,49 @@ func copyFirstValidFallbackStatus(stageStatusPath string, fallbackPaths []fallba
 	return statusSourceNone, nil
 }
 
+func buildManualBoxFanInPromptPreamble(exec *Execution, node *model.Node) string {
+	if exec == nil || exec.Context == nil || exec.Graph == nil || node == nil {
+		return ""
+	}
+	joinNodeID := strings.TrimSpace(exec.Context.GetString("parallel.join_node", ""))
+	if joinNodeID == "" || joinNodeID != strings.TrimSpace(node.ID) {
+		return ""
+	}
+	mergeMode := strings.TrimSpace(exec.Context.GetString(parallelMergeModeContextKey, ""))
+	if mergeMode == "" {
+		mergeMode = classifyJoinMergeMode(exec.Graph, joinNodeID)
+	}
+	if mergeMode != parallelMergeModeManualBox {
+		return ""
+	}
+	raw, ok := exec.Context.Get("parallel.results")
+	if !ok || raw == nil {
+		return ""
+	}
+	results, err := decodeParallelResults(raw)
+	if err != nil || len(results) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Manual parallel fan-in handoff:\n")
+	b.WriteString("- This node is a convergence box (not shape=tripleoctagon / parallel.fan_in).\n")
+	b.WriteString("- The engine does NOT auto-merge branch commits at this node. You must manually inspect and merge branch outputs.\n")
+	b.WriteString("- Branch outputs are available in the following isolated worktrees and logs roots:\n")
+	for _, r := range results {
+		b.WriteString(fmt.Sprintf("  - branch_key=%s status=%s head_sha=%s worktree_dir=%s logs_root=%s\n",
+			strings.TrimSpace(r.BranchKey),
+			strings.TrimSpace(string(r.Outcome.Status)),
+			strings.TrimSpace(r.HeadSHA),
+			strings.TrimSpace(r.WorktreeDir),
+			strings.TrimSpace(r.LogsRoot),
+		))
+	}
+	b.WriteString("- You may inspect artifacts by reading files directly from each branch worktree path above (for example branch `.ai/*` artifacts).\n")
+	b.WriteString("- You may also use git-based merge workflows when appropriate: compare branch outputs with `git diff`, inspect branch history/commits, and merge/cherry-pick by `head_sha` into the current worktree when that is the safest way to integrate changes.\n")
+	b.WriteString("- Write the merged result into the current run worktree and continue this node normally.\n")
+	return strings.TrimSpace(b.String())
+}
+
 func (h *CodergenHandler) Execute(ctx context.Context, exec *Execution, node *model.Node) (runtime.Outcome, error) {
 	stageDir := filepath.Join(exec.LogsRoot, node.ID)
 	stageStatusPath := filepath.Join(stageDir, "status.json")
@@ -333,6 +376,19 @@ func (h *CodergenHandler) Execute(ctx context.Context, exec *Execution, node *mo
 					promptText = preamble + "\n\n" + strings.TrimSpace(promptText)
 				}
 			}
+		}
+	}
+	if preamble := strings.TrimSpace(buildManualBoxFanInPromptPreamble(exec, node)); preamble != "" {
+		if strings.TrimSpace(promptText) == "" {
+			promptText = preamble
+		} else {
+			promptText = preamble + "\n\n" + strings.TrimSpace(promptText)
+		}
+		if exec != nil && exec.Engine != nil {
+			exec.Engine.appendProgress(map[string]any{
+				"event":   "manual_box_fan_in_handoff",
+				"node_id": node.ID,
+			})
 		}
 	}
 	if exec != nil && exec.Engine != nil && strings.TrimSpace(contract.PrimaryPath) != "" {

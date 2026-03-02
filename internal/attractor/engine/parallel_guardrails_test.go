@@ -23,7 +23,7 @@ func TestParallelHandler_FailsFastOnEmptyRunBranchPrefix(t *testing.T) {
 	parallelNode := model.NewNode("par")
 	edge := model.NewEdge("par", "a")
 
-	res := (&ParallelHandler{}).runBranch(context.Background(), exec, parallelNode, "deadbeef", "join", 0, edge, nil)
+	res := (&ParallelHandler{}).runBranch(context.Background(), exec, parallelNode, "deadbeef", "join", 0, edge, 1, nil)
 	if res.Outcome.Status != runtime.StatusFail {
 		t.Fatalf("status = %q, want %q", res.Outcome.Status, runtime.StatusFail)
 	}

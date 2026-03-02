@@ -276,6 +276,8 @@ func dispatchParallelBranchesStreaming(
 		return nil, "", err
 	}
 
+	passNum := exec.Engine.nextParallelPassCount(sourceNodeID)
+
 	maxParallel := parseInt(sourceNode.Attr("max_parallel", ""), 4)
 	if maxParallel <= 0 {
 		maxParallel = 4
@@ -310,7 +312,7 @@ func dispatchParallelBranchesStreaming(
 			if e == nil {
 				continue
 			}
-			res := h.runBranch(cancelCtx, exec, sourceNode, baseSHA, joinID, j.idx, e, &gitMu)
+			res := h.runBranch(cancelCtx, exec, sourceNode, baseSHA, joinID, j.idx, e, passNum, &gitMu)
 			resultCh <- indexedResult{idx: j.idx, result: res}
 		}
 	}

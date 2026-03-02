@@ -226,16 +226,41 @@ func materializeInputClosure(ctx context.Context, opts InputMaterializationOptio
 	sourceToTarget := map[string]string{}
 
 	resolvedSources := sortedStringSet(resolved)
+
+	// Build source→target maps. When multiple sources resolve to the same
+	// target path, prefer sources already inside targetRoot (live worktree
+	// state written by prior nodes) over external sources such as the
+	// run-startup snapshot. Without this, the snapshot—which sorts
+	// alphabetically before the worktree path—would silently overwrite files
+	// that a prior node has modified.
+	targetToCopySource := map[string]string{}
 	for _, source := range resolvedSources {
 		targetRel := mapInputSourceToTargetPath(source, roots)
 		sourceToTarget[source] = targetRel
 		resolvedTargets[targetRel] = true
-		if targetRoot != "" {
+		if targetRoot == "" {
+			continue
+		}
+		srcAbs, err := filepath.Abs(source)
+		if err != nil {
+			srcAbs = source
+		}
+		inTarget := strings.HasPrefix(srcAbs, targetRoot+string(filepath.Separator))
+		if _, exists := targetToCopySource[targetRel]; !exists || inTarget {
+			targetToCopySource[targetRel] = source
+		}
+	}
+
+	snapshotWritten := map[string]bool{}
+	for _, source := range resolvedSources {
+		targetRel := sourceToTarget[source]
+		if targetRoot != "" && targetToCopySource[targetRel] == source {
 			if err := copyInputFile(source, filepath.Join(targetRoot, filepath.FromSlash(targetRel))); err != nil {
 				return nil, err
 			}
 		}
-		if snapshotRoot != "" {
+		if snapshotRoot != "" && !snapshotWritten[targetRel] {
+			snapshotWritten[targetRel] = true
 			if err := copyInputFile(source, filepath.Join(snapshotRoot, filepath.FromSlash(targetRel))); err != nil {
 				return nil, err
 			}
