@@ -110,7 +110,7 @@ func loadEnvFile(args []string) []string {
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy --version")
-	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run [--detach] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]")
+	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run [--detach] [--preflight|--test-run] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --logs-root <dir>")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --cxdb <http_base_url> --context-id <id>")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --run-branch <attractor/run/...> [--repo <path>]")
@@ -164,6 +164,7 @@ func attractorRun(args []string) {
 	var runID string
 	var logsRoot string
 	var detach bool
+	var preflightOnly bool
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
@@ -174,6 +175,10 @@ func attractorRun(args []string) {
 		switch args[i] {
 		case "--detach":
 			detach = true
+		case "--preflight":
+			preflightOnly = true
+		case "--test-run":
+			preflightOnly = true
 		case "--allow-test-shim":
 			allowTestShim = true
 		case "--confirm-stale-build":
@@ -225,6 +230,10 @@ func attractorRun(args []string) {
 
 	if graphPath == "" || configPath == "" {
 		usage()
+		os.Exit(1)
+	}
+	if preflightOnly && detach {
+		fmt.Fprintln(os.Stderr, "--preflight/--test-run cannot be combined with --detach")
 		os.Exit(1)
 	}
 	if err := ensureFreshKilroyBuild(confirmStaleBuild); err != nil {
@@ -319,6 +328,45 @@ func attractorRun(args []string) {
 			fmt.Fprintln(os.Stderr, "preflight aborted: declined provider CLI headless-risk warning")
 			os.Exit(1)
 		}
+	}
+	if preflightOnly {
+		ctx, cleanupSignalCtx := signalCancelContext()
+		pf, err := engine.PreflightWithConfig(ctx, dotSource, cfg, engine.RunOptions{
+			RunID:         runID,
+			LogsRoot:      logsRoot,
+			AllowTestShim: allowTestShim,
+			DisableCXDB:   noCXDB,
+			ForceModels:   forceModels,
+			OnCXDBStartup: func(info *engine.CXDBStartupInfo) {
+				if info == nil {
+					return
+				}
+				if info.UIURL == "" {
+					return
+				}
+				if info.UIStarted {
+					fmt.Fprintf(os.Stderr, "CXDB UI starting at %s\n", info.UIURL)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "CXDB UI available at %s\n", info.UIURL)
+			},
+		})
+		cleanupSignalCtx()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("preflight=true\n")
+		fmt.Printf("run_id=%s\n", pf.RunID)
+		fmt.Printf("logs_root=%s\n", pf.LogsRoot)
+		fmt.Printf("preflight_report=%s\n", pf.PreflightReportPath)
+		if pf.CXDBUIURL != "" {
+			fmt.Printf("cxdb_ui=%s\n", pf.CXDBUIURL)
+		}
+		for _, w := range pf.Warnings {
+			fmt.Fprintf(os.Stderr, "WARNING: %s\n", w)
+		}
+		os.Exit(0)
 	}
 
 	// Default: no deadline. CLI runs (especially with provider CLIs) can take hours.
