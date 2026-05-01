@@ -128,3 +128,37 @@ func TestDetectStaleKilroyBuildFor_DifferentGitRepo_NoOp(t *testing.T) {
 		t.Fatalf("expected zero staleBuildStatus for no-op; got %+v", status)
 	}
 }
+
+// TestDetectStaleKilroyBuild_ReleaseBuild_NeverFires verifies that when
+// isReleaseBuild is set to "true" (as goreleaser does at release time via
+// `-ldflags "-X main.isReleaseBuild=true"`), the stale-build check returns
+// the no-op result regardless of CWD or revision drift. Released binaries
+// must not interrogate any git repo on the user's machine.
+func TestDetectStaleKilroyBuild_ReleaseBuild_NeverFires(t *testing.T) {
+	const builtRev = "deadbeef000000000000000000000000deadbeef"
+	origRev := embeddedBuildRevision
+	origRelease := isReleaseBuild
+	embeddedBuildRevision = builtRev
+	isReleaseBuild = "true"
+	t.Cleanup(func() {
+		embeddedBuildRevision = origRev
+		isReleaseBuild = origRelease
+	})
+
+	// Even when CWD is inside the binary's own source repo (which would
+	// normally trigger a stale check), the release flag must short-circuit.
+	repo := initTestRepo(t)
+	fakeExe := filepath.Join(repo, "kilroy")
+	if err := os.WriteFile(fakeExe, []byte("fake-binary"), 0o755); err != nil {
+		t.Fatalf("write fake exe: %v", err)
+	}
+	t.Chdir(repo)
+
+	status, ok := detectStaleKilroyBuild()
+	if ok {
+		t.Fatalf("release build must never report a stale-build status; got status=%+v", status)
+	}
+	if status != (staleBuildStatus{}) {
+		t.Fatalf("release build status must be zero value; got %+v", status)
+	}
+}

@@ -24,6 +24,19 @@ type staleBuildStatus struct {
 // When unset, runtime build info is used.
 var embeddedBuildRevision string
 
+// isReleaseBuild is set to "true" by goreleaser at release time:
+//
+//	go build -ldflags "-X main.isReleaseBuild=true"
+//
+// When set, stale-build detection is suppressed entirely. The embedded SHA
+// in a released binary is a build-time fingerprint, not a runtime invariant —
+// users running a released kilroy from anywhere should never be told their
+// binary is "stale" relative to whatever git repo happens to contain it.
+//
+// Dev builds via plain `go build ./cmd/kilroy` leave this empty; the dev-mode
+// CWD-scoped check in detectStaleKilroyBuildFor still applies.
+var isReleaseBuild string
+
 func ensureFreshKilroyBuild(confirmStaleBuild bool) error {
 	status, ok := detectStaleKilroyBuild()
 	if !ok || !status.Stale {
@@ -39,6 +52,11 @@ func ensureFreshKilroyBuild(confirmStaleBuild bool) error {
 }
 
 func detectStaleKilroyBuild() (staleBuildStatus, bool) {
+	// Released binaries don't perform stale-build detection: their embedded
+	// SHA is a build-time fingerprint, not a runtime invariant.
+	if isReleaseBuild != "" {
+		return staleBuildStatus{}, false
+	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return staleBuildStatus{}, false

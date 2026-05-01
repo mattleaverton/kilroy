@@ -19,6 +19,7 @@ builds:
       - -s -w
       - -X github.com/danshapiro/kilroy/internal/version.Version={{.Version}}
       - -X main.embeddedBuildRevision={{.FullCommit}}
+      - -X main.isReleaseBuild=true
 
 archives:
   - id: default
