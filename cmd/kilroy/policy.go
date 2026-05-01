@@ -22,6 +22,8 @@ func policyCmd(args []string) {
 		policyList(args[1:])
 	case "show":
 		policyShow(args[1:])
+	case "resolve":
+		policyResolve(args[1:])
 	case "-h", "--help", "help":
 		policyUsage()
 		os.Exit(0)
@@ -36,6 +38,9 @@ func policyUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy policy list [--json]")
 	fmt.Fprintln(os.Stderr, "  kilroy policy show <class-name> [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy resolve <class-name> [--json]")
+	fmt.Fprintln(os.Stderr, "    resolve runs the resolver against the current machine state")
+	fmt.Fprintln(os.Stderr, "    and reports which candidate would be picked for the class.")
 }
 
 // ── JSON-serialization view types ────────────────────────────────────────────
@@ -279,4 +284,99 @@ func policyShow(args []string) {
 		fmt.Printf("    Tags:         %s\n", strings.Join(c.Tags, ", "))
 		fmt.Println()
 	}
+}
+
+// ── kilroy policy resolve ────────────────────────────────────────────────────
+
+func policyResolve(args []string) {
+	className, asJSON, err := parsePolicyClassArgs(args, "resolve")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	data, err := policy.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load policy: %v\n", err)
+		os.Exit(1)
+	}
+
+	state := policy.CollectMachineState()
+	res, rerr := policy.Resolve(policy.ResolveRequest{ClassID: className}, data, state)
+
+	if asJSON {
+		out := map[string]any{}
+		if rerr != nil {
+			out["error"] = rerr.Error()
+		} else {
+			out["resolved"] = map[string]any{
+				"model_id":      res.ModelID,
+				"driver":        res.Driver,
+				"transport":     res.Transport,
+				"history_sink":  res.HistorySink,
+				"auth_method":   res.AuthMethod,
+				"auth_source":   res.AuthSource,
+				"fallback_rank": res.FallbackRank,
+				"skipped":       res.Skipped,
+				"request_type":  res.RequestType,
+				"request_value": res.RequestValue,
+			}
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(out)
+		if rerr != nil {
+			os.Exit(1)
+		}
+		return
+	}
+
+	if rerr != nil {
+		fmt.Fprintf(os.Stderr, "resolve %q: %v\n", className, rerr)
+		os.Exit(1)
+	}
+
+	fmt.Printf("class:       %s\n", className)
+	if res.RequestValue != className {
+		fmt.Printf("  (resolved alias %q -> %q)\n", className, res.RequestValue)
+	}
+	fmt.Printf("\nResolved (rank %d of class chain):\n", res.FallbackRank)
+	fmt.Printf("  model:        %s\n", res.ModelID)
+	fmt.Printf("  driver:       %s\n", res.Driver)
+	fmt.Printf("  transport:    %s\n", res.Transport)
+	fmt.Printf("  history sink: %s\n", res.HistorySink)
+	fmt.Printf("  auth:         %s", res.AuthMethod)
+	if res.AuthSource != "" {
+		fmt.Printf(" (%s)", res.AuthSource)
+	}
+	fmt.Println()
+
+	if len(res.Skipped) > 0 {
+		fmt.Println("\nSkipped candidates:")
+		for _, s := range res.Skipped {
+			fmt.Printf("  rank %d: %s / %s — %s\n", s.Rank, s.ModelID, s.Driver, s.Reason)
+		}
+	}
+}
+
+// parsePolicyClassArgs is a small helper for show/resolve that share the same
+// "<class-name> [--json]" argument shape.
+func parsePolicyClassArgs(args []string, subcmd string) (className string, asJSON bool, err error) {
+	for _, a := range args {
+		switch a {
+		case "--json":
+			asJSON = true
+		case "-h", "--help":
+			return "", false, fmt.Errorf("usage: kilroy policy %s <class-name> [--json]", subcmd)
+		default:
+			if className != "" {
+				return "", false, fmt.Errorf("unexpected extra argument %q", a)
+			}
+			className = a
+		}
+	}
+	if className == "" {
+		return "", false, fmt.Errorf("class name required\nusage: kilroy policy %s <class-name> [--json]", subcmd)
+	}
+	return className, asJSON, nil
 }
