@@ -140,7 +140,7 @@ digraph G {
   branch_a -> synth
   branch_b -> synth
   branch_c -> synth
-  synth -> exit
+  synth -> exit [condition="outcome=success"]
 }
 `)
 
@@ -211,7 +211,7 @@ digraph G {
   branch_a -> join
   branch_b -> join
   join -> synth
-  synth -> exit
+  synth -> exit [condition="outcome=success"]
 }
 `)
 
@@ -266,7 +266,7 @@ digraph G {
   branch_a -> synth
   branch_b -> synth
   fallback -> synth
-  synth -> exit
+  synth -> exit [condition="outcome=success"]
 }
 `)
 
@@ -325,7 +325,7 @@ digraph G {
   b [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="b"]
   start -> a
   a -> b
-  b -> exit
+  b -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -360,8 +360,8 @@ digraph G {
   check -> pass      [condition="outcome=success"]
   check -> fail_path [condition="outcome=fail"]
   check -> pass
-  pass -> exit
-  fail_path -> exit
+  pass -> exit [condition="outcome=success"]
+  fail_path -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

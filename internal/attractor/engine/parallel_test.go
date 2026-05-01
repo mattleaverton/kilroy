@@ -37,7 +37,7 @@ digraph P {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -268,7 +268,7 @@ digraph P {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `, runID, runID, runID, runID, runID, runID))
 

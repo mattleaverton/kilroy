@@ -24,7 +24,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   read_inputs [shape=parallelogram, tool_command="test -f .ai/definition_of_done.md && test -f tests.md && cp .ai/definition_of_done.md dod_seen.txt"]
-  start -> read_inputs -> exit
+  start -> read_inputs
+  read_inputs -> exit [condition="outcome=success"]
 }
 `)
 
@@ -71,7 +72,7 @@ digraph P {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `)
 

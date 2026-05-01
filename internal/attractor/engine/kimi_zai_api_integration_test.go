@@ -72,7 +72,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=%s, llm_model=%s, agent_mode=one_shot, auto_status=true, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `, provider, model))
 
@@ -163,7 +164,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=kimi, llm_model=kimi-k2.5, agent_mode=agent_loop, auto_status=true, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -231,7 +233,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider="kimi", llm_model="kimi-k2.5", agent_mode=one_shot, auto_status=true, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -322,7 +325,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=kimi, llm_model=kimi-k2.5, agent_mode=agent_loop, auto_status=true, prompt="use tools as needed and then finish"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 

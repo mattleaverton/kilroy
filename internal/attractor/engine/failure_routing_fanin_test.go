@@ -57,7 +57,7 @@ digraph G {
   b -> join
   c -> join
   join -> verify
-  verify -> exit
+  verify -> exit [condition="outcome=success"]
 }
 `)
 
@@ -144,7 +144,7 @@ digraph G {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `)
 

@@ -27,7 +27,7 @@ digraph G {
   start -> check_toolchain
   check_toolchain -> postmortem [condition="outcome=fail"]
   check_toolchain -> postmortem
-  postmortem -> exit
+  postmortem -> exit [condition="outcome=success"]
 }
 `)
 

@@ -19,7 +19,6 @@ func TestRun_StallWatchdog(t *testing.T) {
   exit [shape=Msquare]
   start -> wait
   wait -> exit [condition="outcome=success"]
-  wait -> exit
 }`)
 	repo := initTestRepo(t)
 	opts := RunOptions{
@@ -48,7 +47,6 @@ func TestRun_StallWatchdogInterruptsRetrySleep(t *testing.T) {
   exit [shape=Msquare]
   start -> fail
   fail -> exit [condition="outcome=success"]
-  fail -> exit
 }`)
 	repo := initTestRepo(t)
 	opts := RunOptions{
@@ -84,9 +82,9 @@ func TestRun_StallWatchdogStopsRunLoopBeforeFailEdgeTraversal(t *testing.T) {
   exit [shape=Msquare]
   start -> fail
   fail -> after_fail [condition="outcome=fail"]
-  fail -> exit
+  fail -> exit [condition="outcome=success"]
+  fail -> after_fail
   after_fail -> exit [condition="outcome=success"]
-  after_fail -> exit
 }`)
 	repo := initTestRepo(t)
 	opts := RunOptions{

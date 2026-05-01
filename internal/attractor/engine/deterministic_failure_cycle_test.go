@@ -93,9 +93,11 @@ digraph G {
     tool_command="echo recovered > result.txt"
   ]
 
-  start -> attempt -> exit
+  start -> attempt
+  attempt -> exit [condition="outcome=success"]
   attempt -> recovery [condition="outcome=fail"]
-  recovery -> exit
+  attempt -> recovery
+  recovery -> exit [condition="outcome=success"]
 }
 `)
 

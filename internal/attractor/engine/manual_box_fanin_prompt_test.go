@@ -54,7 +54,7 @@ digraph G {
   par -> b
   a -> merge
   b -> merge
-  merge -> exit
+  merge -> exit [condition="outcome=success"]
 }
 `)
 

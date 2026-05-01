@@ -33,7 +33,8 @@ digraph G {
     max_retries=0,
     tool_command="test -f .attempt && echo ok || (touch .attempt; echo fail; exit 1)"
   ]
-  start -> gate -> exit
+  start -> gate
+  gate -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -85,7 +86,8 @@ digraph G {
     goal_gate=true,
     tool_command="echo fail; exit 1"
   ]
-  start -> gate -> exit
+  start -> gate
+  gate -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

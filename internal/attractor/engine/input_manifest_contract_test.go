@@ -25,7 +25,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="check inputs"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -87,7 +88,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="check inputs"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -156,7 +158,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   verify [shape=parallelogram, tool_command="test -f .ai/definition_of_done.md && test ! -f tests.md"]
-  start -> verify -> exit
+  start -> verify
+  verify -> exit [condition="outcome=success"]
 }
 `)
 

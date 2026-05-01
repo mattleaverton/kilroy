@@ -26,7 +26,7 @@ func TestRun_GlobalStageTimeoutCapsToolNode(t *testing.T) {
   wait [shape=parallelogram, tool_command="sleep 2"]
   exit [shape=Msquare]
   start -> wait
-  wait -> exit
+  wait -> exit [condition="outcome=fail"]
 }`)
 	repo := initTestRepo(t)
 	opts := RunOptions{RepoPath: repo, LogsRoot: t.TempDir(), StageTimeout: 100 * time.Millisecond}
@@ -54,7 +54,7 @@ func TestRun_GlobalAndNodeTimeout_UsesSmallerTimeout(t *testing.T) {
   wait [shape=parallelogram, timeout="1s", tool_command="sleep 2"]
   exit [shape=Msquare]
   start -> wait
-  wait -> exit
+  wait -> exit [condition="outcome=fail"]
 }`)
 	repo := initTestRepo(t)
 	opts := RunOptions{RepoPath: repo, LogsRoot: t.TempDir(), StageTimeout: 5 * time.Second}
@@ -80,7 +80,7 @@ func TestRun_TimeoutOutcomeIncludesMetadata(t *testing.T) {
   wait [shape=parallelogram, tool_command="sleep 5"]
   exit [shape=Msquare]
   start -> wait
-  wait -> exit
+  wait -> exit [condition="outcome=fail"]
 }`)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

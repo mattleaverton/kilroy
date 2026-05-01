@@ -32,9 +32,9 @@ func TestDecisionLogging_ConditionalRoute(t *testing.T) {
   start -> process
   process -> path_a [condition="outcome=success"]
   process -> path_b [condition="outcome=fail"]
-  process -> done
-  path_a -> done
-  path_b -> done
+  process -> path_a
+  path_a -> done [condition="outcome=success"]
+  path_b -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

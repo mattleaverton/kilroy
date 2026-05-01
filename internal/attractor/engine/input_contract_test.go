@@ -126,7 +126,8 @@ func TestInputContract_ToolGraphWithInputs(t *testing.T) {
   start [shape=Mdiamond]
   greet [shape=parallelogram, tool_command="echo $KILROY_INPUT_GREETING"]
   done [shape=Msquare]
-  start -> greet -> done
+  start -> greet
+  greet -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

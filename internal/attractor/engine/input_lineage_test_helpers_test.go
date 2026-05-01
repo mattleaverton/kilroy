@@ -26,7 +26,7 @@ digraph P {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `, runID, runID, runID))
 }
@@ -39,7 +39,8 @@ digraph R {
   start [shape=Mdiamond]
   write [shape=parallelogram, tool_command="mkdir -p .ai/runs/%s && echo seeded > .ai/runs/%s/postmortem_latest.md"]
   exit [shape=Msquare]
-  start -> write -> exit
+  start -> write
+  write -> exit [condition="outcome=success"]
 }
 `, runID, runID))
 }
