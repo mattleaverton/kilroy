@@ -74,8 +74,8 @@ digraph G {
   check_dod -> dod_gen [condition="outcome=needs_dod"]
   check_dod -> plan [condition="outcome=has_dod"]
   check_dod -> plan
-  dod_gen -> exit
-  plan -> exit
+  dod_gen -> exit [condition="outcome=success"]
+  plan -> exit [condition="outcome=success"]
 }
 `)
 
@@ -181,8 +181,8 @@ digraph G {
   check_dod -> dod_gen [condition="outcome=needs_dod"]
   check_dod -> plan [condition="outcome=has_dod"]
   check_dod -> plan
-  dod_gen -> exit
-  plan -> exit
+  dod_gen -> exit [condition="outcome=success"]
+  plan -> exit [condition="outcome=success"]
 }
 `)
 
@@ -257,7 +257,7 @@ digraph G {
   check_dod -> merge
   dod_a -> merge
   dod_b -> merge
-  merge -> exit
+  merge -> exit [condition="outcome=success"]
 }
 `)
 
@@ -346,8 +346,8 @@ digraph G {
   router -> target_a [condition="outcome=route_me && context.phase=dod"]
   router -> target_b [condition="outcome=route_me && context.phase=plan"]
   router -> target_b
-  target_a -> exit
-  target_b -> exit
+  target_a -> exit [condition="outcome=success"]
+  target_b -> exit [condition="outcome=success"]
 }
 `)
 

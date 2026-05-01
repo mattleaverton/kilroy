@@ -42,8 +42,8 @@ digraph G {
   start -> a -> cond
   cond -> b [label="B", weight=0]
   cond -> c [label="C", weight=10]
-  b -> exit
-  c -> exit
+  b -> exit [condition="outcome=success"]
+  c -> exit [condition="outcome=success"]
 }
 `))
 	if err != nil {

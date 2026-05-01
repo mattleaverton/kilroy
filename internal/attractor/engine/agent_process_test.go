@@ -63,7 +63,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome!=success"]
 }
 `)
 

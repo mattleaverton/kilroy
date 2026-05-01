@@ -33,7 +33,7 @@ digraph G {
   start -> fail -> cond
   cond -> ok [condition="outcome=fail"]
   cond -> ok
-  ok -> exit
+  ok -> exit [condition="outcome=success"]
 }
 `)
 

@@ -1705,7 +1705,8 @@ digraph G {
   start [shape=Mdiamond]
   a [shape=box, llm_provider="%s", llm_model="%s", prompt="x"]
   exit [shape=Msquare]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `, provider, modelID))
 }
@@ -1717,7 +1718,8 @@ digraph G {
   start [shape=Mdiamond]
   a [shape=box, llm_provider="%s", model="%s", prompt="x"]
   exit [shape=Msquare]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `, provider, modelID))
 }

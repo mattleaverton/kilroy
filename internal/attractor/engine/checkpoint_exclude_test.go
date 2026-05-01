@@ -32,7 +32,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   write_files [shape=parallelogram, tool_command="mkdir -p src .cargo_target_local/obj && echo ok > src/ok.txt && echo temp > .cargo_target_local/obj/a.bin"]
-  start -> write_files -> exit
+  start -> write_files
+  write_files -> exit [condition="outcome=success"]
 }
 `)
 
