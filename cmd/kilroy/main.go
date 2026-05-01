@@ -91,6 +91,8 @@ func main() {
 		attractor(args[1:])
 	case "auth":
 		authCmd(args[1:])
+	case "policy":
+		policyCmd(args[1:])
 	default:
 		usage()
 		os.Exit(1)

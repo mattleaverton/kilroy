@@ -72,5 +72,256 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
     kind    = "env_var"
     env_var = "ANTHROPIC_API_KEY"
 
-# Additional classes (quick_easy, deep_investigation, frontend_aesthetic,
-# architectural_critique) are added by Block 4 Step 2.
+# ══════════════════════════════════════════════════════════════════
+# CLASS: quick_easy
+# Low-latency tasks: Haiku first (subscription then API key) for
+# minimal cost and fast round-trips. Gemini Flash as a cheap
+# cross-provider alternative. Sonnet 4.6 subscription/API as fallback
+# when even Haiku is unavailable.
+# ══════════════════════════════════════════════════════════════════
+[classes.quick_easy]
+description = "Low-latency, low-cost tasks where speed beats depth."
+
+  [[classes.quick_easy.chain]]
+  model_id     = "claude-haiku-4-5"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:cheap"]
+    [classes.quick_easy.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.quick_easy.chain]]
+  model_id     = "claude-haiku-4-5"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:cheap"]
+    [classes.quick_easy.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+  [[classes.quick_easy.chain]]
+  model_id     = "gemini-2.5-flash"
+  driver       = "google_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:cheap", "cross_provider"]
+    [classes.quick_easy.chain.auth]
+    kind    = "env_var"
+    env_var = "GOOGLE_API_KEY"
+
+  [[classes.quick_easy.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:mid"]
+    [classes.quick_easy.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.quick_easy.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:mid"]
+    [classes.quick_easy.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+# ══════════════════════════════════════════════════════════════════
+# CLASS: deep_investigation
+# 1M+ token research: Opus 4.7 (subscription first, API second) owns
+# the window. Gemini 2.5 Pro covers long-context cross-provider.
+# GPT-5 as elite cross-provider escape hatch. Sonnet 4.6 subscription
+# as affordable safety net.
+# ══════════════════════════════════════════════════════════════════
+[classes.deep_investigation]
+description = "Long-context research and synthesis requiring 1M+ token windows."
+
+  [[classes.deep_investigation.chain]]
+  model_id     = "claude-opus-4-7"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:elite", "long_context"]
+    [classes.deep_investigation.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.deep_investigation.chain]]
+  model_id     = "claude-opus-4-7"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "long_context"]
+    [classes.deep_investigation.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+  [[classes.deep_investigation.chain]]
+  model_id     = "gemini-2.5-pro"
+  driver       = "google_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "long_context", "cross_provider"]
+    [classes.deep_investigation.chain.auth]
+    kind    = "env_var"
+    env_var = "GOOGLE_API_KEY"
+
+  [[classes.deep_investigation.chain]]
+  model_id     = "gpt-5"
+  driver       = "openai_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "cross_provider"]
+    [classes.deep_investigation.chain.auth]
+    kind    = "env_var"
+    env_var = "OPENAI_API_KEY"
+
+  [[classes.deep_investigation.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:mid"]
+    [classes.deep_investigation.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+# ══════════════════════════════════════════════════════════════════
+# CLASS: frontend_aesthetic
+# Visual/UI tasks: GPT-5 leads for visual reasoning. Sonnet 4.6
+# (subscription then API) for capable mid-tier HTML/CSS work.
+# Gemini 2.5 Pro as elite cross-provider alternative. Haiku as
+# fast, cheap last resort.
+# ══════════════════════════════════════════════════════════════════
+[classes.frontend_aesthetic]
+description = "UI/UX design critique and frontend component generation."
+
+  [[classes.frontend_aesthetic.chain]]
+  model_id     = "gpt-5"
+  driver       = "openai_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "visual_reasoning"]
+    [classes.frontend_aesthetic.chain.auth]
+    kind    = "env_var"
+    env_var = "OPENAI_API_KEY"
+
+  [[classes.frontend_aesthetic.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:mid"]
+    [classes.frontend_aesthetic.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.frontend_aesthetic.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:mid"]
+    [classes.frontend_aesthetic.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+  [[classes.frontend_aesthetic.chain]]
+  model_id     = "gemini-2.5-pro"
+  driver       = "google_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "cross_provider"]
+    [classes.frontend_aesthetic.chain.auth]
+    kind    = "env_var"
+    env_var = "GOOGLE_API_KEY"
+
+  [[classes.frontend_aesthetic.chain]]
+  model_id     = "claude-haiku-4-5"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:cheap"]
+    [classes.frontend_aesthetic.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+# ══════════════════════════════════════════════════════════════════
+# CLASS: architectural_critique
+# System design review: Opus 4.7 (subscription then API) for maximum
+# reasoning depth. GPT-5 and Gemini 2.5 Pro as elite cross-provider
+# alternatives. Sonnet 4.6 subscription as affordable fallback.
+# ══════════════════════════════════════════════════════════════════
+[classes.architectural_critique]
+description = "System design review and architectural trade-off analysis."
+
+  [[classes.architectural_critique.chain]]
+  model_id     = "claude-opus-4-7"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:elite"]
+    [classes.architectural_critique.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.architectural_critique.chain]]
+  model_id     = "claude-opus-4-7"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite"]
+    [classes.architectural_critique.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+  [[classes.architectural_critique.chain]]
+  model_id     = "gpt-5"
+  driver       = "openai_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "cross_provider"]
+    [classes.architectural_critique.chain.auth]
+    kind    = "env_var"
+    env_var = "OPENAI_API_KEY"
+
+  [[classes.architectural_critique.chain]]
+  model_id     = "gemini-2.5-pro"
+  driver       = "google_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "cross_provider"]
+    [classes.architectural_critique.chain.auth]
+    kind    = "env_var"
+    env_var = "GOOGLE_API_KEY"
+
+  [[classes.architectural_critique.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:mid"]
+    [classes.architectural_critique.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+# ══════════════════════════════════════════════════════════════════
+# ALIASES
+# ══════════════════════════════════════════════════════════════════
+[[aliases]]
+from = "coding"
+to   = "hard_coding"
+
+[[aliases]]
+from = "fast"
+to   = "quick_easy"
+
+[[aliases]]
+from = "research"
+to   = "deep_investigation"

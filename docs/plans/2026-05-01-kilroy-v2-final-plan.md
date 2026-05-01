@@ -676,15 +676,19 @@ After this block: 182 → 2 known pre-existing failures (`TestRunWithConfig_Allo
 - [ ] Precedence order (§7.4) including loud failure on bogus `KILROY_PROJECT_ROOT`.
 - [ ] Pitfall coverage (§7.5).
 
-### Block 4: Policy data and resolver
+### Block 4: Policy data and resolver — **Steps 1–3 LANDED; Steps 4–6 pending**
 
-- [ ] Define policy.toml format (§6.2).
-- [ ] Author baseline policy with the 5 v2 classes (§6.1).
-- [ ] Embed via `//go:embed` at build time.
-- [ ] Implement the resolver: machine-state collection (§6.3), class chain walk, strict-mode lookup.
-- [ ] Step-metadata schema (§6.4).
-- [ ] `kilroy policy list / show / explain` (§6.6).
-- [ ] Aliases + deprecation table (§6.5).
+- [x] Define policy.toml format (§6.2). (commit `9b1a4a8`)
+- [x] Author baseline policy with the 5 v2 classes (§6.1). hard_coding seeded in Step 1; quick_easy, deep_investigation, frontend_aesthetic, architectural_critique authored by Block 4 Run classes worker.
+- [x] Embed via `//go:embed` at build time. (commit `9b1a4a8`)
+- [x] Implement the resolver: machine-state collection (consumes `internal/auth.ListAll`), class chain walk, strict-mode lookup. 10 sub-tests covering match, fallback, all-unreachable, unknown-class, alias, strict match/missing/unreachable, both-modes, none-auth.
+- [x] `kilroy policy list / show <class>` with `--json` and alias resolution. Unknown-class error includes sorted available class list, exits 1.
+- [x] Aliases + deprecation table (§6.5). Aliases (`coding → hard_coding`, `fast → quick_easy`, `research → deep_investigation`) work; deprecation table is parsed and code path is wired but no live deprecation entries yet.
+- [ ] **Step 4** — wire the resolver into the engine's node-execution path so workflows that declare `class=...` actually route through the policy resolver (replacing today's stylesheet model overrides).
+- [ ] **Step 5** — persist `ResolveResult` per agentic step into the run record (per plan §6.4 schema).
+- [ ] **Step 6** — `kilroy policy explain <run-id>`, exercise live deprecation, semver comparison upgrade.
+
+Live dogfood against the dev machine: `kilroy policy list` shows all 5 classes alphabetically with chain summaries; `kilroy policy show hard_coding` renders the full per-rank detail; `kilroy policy show coding` (alias) resolves and notes the redirect; `kilroy policy show notaclass` exits 1 with sorted available-class list.
 
 ### Block 5: Auth discovery — **LANDED**
 
