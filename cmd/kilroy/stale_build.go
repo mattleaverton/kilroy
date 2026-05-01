@@ -39,10 +39,6 @@ func ensureFreshKilroyBuild(confirmStaleBuild bool) error {
 }
 
 func detectStaleKilroyBuild() (staleBuildStatus, bool) {
-	rev, ok := binaryVCSRevision()
-	if !ok {
-		return staleBuildStatus{}, false
-	}
 	exePath, err := os.Executable()
 	if err != nil {
 		return staleBuildStatus{}, false
@@ -54,10 +50,62 @@ func detectStaleKilroyBuild() (staleBuildStatus, bool) {
 	if exePath == "" {
 		return staleBuildStatus{}, false
 	}
-	repoRoot, ok := gitTopLevel(filepath.Dir(exePath))
+	cwd, err := os.Getwd()
+	if err != nil {
+		return staleBuildStatus{}, false
+	}
+	return detectStaleKilroyBuildFor(exePath, cwd)
+}
+
+// detectStaleKilroyBuildFor is the testable core of stale-build detection.
+// exePath must already be symlink-resolved. cwd is the invocation working directory.
+//
+// The check is scoped to dev-mode invocations: it only fires when cwd is inside
+// the same git repository that the binary was built from. When the user invokes
+// kilroy from an unrelated directory (including a completely different git repo),
+// the function returns (staleBuildStatus{}, false) — a silent no-op.
+func detectStaleKilroyBuildFor(exePath, cwd string) (staleBuildStatus, bool) {
+	rev, ok := binaryVCSRevision()
 	if !ok {
 		return staleBuildStatus{}, false
 	}
+	exePath = strings.TrimSpace(exePath)
+	if exePath == "" {
+		return staleBuildStatus{}, false
+	}
+
+	// Locate the git repo that the binary lives in (the "source repo").
+	repoRoot, ok := gitTopLevel(filepath.Dir(exePath))
+	if !ok {
+		// Binary is not inside any git repo — no stale check possible.
+		return staleBuildStatus{}, false
+	}
+
+	// Scope guard: only fire when cwd is inside the same repo as the binary.
+	// This limits stale-build detection to dev-mode (user is working inside the
+	// kilroy source tree). Invocations from any other directory are silently
+	// no-oped, including invocations from a completely different git repo.
+	cwdRepoRoot, ok := gitTopLevel(cwd)
+	if !ok {
+		// CWD has no git repo — not a dev invocation.
+		return staleBuildStatus{}, false
+	}
+
+	// Use realpath-resolved roots for comparison so that symlinked checkouts
+	// (e.g. ~/.local/bin/kilroy → ~/sw/kilroy/kilroy) compare correctly.
+	realRepoRoot, err := filepath.EvalSymlinks(repoRoot)
+	if err != nil {
+		realRepoRoot = repoRoot
+	}
+	realCWDRepoRoot, err := filepath.EvalSymlinks(cwdRepoRoot)
+	if err != nil {
+		realCWDRepoRoot = cwdRepoRoot
+	}
+	if realCWDRepoRoot != realRepoRoot {
+		// CWD is in a different git repo — not a dev invocation for this binary.
+		return staleBuildStatus{}, false
+	}
+
 	head, ok := gitHEADRevision(repoRoot)
 	if !ok {
 		return staleBuildStatus{}, false
