@@ -101,15 +101,17 @@ my-workflow/
 
 ### 5.1 Discovery
 
-Hierarchical, with **local-wins** semantics:
+Hierarchical with **local-wins** precedence — when the same workflow name exists at multiple levels, the most-local layer is used. Lookup order from highest precedence to lowest:
 
 ```
-1. Built-in       (compiled into the binary via go:embed)
-2. User           ($XDG_CONFIG_HOME/kilroy/workflows/   default ~/.config/kilroy/workflows/)
-3. Project        (<project-root>/.kilroy/workflows/)
+1. Project   (<project-root>/.kilroy/workflows/)            ← wins
+2. User      ($XDG_CONFIG_HOME/kilroy/workflows/, default ~/.config/kilroy/workflows/)
+3. Built-in  (compiled into the binary via go:embed)        ← fallback
 ```
 
-Project workflow with the same name as a user workflow shadows it; warn at workflow-load time. (Investigation 3 also recommends `.kilroy/` directory as the project marker — see §7 for the layered-config story.)
+The list above is the *resolution order* — kilroy checks Project first, falls through to User, then to Built-in. A project-defined `investigate` shadows a user-defined `investigate`, which shadows the built-in `investigate`. A warning is emitted at workflow-load time on any same-name shadowing so authors notice when a local definition supersedes a blessed one.
+
+(Investigation 3 also recommends `.kilroy/` directory as the project marker — see §7 for the layered-config story.)
 
 ### 5.2 `workflow.toml` schema (TOML, not YAML)
 
@@ -627,16 +629,24 @@ These were not in either prior plan. They emerged from running the six investiga
 
 Each block below is independently shippable. Roughly the order I'd tackle them, though hard dependencies are explicit.
 
-### Block 0: Pre-v2 cleanup (do first; clears dogfooding noise)
+### Block 0: Pre-v2 cleanup (do first; clears dogfooding noise) — **LANDED**
 
-These are real bugs visible today; they don't need v2's reframe to land.
+These were real bugs visible today; they didn't need v2's reframe to land.
 
-- [ ] §13.1: Validation-failure persists a `final.json` with `failure_reason`.
-- [ ] §13.2: CI test that validates every embedded built-in workflow's `graph.dot`.
-- [ ] §13.3: Scope stale-build detection to dev-mode invocations only.
-- [ ] §13.4: Audit `runs wait` exit codes; document them.
-- [ ] §13.5: `runs prune --zombies` for the existing zombie records.
+- [x] §13.1: Validation-failure persists a `final.json` with `failure_reason`. (commit `a5d0a66`)
+- [x] §13.2: CI test that validates every embedded built-in workflow's `graph.dot`. (commit `6bc55c4`)
+- [x] §13.3: Scope stale-build detection to dev-mode invocations only. (commits `ee4cfdf` + `ccb053c`; option (a) and option (b) both)
+- [x] §13.4: Audit `runs wait` exit codes; document them. (commit `270a1ed` for tests; user-facing usage doc added in `1a86563`'s sibling commit on `runsUsage()`)
+- [x] §13.5: `runs prune --zombies` for the existing zombie records. (commit `6e4e690`; mutation-order correctness fix in `1a86563`)
 - [ ] Patch upstream `kilroy-ui-split/workflows/quick-launch/graph*.dot` with `condition="outcome=success"` on `agent → done` (already fixed in this user's installed copy). Open as a PR upstream.
+
+### Block 0.5: Test-fixture cleanup for `terminal_condition_edge` regression
+
+Surfaced during Block 0 dogfooding. Commit `95637c9` tightened the validator; ~180 test files in `internal/attractor/engine/` and `cmd/kilroy/` use inline DOT graphs with unconditioned `a → exit` edges that the new validator rejects. Fix is mechanical: add `condition="outcome=success"` (or the failure-path equivalent for tests that exercise failures).
+
+- [ ] Engine test fixtures `[a-c]*_test.go` (Run A campaign).
+- [ ] Engine test fixtures `[d-m]*_test.go` (Run B campaign).
+- [ ] Engine test fixtures `[n-z]*_test.go` + cmd/kilroy testdata + preflight tests (Run C campaign).
 
 ### Block 1: CLI surface collapse
 
@@ -650,7 +660,7 @@ These are real bugs visible today; they don't need v2's reframe to land.
 ### Block 2: Workflow registry
 
 - [ ] Define `workflow.toml` schema (§5.2).
-- [ ] Implement hierarchical discovery: built-in → user → project (§5.1).
+- [ ] Implement hierarchical discovery with project > user > built-in resolution order (§5.1).
 - [ ] Migrate existing demo graphs in `workflows/` to package format.
 - [ ] Implement `kilroy workflows list / describe / validate`.
 - [ ] Define `[secrets]` block semantics (just the names, not values; resolved through auth layer).
@@ -709,7 +719,7 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 ### Block 9: Built-in workflows
 
 - [ ] Author `investigate`, `review`, `fix` as built-in packages under `internal/workflows/<name>/`.
-- [ ] CI-validate them (covered by Block 0 §13.2).
+- [ ] CI-validate them. The Block 0 §13.2 test currently walks `workflows/` (today's shipped tree); when built-ins move to `internal/workflows/`, extend the test (or add a sibling) to walk that directory too. Both should be validated until `workflows/` is fully retired.
 - [ ] Bare-form CLI elevation (covered by Block 1).
 - [ ] Author `prompts/` for each.
 - [ ] Author `scripts/` for the script-node helpers (`kilroy-stage-context`, `kilroy-fetch-diff`, `kilroy-write-result`, `kilroy-write-fix-result`, `kilroy-apply-patch`, `kilroy-post-review`).
