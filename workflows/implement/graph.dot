@@ -9,22 +9,26 @@ digraph implement {
 
     start         [shape=Mdiamond, label="Start"]
     stage_context [shape=parallelogram, label="stage-context",
-                   tool_command="bash scripts/stage-context.sh"]
+                   tool_command="bash .kilroy/package/scripts/stage-context.sh"]
     agent         [shape=box, label="implement", agent_tool="claude", class="hard_coding",
                    prompt="You are working in a kilroy worktree. Code changes are auto-committed at node end. Do not run git commit yourself. Your task is in .kilroy/INPUT.md under the ## prompt section. If a ## context_files section is present, those paths point at files the user wants you to read for context. If a ## scope_directive section is present, treat it as a hard guardrail: do not touch files outside the named scope. Do NOT run go test ./... — too noisy; use go test <package> -run <pattern> for targeted verification. Time-cap your work: if a single approach is not converging within ~15 minutes, write what you have to result.md with a BLOCKED: prefix and stop. Output: write result.md at the workspace root. Required sections: Summary (1-2 sentences), Files touched (list), Diff outline (bullets), Tests added (if any), Open questions. When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
                    outputs="result.md"]
     verify        [shape=parallelogram, label="verify",
-                   tool_command="bash scripts/verify.sh"]
+                   tool_command="bash .kilroy/package/scripts/verify.sh"]
     summary       [shape=parallelogram, label="summary",
-                   tool_command="bash scripts/summary.sh"]
+                   tool_command="bash .kilroy/package/scripts/summary.sh"]
     done          [shape=Msquare, label="Done"]
 
+    // Failure paths route through `summary` so the run captures what
+    // happened in result.md before terminating. summary always succeeds
+    // (it synthesizes a BLOCKED: result.md when the agent didn't
+    // produce one), so its terminal edge can be unconditioned.
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
-    stage_context -> done           [condition="outcome!=success"]
+    stage_context -> summary        [condition="outcome!=success"]
     agent         -> verify         [condition="outcome=success"]
-    agent         -> done           [condition="outcome!=success"]
+    agent         -> summary        [condition="outcome!=success"]
     verify        -> summary        [condition="outcome=success"]
     verify        -> agent          [condition="outcome!=success", label="retry once"]
-    summary       -> done           [condition="outcome=success"]
+    summary       -> done            [condition="outcome=success"]
 }
