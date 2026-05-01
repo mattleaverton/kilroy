@@ -258,3 +258,103 @@ func TestCodexDetector(t *testing.T) {
 		_ = fmt.Sprintf("suppress unused import") // keep fmt imported for test helpers
 	})
 }
+
+// TestCodexDetector_StaleLastRefresh covers the §8.4 stale-session heuristic:
+// an unrefreshed token whose last_refresh is more than 30 days old may have
+// been silently revoked server-side (web logout, org rotation), so we surface
+// it as ambiguous rather than ok even though its JWT exp is still in the future.
+func TestCodexDetector_StaleLastRefresh(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	dir := t.TempDir()
+	orig := codexAuthPath
+	codexAuthPath = filepath.Join(dir, "auth.json")
+	t.Cleanup(func() { codexAuthPath = orig })
+
+	// Token whose JWT exp is 1 day in the future (would normally be ok).
+	futureExp := time.Now().Add(24 * time.Hour).Unix()
+	jwt := makeTestJWT(futureExp, nil)
+
+	// last_refresh 60 days ago — past the 30-day staleness threshold.
+	lastRefresh := time.Now().Add(-60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+
+	writeCodexAuth(t, dir, map[string]interface{}{
+		"auth_mode": "chatgpt",
+		"tokens": map[string]interface{}{
+			"access_token":  jwt,
+			"refresh_token": "rt-stale",
+		},
+		"last_refresh": lastRefresh,
+	})
+
+	d := NewCodexDetector()
+	entries, err := d.Detect()
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d: %+v", len(entries), entries)
+	}
+	got := entries[0]
+	if got.State != StateAmbiguous {
+		t.Errorf("State = %q, want %q (stale last_refresh)", got.State, StateAmbiguous)
+	}
+	staleNoteFound := false
+	for _, n := range got.Notes {
+		if filepathContains(n, "not refreshed in >30 days") {
+			staleNoteFound = true
+			break
+		}
+	}
+	if !staleNoteFound {
+		t.Errorf("expected stale-token note, got Notes=%v", got.Notes)
+	}
+	if got.Remediation == "" {
+		t.Errorf("expected remediation hint for stale token, got empty")
+	}
+}
+
+// TestCodexDetector_RecentLastRefresh confirms a token refreshed within 30
+// days is NOT marked stale even when last_refresh is set.
+func TestCodexDetector_RecentLastRefresh(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	dir := t.TempDir()
+	orig := codexAuthPath
+	codexAuthPath = filepath.Join(dir, "auth.json")
+	t.Cleanup(func() { codexAuthPath = orig })
+
+	futureExp := time.Now().Add(24 * time.Hour).Unix()
+	jwt := makeTestJWT(futureExp, nil)
+	lastRefresh := time.Now().Add(-2 * 24 * time.Hour).UTC().Format(time.RFC3339)
+
+	writeCodexAuth(t, dir, map[string]interface{}{
+		"auth_mode": "chatgpt",
+		"tokens": map[string]interface{}{
+			"access_token":  jwt,
+			"refresh_token": "rt-fresh",
+		},
+		"last_refresh": lastRefresh,
+	})
+
+	d := NewCodexDetector()
+	entries, err := d.Detect()
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].State != StateOK {
+		t.Errorf("State = %q, want %q (recent last_refresh)", entries[0].State, StateOK)
+	}
+}
+
+// filepathContains is a small string-contains helper so the test reads
+// in the same idiom as the file's existing matchers.
+func filepathContains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

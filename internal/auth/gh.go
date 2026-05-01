@@ -63,7 +63,19 @@ func (d *GHDetector) Detect() ([]Entry, error) {
 	data, err := os.ReadFile(ghHostsPath)
 	fileAbsent := os.IsNotExist(err)
 	if err != nil && !fileAbsent {
-		return nil, fmt.Errorf("gh: reading hosts file: %w", err)
+		// Surface read errors as ambiguous, not as a hard error that the
+		// orchestrator silently drops. Caller needs to know the file was
+		// there but unreadable (permission denied, partial write, etc.).
+		return []Entry{{
+			ID:          ghCLIEntryID,
+			Kind:        KindCLIOAuth,
+			Provider:    ghProvider,
+			Tool:        ghTool,
+			State:       StateAmbiguous,
+			Source:      Source{File: ghHostsPath, KeychainService: ghKeychainService},
+			Notes:       []string{fmt.Sprintf("hosts.yml unreadable: %v", err)},
+			Remediation: "Check file permissions on " + ghHostsPath,
+		}}, nil
 	}
 
 	var cliEntry Entry
@@ -89,7 +101,19 @@ func (d *GHDetector) Detect() ([]Entry, error) {
 		// Parse the YAML.
 		var hosts ghHostsFile
 		if err := yaml.Unmarshal(data, &hosts); err != nil {
-			return nil, fmt.Errorf("gh: parsing hosts file: %w", err)
+			// Malformed YAML: emit ambiguous so the user can see why we can't
+			// route through gh. Don't return error to the orchestrator (which
+			// drops it).
+			return []Entry{{
+				ID:          ghCLIEntryID,
+				Kind:        KindCLIOAuth,
+				Provider:    ghProvider,
+				Tool:        ghTool,
+				State:       StateAmbiguous,
+				Source:      Source{File: ghHostsPath, KeychainService: ghKeychainService},
+				Notes:       []string{fmt.Sprintf("hosts.yml malformed: %v", err)},
+				Remediation: "Backup and re-run: gh auth login",
+			}}, nil
 		}
 
 		hostEntry, ok := hosts[ghHost]

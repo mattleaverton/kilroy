@@ -2,7 +2,6 @@ package auth
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -217,6 +216,15 @@ func TestGeminiDetector_APIKeyMode_GeminiKeyFile(t *testing.T) {
 	}
 }
 
+// TestGeminiDetector_APIKeyMode_EnvVar verifies that GeminiDetector does NOT
+// emit env-var entries — that's EnvVarDetector's job, and emitting them here
+// produces visually-identical duplicates that the orchestrator's dedup logic
+// only partially handled (and got wrong when both GEMINI_API_KEY and
+// GOOGLE_API_KEY were set, since both names would collide on a single ID).
+//
+// When env var is set and ~/.gemini_key is absent, GeminiDetector emits no
+// entries; EnvVarDetector handles the env var; cross-detector shadowing in
+// list.go links them at orchestration time.
 func TestGeminiDetector_APIKeyMode_EnvVar(t *testing.T) {
 	_, cleanup := setupGeminiPaths(t)
 	defer cleanup()
@@ -230,23 +238,11 @@ func TestGeminiDetector_APIKeyMode_EnvVar(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should have env entry (ok) + missing api_key entry... 
-	// Actually per spec: "~/.gemini_key absent + env var set → ok via env"
-	// but our impl also adds a missing entry for the key file since no file is found.
-	// Let's look for an env entry with state ok.
-	var envEntry *Entry
-	for i := range entries {
-		if entries[i].Kind == KindEnvVar {
-			envEntry = &entries[i]
+	for _, e := range entries {
+		if e.Kind == KindEnvVar {
+			t.Errorf("GeminiDetector must not emit KindEnvVar entries (EnvVarDetector handles those); got %+v", e)
 		}
 	}
-	if envEntry == nil {
-		t.Fatalf("want an env_var entry, got entries: %+v", entries)
-	}
-	if envEntry.State != StateOK {
-		t.Errorf("want env entry state=ok, got %q", envEntry.State)
-	}
-	fmt.Printf("entries: %+v\n", entries)
 }
 
 func TestGeminiDetector_MalformedOAuthCreds(t *testing.T) {

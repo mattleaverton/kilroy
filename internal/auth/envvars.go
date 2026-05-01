@@ -81,14 +81,19 @@ func (d *EnvVarDetector) Detect() ([]Entry, error) {
 			}
 		}
 
+		var remediation string
+		if state == StateAmbiguous {
+			remediation = fmt.Sprintf("Verify the value of %s; expected prefix not recognized. Re-export the var with a valid key.", spec.name)
+		}
 		entries = append(entries, Entry{
-			ID:       fmt.Sprintf("%s.env.%s", spec.provider, spec.name),
-			Kind:     KindEnvVar,
-			Provider: spec.provider,
-			Tool:     "",
-			State:    state,
-			Source:   Source{EnvVar: spec.name},
-			Notes:    notes,
+			ID:          fmt.Sprintf("%s.env.%s", spec.provider, spec.name),
+			Kind:        KindEnvVar,
+			Provider:    spec.provider,
+			Tool:        "",
+			State:       state,
+			Source:      Source{EnvVar: spec.name},
+			Notes:       notes,
+			Remediation: remediation,
 		})
 	}
 

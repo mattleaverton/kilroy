@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,12 +64,32 @@ func (d *CursorDetector) Detect() ([]Entry, error) {
 				},
 			}, nil
 		}
-		return nil, err
+		// File present but unreadable: surface as ambiguous (not a hard error
+		// that the orchestrator drops on the floor).
+		return []Entry{{
+			ID:          "cursor.cli_oauth",
+			Kind:        KindCLIOAuth,
+			Provider:    "cursor",
+			Tool:        "cursor",
+			State:       StateAmbiguous,
+			Source:      Source{File: cfgPath},
+			Notes:       []string{fmt.Sprintf("cli-config.json unreadable: %v", err)},
+			Remediation: "Check file permissions on " + cfgPath,
+		}}, nil
 	}
 
 	var cfg cursorCLIConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		return []Entry{{
+			ID:          "cursor.cli_oauth",
+			Kind:        KindCLIOAuth,
+			Provider:    "cursor",
+			Tool:        "cursor",
+			State:       StateAmbiguous,
+			Source:      Source{File: cfgPath},
+			Notes:       []string{fmt.Sprintf("cli-config.json malformed: %v", err)},
+			Remediation: "Re-login in the Cursor app to regenerate cli-config.json",
+		}}, nil
 	}
 
 	email := cfg.AuthInfo.Email

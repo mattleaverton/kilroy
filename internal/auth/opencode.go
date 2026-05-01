@@ -123,13 +123,14 @@ func providerFromURL(url string) string {
 func ambiguousEntry(dbPath, note string) []Entry {
 	return []Entry{
 		{
-			ID:       "unknown.opencode.account",
-			Kind:     KindCLIOAuth,
-			Provider: "unknown",
-			Tool:     "opencode",
-			State:    StateAmbiguous,
-			Source:   Source{File: dbPath},
-			Notes:    []string{note},
+			ID:          "unknown.opencode.account",
+			Kind:        KindCLIOAuth,
+			Provider:    "unknown",
+			Tool:        "opencode",
+			State:       StateAmbiguous,
+			Source:      Source{File: dbPath},
+			Notes:       []string{note},
+			Remediation: "OpenCode DB schema may have changed; report at https://github.com/danshapiro/kilroy/issues. As a workaround, set provider env vars (ANTHROPIC_API_KEY, OPENAI_API_KEY).",
 		},
 	}
 }

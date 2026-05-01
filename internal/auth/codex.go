@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -96,13 +97,14 @@ func parseCodexAuth(data []byte, filePath string) Entry {
 	var f codexFile
 	if err := json.Unmarshal(data, &f); err != nil {
 		return Entry{
-			ID:       cliID,
-			Kind:     KindCLIOAuth,
-			Provider: "openai",
-			Tool:     "codex",
-			State:    StateAmbiguous,
-			Source:   Source{File: filePath},
-			Notes:    []string{"malformed JSON in auth file"},
+			ID:          cliID,
+			Kind:        KindCLIOAuth,
+			Provider:    "openai",
+			Tool:        "codex",
+			State:       StateAmbiguous,
+			Source:      Source{File: filePath},
+			Notes:       []string{"malformed JSON in auth file"},
+			Remediation: "Backup and re-run: codex (regenerates auth.json)",
 		}
 	}
 
@@ -113,15 +115,34 @@ func parseCodexAuth(data []byte, filePath string) Entry {
 		return parseCodexAPIKey(f, filePath)
 	default:
 		return Entry{
-			ID:       cliID,
-			Kind:     KindCLIOAuth,
-			Provider: "openai",
-			Tool:     "codex",
-			State:    StateAmbiguous,
-			Source:   Source{File: filePath},
-			Notes:    []string{fmt.Sprintf("unknown auth_mode: %q", f.AuthMode)},
+			ID:          cliID,
+			Kind:        KindCLIOAuth,
+			Provider:    "openai",
+			Tool:        "codex",
+			State:       StateAmbiguous,
+			Source:      Source{File: filePath},
+			Notes:       []string{fmt.Sprintf("unknown auth_mode: %q", f.AuthMode)},
+			Remediation: "Re-authenticate: codex /logout && codex",
 		}
 	}
+}
+
+// parseFlexibleTimestamp accepts the variety of timestamp formats codex
+// has used for last_refresh across versions: RFC3339, RFC3339Nano,
+// or Unix-seconds-as-string. Returns (zero, false) if none match.
+func parseFlexibleTimestamp(s string) (time.Time, bool) {
+	if s == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return time.Unix(n, 0), true
+	}
+	return time.Time{}, false
 }
 
 func parseCodexChatGPT(f codexFile, filePath string) Entry {
@@ -138,6 +159,7 @@ func parseCodexChatGPT(f codexFile, filePath string) Entry {
 	if f.Tokens.AccessToken == "" {
 		entry.State = StateAmbiguous
 		entry.Notes = []string{"missing tokens.access_token"}
+		entry.Remediation = "Re-authenticate: codex /logout && codex"
 		return entry
 	}
 
@@ -145,6 +167,7 @@ func parseCodexChatGPT(f codexFile, filePath string) Entry {
 	if err != nil {
 		entry.State = StateAmbiguous
 		entry.Notes = []string{fmt.Sprintf("cannot decode access_token JWT: %v", err)}
+		entry.Remediation = "Backup and re-run: codex (regenerates auth.json)"
 		return entry
 	}
 
@@ -185,6 +208,24 @@ func parseCodexChatGPT(f codexFile, filePath string) Entry {
 		entry.Notes = []string{"access_token expired; refresh_token available"}
 	} else {
 		entry.State = StateExpired
+		entry.Remediation = "Run: codex (triggers re-authentication)"
+	}
+
+	// Stale-session heuristic (Inv2 §4.1): an unrefreshed token whose
+	// last_refresh is >30 days old may have been revoked server-side
+	// (web logout, org rotation) without us being able to detect that.
+	// Surface this as ambiguous with a note so callers can decide.
+	if entry.State == StateOK && f.LastRefresh != "" {
+		// last_refresh format varies by codex version; try RFC3339 first,
+		// then RFC3339Nano, then fall back to a Unix-second timestamp string.
+		lastRefresh, ok := parseFlexibleTimestamp(f.LastRefresh)
+		if ok && now.Sub(lastRefresh) > 30*24*time.Hour {
+			entry.State = StateAmbiguous
+			entry.Notes = append(entry.Notes,
+				fmt.Sprintf("token not refreshed in >30 days (last_refresh=%s); may be revoked server-side",
+					lastRefresh.UTC().Format(time.RFC3339)))
+			entry.Remediation = "Verify with: codex (or codex /logout && codex)"
+		}
 	}
 
 	// Non-default orgs as profiles (state mirrors JWT validity).
@@ -223,6 +264,7 @@ func parseCodexAPIKey(f codexFile, filePath string) Entry {
 		entry.State = StateOK
 	} else {
 		entry.State = StateMissing
+		entry.Remediation = "Set OPENAI_API_KEY env var, or run: codex (re-authenticates)"
 	}
 	return entry
 }
@@ -252,7 +294,18 @@ func (d *CodexDetector) Detect() ([]Entry, error) {
 			Source:   Source{File: codexAuthPath},
 		}
 	default:
-		return nil, fmt.Errorf("codex: reading %s: %w", codexAuthPath, err)
+		// File present but unreadable: surface as ambiguous so the user
+		// can see why we can't route through codex.
+		cliEntry = Entry{
+			ID:          cliID,
+			Kind:        KindCLIOAuth,
+			Provider:    "openai",
+			Tool:        "codex",
+			State:       StateAmbiguous,
+			Source:      Source{File: codexAuthPath},
+			Notes:       []string{fmt.Sprintf("auth.json unreadable: %v", err)},
+			Remediation: "Check file permissions on " + codexAuthPath,
+		}
 	}
 
 	// Env-var override takes precedence.

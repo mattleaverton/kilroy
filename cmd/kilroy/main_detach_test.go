@@ -181,7 +181,8 @@ digraph G {
   start [shape=Mdiamond]
   t [shape=parallelogram, tool_command="sleep 1"]
   exit [shape=Msquare]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }`), 0o644)
 	return path
 }

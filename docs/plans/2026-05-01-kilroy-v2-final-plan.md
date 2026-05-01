@@ -644,9 +644,12 @@ These were real bugs visible today; they didn't need v2's reframe to land.
 
 Surfaced during Block 0 dogfooding. Commit `95637c9` tightened the validator; ~180 test files in `internal/attractor/engine/` and `cmd/kilroy/` use inline DOT graphs with unconditioned `a → exit` edges that the new validator rejects. Fix is mechanical: add `condition="outcome=success"` (or the failure-path equivalent for tests that exercise failures).
 
-- [ ] Engine test fixtures `[a-c]*_test.go` (Run A campaign).
-- [ ] Engine test fixtures `[d-m]*_test.go` (Run B campaign).
-- [ ] Engine test fixtures `[n-z]*_test.go` + cmd/kilroy testdata + preflight tests (Run C campaign).
+- [x] Engine test fixtures `[a-c]*_test.go` (Run A campaign). (commit `94b7d2c`)
+- [x] Engine test fixtures `[d-m]*_test.go` (Run B campaign + parallel_test.go reconciliation). (commit `503674c`)
+- [x] Engine test fixtures `[n-z]*_test.go` + cmd/kilroy testdata + preflight tests (Run C salvage + manual sweeps for status_json_test, wait_human_test, reliability_helpers all-conditional fixtures, provider_preflight chain-graph splits). (commit `d843ff7`)
+- [x] `cmd/kilroy/main_detach_test.go` `writeDetachGraph` fixture (caught by external review after initial Block 0.5 close-out). Subsequent commit.
+
+After this block: 182 → 2 known pre-existing failures (`TestRunWithConfig_AllowsKimiAndZai_WhenCatalogUsesOpenRouterPrefixes`, `TestRunWithConfig_PreflightPromptProbe_AllProvidersWhenGraphUsesAll`) — both kimi/zai-catalog issues already in project memory.
 
 ### Block 1: CLI surface collapse
 
@@ -683,13 +686,26 @@ Surfaced during Block 0 dogfooding. Commit `95637c9` tightened the validator; ~1
 - [ ] `kilroy policy list / show / explain` (§6.6).
 - [ ] Aliases + deprecation table (§6.5).
 
-### Block 5: Auth discovery
+### Block 5: Auth discovery — **LANDED**
 
-- [ ] Implement detection algorithm (§8.2) for the tools surveyed.
-- [ ] JSON output schema (§8.3).
-- [ ] Edge-case handling (§8.4).
-- [ ] Remediation strings and `--suggest-fix` mode (§8.5).
-- [ ] Wire resolver `reason` codes to auth-remediation lookups.
+- [x] `internal/auth/auth.go` `Detector` interface and shared types (`Entry`, `State`, `Kind`, `Identity`, `Expiry`, `Source`, `Profile`). (commit `18219b2`)
+- [x] Per-tool detectors implementing §8.2 detection algorithm: claude, codex, gh, gemini, aider, opencode, cursor, envvars. Authored as 8 parallel kilroy runs from a single HEAD with non-overlapping file scope; merged in one commit. (commit `d8026a3`)
+- [x] Orchestrator (`internal/auth/list.go`) walks all detectors, applies env-var dedupe and cross-detector shadow rules, summarizes. (commit `77d0fa4`)
+- [x] CLI: `kilroy auth list` (JSON default, `--pretty` for humans) + `kilroy auth suggest-fix [<provider>]`. (commit `77d0fa4`)
+- [x] JSON output schema per §8.3. (commit `77d0fa4`)
+- [x] Real macOS keychain probe via `security find-generic-password` wired in `keychain_darwin.go`; non-darwin keychain support is a follow-up.
+- [x] Edge-case handling per §8.4: stale tokens (codex `last_refresh` >30 days = ambiguous), partial logins (json parse failures = ambiguous), provider via two paths (env var shadows cli oauth via cross-detector linking). External review caught two real bugs that landed as fixes:
+  - Detector hard-errors that the orchestrator silently dropped — now converted to `state: ambiguous` entries with remediation strings (gh, cursor, codex, gemini).
+  - Gemini env-var emission was inconsistent with the orchestrator's dedupe; removed entirely so `EnvVarDetector` is canonical.
+- [x] Remediation strings on every non-ok entry (codex stale/missing/malformed, envvars bad-prefix, gemini malformed/unreadable, opencode ambiguous).
+- [ ] Wire resolver `reason` codes to auth-remediation lookups. **Deferred to Block 4** — the resolver doesn't exist yet; this hook lives there.
+
+Live dogfood against the dev machine produces 8 clean entries (anthropic, cursor, github, google, openai accounts via env vars + CLI OAuth + keychain entries), 7 ok / 1 ambiguous (opencode SQLite schema mismatch — separate follow-up).
+
+**Block 5 follow-ups:**
+- OpenCode SQLite schema query mismatches actual schema. Quick read of the real DB shape.
+- Linux keychain probe via libsecret / `secret-tool`. Windows via Credential Manager.
+- Gemini OAuth note rephrase: "expired; refreshable" reads weirdly when state shows OK. Cosmetic.
 
 ### Block 6: Agent-conversation untangling
 

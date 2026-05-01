@@ -59,27 +59,10 @@ func (d *GeminiDetector) Detect() ([]Entry, error) {
 		}
 	}
 
-	// Build env entry if an env var is set.
-	if hasEnvKey {
-		varNames := []string{}
-		if geminiAPIKey != "" {
-			varNames = append(varNames, "GEMINI_API_KEY")
-		}
-		if googleAPIKey != "" {
-			varNames = append(varNames, "GOOGLE_API_KEY")
-		}
-		note := fmt.Sprintf("set via env: %s", strings.Join(varNames, ", "))
-		envEntry := Entry{
-			ID:       "google.env.GEMINI_API_KEY",
-			Kind:     KindEnvVar,
-			Provider: "google",
-			Tool:     "gemini",
-			State:    StateOK,
-			Source:   Source{EnvVar: strings.Join(varNames, ",")},
-			Notes:    []string{note},
-		}
-		entries = append(entries, envEntry)
-	}
+	// Note: GEMINI_API_KEY and GOOGLE_API_KEY env-var entries are emitted by
+	// EnvVarDetector as the canonical source. We do not duplicate them here;
+	// the orchestrator's cross-detector shadow logic links them to whichever
+	// gemini cli/oauth/key-file entry we emit below.
 
 	switch authType {
 	case "oauth-personal":
@@ -126,6 +109,7 @@ func (d *GeminiDetector) detectOAuth() Entry {
 		}
 		base.State = StateAmbiguous
 		base.Notes = []string{fmt.Sprintf("could not read oauth_creds.json: %v", err)}
+		base.Remediation = "Check file permissions on " + geminiOAuthPath
 		return base
 	}
 
@@ -133,6 +117,7 @@ func (d *GeminiDetector) detectOAuth() Entry {
 	if jsonErr := json.Unmarshal(data, &creds); jsonErr != nil {
 		base.State = StateAmbiguous
 		base.Notes = []string{"malformed oauth_creds.json"}
+		base.Remediation = "Backup and re-run: gemini auth login"
 		return base
 	}
 
