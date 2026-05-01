@@ -24,6 +24,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/llm"
 	"github.com/danshapiro/kilroy/internal/llmclient"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
+	"github.com/danshapiro/kilroy/internal/policy"
 )
 
 type AgentRouter struct {
@@ -36,6 +37,23 @@ type AgentRouter struct {
 	apiOnce   sync.Once
 	apiClient *llm.Client
 	apiErr    error
+
+	// For testing: injectable policy dependencies.
+	// If nil, production defaults (policy.Load / policy.CollectMachineState) are used.
+	policyLoad    func() (*policy.Data, error)
+	policyCollect func() policy.MachineState
+}
+
+// nodeRoute holds the resolved routing information for a node.
+type nodeRoute struct {
+	provider string
+	model    string
+	backend  BackendKind
+	source   string
+
+	// Set only when resolution used a policy class.
+	classResult *policy.ResolveResult
+	className   string
 }
 
 func NewAgentRouter(cfg *RunConfigFile, catalog *modeldb.Catalog) *AgentRouter {
@@ -69,32 +87,15 @@ func cloneProviderRuntimeMap(in map[string]ProviderRuntime) map[string]ProviderR
 func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
 	_ = r.catalog // used later for context window + pricing metadata
 
-	prov := normalizeProviderKey(node.Attr("llm_provider", ""))
-	if prov == "" {
-		return "", nil, fmt.Errorf("missing llm_provider on node %s", node.ID)
+	route, err := r.resolveNodeRouteInner(node, exec)
+	if err != nil {
+		return "", nil, err
 	}
-	modelID := strings.TrimSpace(node.Attr("llm_model", ""))
-	if modelID == "" {
-		// Best-effort compatibility with stylesheet examples that use "model".
-		modelID = strings.TrimSpace(node.Attr("model", ""))
-	}
-	if modelID == "" {
-		return "", nil, fmt.Errorf("missing llm_model on node %s", node.ID)
-	}
-	selectionSource := "graph_attrs"
-	if exec != nil && exec.Engine != nil {
-		if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, prov); forced {
-			if !strings.EqualFold(modelID, forcedModelID) {
-				WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, prov, forcedModelID, modelID))
-			}
-			modelID = forcedModelID
-			selectionSource = "force_model"
-		}
-	}
-	backend := r.backendForProvider(prov)
-	if backend == "" {
-		return "", nil, fmt.Errorf("no backend configured for provider %s", prov)
-	}
+
+	prov := route.provider
+	modelID := route.model
+	backend := route.backend
+	selectionSource := route.source
 
 	// CLI-only model override: force CLI backend when a model is marked
 	// CLI-only in the registry.
@@ -115,6 +116,16 @@ func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node
 			"backend":  string(backend),
 			"source":   selectionSource,
 		})
+		if route.classResult != nil {
+			exec.Engine.appendProgress(map[string]any{
+				"event":         "policy_class_resolved",
+				"node_id":       node.ID,
+				"class":         route.className,
+				"model":         route.classResult.ModelID,
+				"driver":        route.classResult.Driver,
+				"fallback_rank": route.classResult.FallbackRank,
+			})
+		}
 	}
 
 	switch backend {
@@ -125,6 +136,141 @@ func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node
 	default:
 		return "", nil, fmt.Errorf("invalid backend for provider %s: %q", prov, backend)
 	}
+}
+
+// graphNameForExec returns the graph name from the execution context, or "" if unavailable.
+func graphNameForExec(exec *Execution) string {
+	if exec == nil || exec.Engine == nil || exec.Engine.Graph == nil {
+		return ""
+	}
+	return exec.Engine.Graph.Name
+}
+
+// providerAndBackendForDriver maps a policy driver name to a (provider key, BackendKind) pair.
+// Unknown drivers return ("", "").
+func providerAndBackendForDriver(driver string) (string, BackendKind) {
+	switch driver {
+	case "claude_cli":
+		return "anthropic", BackendCLI
+	case "anthropic_sdk":
+		return "anthropic", BackendAPI
+	case "codex_cli":
+		return "openai", BackendCLI
+	case "openai_sdk":
+		return "openai", BackendAPI
+	case "google_sdk":
+		return "google", BackendAPI
+	default:
+		return "", ""
+	}
+}
+
+// resolveNodeRouteInner resolves the full routing info for a node, including
+// an optional policy.ResolveResult when the node carries a class= attribute.
+func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
+	className := strings.TrimSpace(node.Attr("class", ""))
+	if className != "" {
+		// Load policy data.
+		loadFn := r.policyLoad
+		if loadFn == nil {
+			loadFn = policy.Load
+		}
+		data, err := loadFn()
+		if err != nil {
+			return nodeRoute{}, fmt.Errorf("policy load: %w", err)
+		}
+
+		// Collect machine state.
+		collectFn := r.policyCollect
+		if collectFn == nil {
+			collectFn = policy.CollectMachineState
+		}
+		state := collectFn()
+
+		res, err := policy.Resolve(policy.ResolveRequest{
+			ClassID:    className,
+			NodeID:     node.ID,
+			WorkflowID: graphNameForExec(exec),
+		}, data, state)
+		if err != nil {
+			return nodeRoute{}, fmt.Errorf("policy resolve %q: %w", className, err)
+		}
+
+		prov, be := providerAndBackendForDriver(res.Driver)
+		if prov == "" {
+			return nodeRoute{}, fmt.Errorf("policy resolve %q: unknown driver %q", className, res.Driver)
+		}
+
+		modelID := res.ModelID
+		source := "policy_class:" + className
+
+		// Apply force-model override when the resolved provider matches.
+		if exec != nil && exec.Engine != nil {
+			if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, prov); forced {
+				if !strings.EqualFold(modelID, forcedModelID) {
+					WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, prov, forcedModelID, modelID))
+				}
+				modelID = forcedModelID
+				source = "force_model"
+			}
+		}
+
+		return nodeRoute{
+			provider:    prov,
+			model:       modelID,
+			backend:     be,
+			source:      source,
+			classResult: &res,
+			className:   className,
+		}, nil
+	}
+
+	// Fallback: use stylesheet attributes (llm_provider / llm_model).
+	prov := normalizeProviderKey(node.Attr("llm_provider", ""))
+	if prov == "" {
+		return nodeRoute{}, fmt.Errorf("missing llm_provider on node %s", node.ID)
+	}
+	modelID := strings.TrimSpace(node.Attr("llm_model", ""))
+	if modelID == "" {
+		// Best-effort compatibility with stylesheet examples that use "model".
+		modelID = strings.TrimSpace(node.Attr("model", ""))
+	}
+	if modelID == "" {
+		return nodeRoute{}, fmt.Errorf("missing llm_model on node %s", node.ID)
+	}
+
+	source := "graph_attrs"
+	if exec != nil && exec.Engine != nil {
+		if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, prov); forced {
+			if !strings.EqualFold(modelID, forcedModelID) {
+				WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, prov, forcedModelID, modelID))
+			}
+			modelID = forcedModelID
+			source = "force_model"
+		}
+	}
+
+	be := r.backendForProvider(prov)
+	if be == "" {
+		return nodeRoute{}, fmt.Errorf("no backend configured for provider %s", prov)
+	}
+
+	return nodeRoute{
+		provider: prov,
+		model:    modelID,
+		backend:  be,
+		source:   source,
+	}, nil
+}
+
+// resolveNodeRoute resolves the provider, model, backend, and selection source for a node.
+// It is the unit-testable entry point for the routing logic.
+func (r *AgentRouter) resolveNodeRoute(node *model.Node, exec *Execution) (provider string, model string, backend BackendKind, source string, err error) {
+	route, err := r.resolveNodeRouteInner(node, exec)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return route.provider, route.model, route.backend, route.source, nil
 }
 
 func (r *AgentRouter) backendForProvider(provider string) BackendKind {

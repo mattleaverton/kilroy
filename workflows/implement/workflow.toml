@@ -1,0 +1,56 @@
+[workflow]
+name              = "implement"
+version           = "1"
+description       = """
+Implement a directed change in the working tree, verify it builds and passes
+targeted tests, and write a summary. Designed for kilroy's own dogfood workflow:
+the agent receives a tightly-scoped prompt + optional context_files + optional
+verify_command, makes the change, and the verify stage runs build+test before
+the summary stage finalizes result.md.
+"""
+agent_description = "Implement a directed change with build+test verification."
+author            = "kilroy v2"
+tags              = ["implementation", "dogfood", "verify"]
+graph             = "graph.dot"
+default_class     = "hard_coding"
+
+[inputs.prompt]
+type        = "string"
+required    = true
+description = "What to implement. Should be tightly scoped and specific. The agent treats this as the directive."
+
+[inputs.context_files]
+type        = "string"
+required    = false
+default     = ""
+description = "Newline-separated absolute paths to files the agent should read for context. Optional; the agent may read more on its own."
+
+[inputs.verify_command]
+type        = "string"
+required    = false
+default     = "go build ./... && go test ./... -timeout 60s"
+description = "Shell command run by the verify stage. Default builds and runs targeted tests; override for non-Go projects."
+
+[inputs.scope_directive]
+type        = "string"
+required    = false
+default     = ""
+description = "Hard scope guardrail to render into the agent's system prompt. Examples: 'touch only internal/auth/'. Empty string means no extra scope guard beyond the prompt."
+
+[outputs.result]
+type        = "path"
+description = "Path to the summary file (result.md). Always produced."
+
+[outputs.diff_summary]
+type        = "string"
+optional    = true
+description = "One-line summary of files changed and total lines added/removed."
+
+[side_effects]
+mutates_git    = true
+writes_files   = true
+network_egress = true
+idempotent     = false
+
+[nodes.agent]
+class = "hard_coding"
