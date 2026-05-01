@@ -200,7 +200,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="do task a"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -234,8 +235,8 @@ digraph G {
   worker -> good [condition="outcome=success"]
   worker -> bad  [condition="outcome=fail"]
   worker -> good
-  good -> exit
-  bad -> exit
+  good -> exit [condition="outcome=success"]
+  bad -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -267,7 +268,8 @@ digraph G {
     max_retries=2,
     tool_command="test -f .attempt && echo ok || (touch .attempt; echo fail; exit 1)"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -302,7 +304,8 @@ digraph G {
     goal_gate=true,
     tool_command="echo fail; exit 1"
   ]
-  start -> gate -> exit
+  start -> gate
+  gate -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -331,7 +334,8 @@ digraph G {
     max_retries=0,
     tool_command="test -f .attempt && echo ok || (touch .attempt; echo fail; exit 1)"
   ]
-  start -> gate -> exit
+  start -> gate
+  gate -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -360,8 +364,8 @@ digraph G {
   start -> gate
   gate -> approve [label="[A] Approve"]
   gate -> fix     [label="[F] Fix"]
-  approve -> exit
-  fix -> exit
+  approve -> exit [condition="outcome=success"]
+  fix -> exit [condition="outcome=success"]
 }
 `)
 	g, _, err := Prepare(dotSrc)
@@ -556,7 +560,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="do a"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -641,7 +646,8 @@ digraph G {
   start  [shape=Mdiamond]
   exit   [shape=Msquare]
   worker [shape=box, prompt="do work"]
-  start -> worker -> exit
+  start -> worker
+  worker -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -663,7 +669,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Implement: $goal"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `))
 	if err != nil {
@@ -692,7 +699,7 @@ digraph P {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -806,7 +813,8 @@ digraph G {
   t10 [shape=parallelogram, tool_command="echo step10"]
   t11 [shape=parallelogram, tool_command="echo step11"]
   t12 [shape=parallelogram, tool_command="echo step12"]
-  start -> t01 -> t02 -> t03 -> t04 -> t05 -> t06 -> t07 -> t08 -> t09 -> t10 -> t11 -> t12 -> exit
+  start -> t01 -> t02 -> t03 -> t04 -> t05 -> t06 -> t07 -> t08 -> t09 -> t10 -> t11 -> t12
+  t12 -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -853,7 +861,7 @@ digraph test_pipeline {
     implement -> review
     review -> done      [condition="outcome=success"]
     review -> implement [condition="outcome=fail", label="Fix"]
-    review -> done
+    review -> implement
 }
 `)
 

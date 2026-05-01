@@ -33,8 +33,8 @@ digraph G {
   start -> gate
   gate -> approve [label="[A] Approve"]
   gate -> fix     [label="[F] Fix"]
-  approve -> exit
-  fix -> exit
+  approve -> exit [condition="outcome=success"]
+  fix -> exit [condition="outcome=success"]
 }
 `)
 	g, _, err := Prepare(dot)

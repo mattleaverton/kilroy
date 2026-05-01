@@ -225,7 +225,8 @@ digraph G {
   start [shape=Mdiamond]
   a [shape=box, llm_provider="kimi", llm_model="kimi-k2.5", prompt="test"]
   exit [shape=Msquare]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }`)
 			g, _, err := Prepare(dot)
 			if err != nil {

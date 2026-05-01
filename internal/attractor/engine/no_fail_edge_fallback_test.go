@@ -45,7 +45,7 @@ digraph G {
   start -> review
   review -> exit [condition="outcome=yes"]
   review -> fix
-  fix -> exit
+  fix -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -87,7 +87,7 @@ digraph G {
   ]
   start -> review
   review -> exit [condition="outcome=yes"]
-  review -> exit
+  review -> exit [condition="outcome!=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

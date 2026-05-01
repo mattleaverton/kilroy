@@ -29,7 +29,8 @@ digraph G {
     max_retries=1,
     tool_command="test -f .attempt && echo ok || (touch .attempt; echo fail; exit 1)"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -77,7 +78,8 @@ digraph G {
     max_retries=0,
     tool_command="echo fail; exit 1"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -123,7 +125,8 @@ digraph G {
     shape=parallelogram,
     tool_command="n=$(cat .counter 2>/dev/null || echo 0); n=$((n+1)); echo $n > .counter; test $n -ge 4 && echo ok || (echo fail; exit 1)"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -166,7 +169,8 @@ digraph G {
     allow_partial=true,
     tool_command="echo fail; exit 1"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

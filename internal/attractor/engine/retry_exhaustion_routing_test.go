@@ -33,9 +33,10 @@ digraph G {
     shape=parallelogram,
     tool_command="echo fail > routed.txt"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome!=fail"]
   t -> fail_route [condition="outcome=fail"]
-  fail_route -> exit
+  fail_route -> exit [condition="outcome=success"]
 }
 `)
 

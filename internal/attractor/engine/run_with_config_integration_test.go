@@ -55,7 +55,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -90,7 +91,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -136,7 +138,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -327,7 +330,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -458,7 +462,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -709,7 +714,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, reasoning_effort=low, auto_status=true, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -768,7 +774,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, agent_mode=one_shot, auto_status=true, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -827,7 +834,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-unknown-dot-a, agent_mode=one_shot, auto_status=true, prompt="say hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -895,7 +903,7 @@ digraph G {
   a -> fix  [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
   a -> fix
-  fix -> exit
+  fix -> exit [condition="outcome=success"]
 }
 `)
 

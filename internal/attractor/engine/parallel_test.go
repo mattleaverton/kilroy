@@ -98,7 +98,7 @@ digraph P {
   par -> b
   a -> synth
   b -> synth
-  synth -> exit
+  synth -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

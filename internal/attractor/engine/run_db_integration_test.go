@@ -31,7 +31,8 @@ func TestRunDB_ToolGraphRecordsLifecycleEvents(t *testing.T) {
   step_a [shape=parallelogram, tool_command="echo step_a_ok"]
   step_b [shape=parallelogram, tool_command="echo step_b_ok"]
   done [shape=Msquare]
-  start -> step_a -> step_b -> done
+  start -> step_a -> step_b
+  step_b -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

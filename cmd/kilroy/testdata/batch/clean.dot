@@ -2,5 +2,6 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   work  [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
-  start -> work -> exit
+  start -> work
+  work -> exit [condition="outcome=success"]
 }

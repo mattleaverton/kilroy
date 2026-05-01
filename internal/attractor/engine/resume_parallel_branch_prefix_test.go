@@ -35,7 +35,7 @@ digraph P {
   par -> b
   a -> join
   b -> join
-  join -> exit
+  join -> exit [condition="outcome=success"]
 }
 `)
 

@@ -9,7 +9,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Goal is: $goal"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `))
 	if err != nil {
@@ -27,7 +28,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   verify [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Lint changed files: git diff --name-only $base_sha | xargs eslint"]
-  start -> verify -> exit
+  start -> verify
+  verify -> exit [condition="outcome=success"]
 }
 `))
 	if err != nil {
@@ -54,7 +56,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Check $base_sha here"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `))
 	if err != nil {

@@ -41,7 +41,7 @@ digraph G {
   source -> branch_b
   branch_a -> synth
   branch_b -> synth
-  synth -> exit
+  synth -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

@@ -126,7 +126,8 @@ func TestToolHandler_UsesBaseNodeEnv(t *testing.T) {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   check [shape=parallelogram, tool_command="bash -c 'echo CLAUDECODE=$CLAUDECODE; echo CARGO_TARGET_DIR=$CARGO_TARGET_DIR'"]
-  start -> check -> exit
+  start -> check
+  check -> exit [condition="outcome=success"]
 }`)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

@@ -60,7 +60,7 @@ digraph G {
   a -> fix [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
   a -> fix
-  fix -> exit
+  fix -> exit [condition="outcome=success"]
 }
 `)
 
@@ -139,7 +139,8 @@ digraph G {
 
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="do the thing"]
 
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 
@@ -243,7 +244,7 @@ digraph G {
   a -> fix [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
   a -> fix
-  fix -> exit
+  fix -> exit [condition="outcome=success"]
 }
 `)
 
@@ -350,7 +351,7 @@ digraph G {
   a -> fix [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
   a -> fix
-  fix -> exit
+  fix -> exit [condition="outcome=success"]
 }
 `)
 
@@ -448,7 +449,8 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="do the thing"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 

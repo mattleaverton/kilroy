@@ -341,7 +341,9 @@ digraph G {
   a [shape=box, llm_provider="kimi", llm_model="kimi-k2.5", prompt="x"]
   b [shape=box, llm_provider="zai", llm_model="glm-4.7", prompt="x"]
   exit [shape=Msquare]
-  start -> a -> b -> exit
+  start -> a
+  a -> b [condition="outcome=success"]
+  b -> exit [condition="outcome=success"]
 }
 `)
 
@@ -1031,7 +1033,8 @@ digraph G {
   start [shape=Mdiamond]
   a [shape=box, llm_provider="openai", llm_model="gpt-5.4", agent_mode="one_shot", prompt="x"]
   exit [shape=Msquare]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `)
 	logsRoot := t.TempDir()
@@ -1436,7 +1439,12 @@ digraph G {
   n4 [shape=box, llm_provider="kimi", llm_model="kimi-k2.5", prompt="x"]
   n5 [shape=box, llm_provider="zai", llm_model="glm-4.7", prompt="x"]
   exit [shape=Msquare]
-  start -> n1 -> n2 -> n3 -> n4 -> n5 -> exit
+  start -> n1
+  n1 -> n2 [condition="outcome=success"]
+  n2 -> n3 [condition="outcome=success"]
+  n3 -> n4 [condition="outcome=success"]
+  n4 -> n5 [condition="outcome=success"]
+  n5 -> exit [condition="outcome=success"]
 }
 `)
 

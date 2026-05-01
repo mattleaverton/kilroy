@@ -30,7 +30,8 @@ func TestWorkspace_ToolCommandRunsInWorkspace(t *testing.T) {
   start [shape=Mdiamond]
   check [shape=parallelogram, tool_command="cat workspace-marker.txt"]
   done [shape=Msquare]
-  start -> check -> done
+  start -> check
+  check -> done [condition="outcome=success"]
 }`)
 	_ = os.WriteFile(filepath.Join(graphDir, "graph.dot"), dot, 0o644)
 

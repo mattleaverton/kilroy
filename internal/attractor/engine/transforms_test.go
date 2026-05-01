@@ -168,7 +168,8 @@ digraph G {
   start [shape=Mdiamond]
   build [shape=box, prompt_file="p.md", llm_provider=openai, llm_model=gpt-5.4]
   exit [shape=Msquare]
-  start -> build -> exit
+  start -> build
+  build -> exit [condition="outcome=success"]
 }
 `)
 	g, _, err := PrepareWithOptions(dotSrc, PrepareOptions{RepoPath: dir})
@@ -197,7 +198,8 @@ digraph G {
   start [shape=Mdiamond]
   build [shape=box, prompt_file="nonexistent.txt", llm_provider=openai, llm_model=gpt-5.4]
   exit  [shape=Msquare]
-  start -> build -> exit
+  start -> build
+  build -> exit [condition="outcome=success"]
 }
 `)
 	_, _, err := PrepareWithOptions(dotSrc, PrepareOptions{RepoPath: dir})
@@ -227,7 +229,8 @@ digraph G {
   start [shape=Mdiamond]
   build [shape=box, prompt="inline text", prompt_file="extra.md", llm_provider=openai, llm_model=gpt-5.4]
   exit  [shape=Msquare]
-  start -> build -> exit
+  start -> build
+  build -> exit [condition="outcome=success"]
 }
 `)
 	_, _, err := PrepareWithOptions(dotSrc, PrepareOptions{RepoPath: dir})

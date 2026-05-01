@@ -30,7 +30,8 @@ digraph G {
   b [shape=box, llm_provider=openai, llm_model=gpt-5.4, fidelity=full, prompt="b"]
   c [shape=box, llm_provider=openai, llm_model=gpt-5.4, fidelity=full, prompt="c"]
 
-  start -> a -> b -> c -> exit
+  start -> a -> b -> c
+  c -> exit [condition="outcome=success"]
 }
 `)
 

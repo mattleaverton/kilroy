@@ -41,7 +41,6 @@ digraph G {
   a [shape=box, llm_provider="openai", llm_model="gpt-5.4", prompt="do work", max_retries="3"]
   start -> a
   a -> exit [condition="outcome=success"]
-  a -> exit
 }
 `)
 
@@ -145,7 +144,7 @@ digraph G {
   exit  [shape=Msquare]
   verify_browser [shape=parallelogram, max_retries="1", tool_command="echo 'page.goto failed: net::ERR_INTERNET_DISCONNECTED' >&2; exit 1"]
   start -> verify_browser
-  verify_browser -> exit
+  verify_browser -> exit [condition="outcome=success"]
 }
 `)
 

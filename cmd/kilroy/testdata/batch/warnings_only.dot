@@ -2,5 +2,6 @@ digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
   work  [shape=box, llm_provider=openai, llm_model=gpt-5.4]
-  start -> work -> exit
+  start -> work
+  work -> exit [condition="outcome=success"]
 }

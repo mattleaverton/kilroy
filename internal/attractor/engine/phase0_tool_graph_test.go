@@ -29,7 +29,8 @@ func TestToolGraph_Linear(t *testing.T) {
   step_b [shape=parallelogram, tool_command="echo step_b_done"]
   step_c [shape=parallelogram, tool_command="echo step_c_done"]
   done [shape=Msquare]
-  start -> step_a -> step_b -> step_c -> done
+  start -> step_a -> step_b -> step_c
+  step_c -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -123,7 +124,7 @@ func TestToolGraph_Conditional(t *testing.T) {
   done [shape=Msquare]
   start -> process -> check
   check -> path_a
-  path_a -> done
+  path_a -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -164,7 +165,8 @@ func TestToolGraph_FailFast(t *testing.T) {
   start [shape=Mdiamond]
   failing_step [shape=parallelogram, tool_command="echo 'something went wrong' >&2; exit 1"]
   done [shape=Msquare]
-  start -> failing_step -> done
+  start -> failing_step
+  failing_step -> done [condition="outcome!=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -207,7 +209,8 @@ func TestToolGraph_NoCXDBConfig(t *testing.T) {
   start [shape=Mdiamond]
   step [shape=parallelogram, tool_command="echo works_without_cxdb"]
   done [shape=Msquare]
-  start -> step -> done
+  start -> step
+  step -> done [condition="outcome=success"]
 }`)
 	// Config with NO CXDB section at all
 	cfg := &RunConfigFile{}
@@ -246,7 +249,8 @@ func TestToolGraph_WorkspaceLifecycle(t *testing.T) {
   work [shape=parallelogram, tool_command="cat workspace/state.txt && echo work_done >> workspace/state.txt"]
   verify [shape=parallelogram, tool_command="grep -q work_done workspace/state.txt"]
   done [shape=Msquare]
-  start -> setup -> work -> verify -> done
+  start -> setup -> work -> verify
+  verify -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -275,7 +279,8 @@ func TestToolGraph_ZeroConfig(t *testing.T) {
   start [shape=Mdiamond]
   step_a [shape=parallelogram, tool_command="echo hello_zero_config"]
   done [shape=Msquare]
-  start -> step_a -> done
+  start -> step_a
+  step_a -> done [condition="outcome=success"]
 }`)
 
 	// Build a config the same way DefaultRunConfig does, but pointing at
@@ -328,7 +333,8 @@ func TestToolGraph_RunIDInjected(t *testing.T) {
   start [shape=Mdiamond]
   check [shape=parallelogram, tool_command="echo $KILROY_RUN_ID > %s"]
   done [shape=Msquare]
-  start -> check -> done
+  start -> check
+  check -> done [condition="outcome=success"]
 }`, markerFile))
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -376,7 +382,8 @@ func TestToolGraph_DirtyRepoSucceedsWithDefaultConfig(t *testing.T) {
   start [shape=Mdiamond]
   step [shape=parallelogram, tool_command="echo dirty_repo_ok"]
   done [shape=Msquare]
-  start -> step -> done
+  start -> step
+  step -> done [condition="outcome=success"]
 }`)
 	// Config does NOT set require_clean — the default (false) should allow the run.
 	cfg := minimalToolGraphConfig(repo, pinned)
@@ -408,7 +415,8 @@ func TestToolGraph_PartialConfigAutoDetectsProviders(t *testing.T) {
   start [shape=Mdiamond]
   step [shape=parallelogram, tool_command="echo partial_config_ok"]
   done [shape=Msquare]
-  start -> step -> done
+  start -> step
+  step -> done [condition="outcome=success"]
 }`)
 	// Config with repo.path and pinned catalog but NO providers section.
 	// Auto-detection should fill in anthropic from ANTHROPIC_API_KEY.
@@ -481,8 +489,8 @@ func TestToolGraph_PredecessorEnvVars(t *testing.T) {
   done  [shape=Msquare]
   start -> a
   a -> b    [condition="outcome=fail"]
-  a -> done
-  b -> done
+  a -> b
+  b -> done [condition="outcome=success"]
 }`, outFile))
 
 	cfg := minimalToolGraphConfig(repo, pinned)
@@ -535,7 +543,8 @@ func TestToolGraph_PredecessorEnvVarsSuccessPath(t *testing.T) {
   start [shape=Mdiamond]
   check [shape=parallelogram, tool_command="printf '%%s\n%%s\n' \"$KILROY_PREDECESSOR_NODE\" \"$KILROY_PREDECESSOR_OUTCOME\" > %s"]
   done  [shape=Msquare]
-  start -> check -> done
+  start -> check
+  check -> done [condition="outcome=success"]
 }`, outFile))
 
 	cfg := minimalToolGraphConfig(repo, pinned)

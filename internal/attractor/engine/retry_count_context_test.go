@@ -163,7 +163,8 @@ digraph G {
     shape=parallelogram,
     tool_command="echo ok"
   ]
-  start -> t -> exit
+  start -> t
+  t -> exit [condition="outcome=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

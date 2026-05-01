@@ -71,7 +71,8 @@ func TestOutputContract_Integration_CollectsAfterRun(t *testing.T) {
   start [shape=Mdiamond]
   produce [shape=parallelogram, tool_command="echo output_data > result.txt"]
   done [shape=Msquare]
-  start -> produce -> done
+  start -> produce
+  produce -> done [condition="outcome=success"]
 }`)
 	cfg := minimalToolGraphConfig(repo, pinned)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

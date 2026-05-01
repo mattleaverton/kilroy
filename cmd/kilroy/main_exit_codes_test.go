@@ -725,7 +725,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `), 0o644)
 
@@ -963,7 +964,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `), 0o644)
 
@@ -1013,7 +1015,8 @@ digraph G {
   start [shape=Mdiamond]
   exit [shape=Msquare]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="hi"]
-  start -> a -> exit
+  start -> a
+  a -> exit [condition="outcome=success"]
 }
 `), 0o644)
 

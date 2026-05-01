@@ -90,10 +90,9 @@ digraph G {
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="write status"]
   fix [shape=parallelogram, tool_command="echo fixed > fixed.txt"]
   start -> a
-  a -> fix [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
-  a -> exit
-  fix -> exit
+  a -> fix
+  fix -> exit [condition="outcome=success"]
 }
 `)
 
@@ -251,10 +250,9 @@ digraph G {
   a [shape=diamond, type="cancel_fixture"]
   b [shape=parallelogram, tool_command="echo after-cancel > after_cancel.txt"]
   start -> a
-  a -> b [condition="outcome=fail"]
-  a -> exit
+  a -> exit [condition="outcome=success"]
+  a -> b
   b -> exit [condition="outcome=success"]
-  b -> exit
 }
 `)
 	eng := newReliabilityFixtureEngine(t, repo, logsRoot, "subgraph-cancel-fixture", dot)
@@ -307,12 +305,10 @@ digraph G {
   a [shape=diamond, type="det_cycle_fixture"]
   b [shape=diamond, type="det_cycle_fixture"]
   start -> a
-  a -> b [condition="outcome=fail"]
-  b -> a [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
   b -> exit [condition="outcome=success"]
-  a -> exit
-  b -> exit
+  a -> b
+  b -> a
 }
 `)
 	eng := newReliabilityFixtureEngine(t, repo, logsRoot, "subgraph-cycle-fixture", dot)
@@ -335,12 +331,10 @@ digraph G {
   a [shape=diamond, type="canceled_cycle_fixture"]
   b [shape=diamond, type="canceled_cycle_fixture"]
   start -> a
-  a -> b [condition="outcome=fail"]
-  b -> a [condition="outcome=fail"]
   a -> exit [condition="outcome=success"]
   b -> exit [condition="outcome=success"]
-  a -> exit
-  b -> exit
+  a -> b
+  b -> a
 }
 `)
 	eng := newReliabilityFixtureEngine(t, repo, logsRoot, "subgraph-canceled-cycle-fixture", dot)
