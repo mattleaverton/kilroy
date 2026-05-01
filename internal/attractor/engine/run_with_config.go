@@ -39,6 +39,9 @@ type runBootstrap struct {
 func RunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfigFile, overrides RunOptions) (*Result, error) {
 	boot, err := bootstrapRunWithConfig(ctx, dotSource, cfg, overrides)
 	if err != nil {
+		// Without this, detached runs whose bootstrap fails leave a
+		// status=running DB row and no final.json (plan §13.1).
+		persistBootstrapFailure(overrides.LogsRoot, overrides.RunID, overrides.RunDB, err)
 		return nil, err
 	}
 	defer closeRunBootstrapResources(boot)
