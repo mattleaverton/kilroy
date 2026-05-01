@@ -1,0 +1,76 @@
+# Kilroy v2 routing policy.
+# Embedded at build time via //go:embed in internal/policy/policy.go.
+# Read-only at runtime: no per-machine override, no remote fetch.
+# Updates are normal repo PRs reviewed like code.
+#
+# Workflows reference these classes by name (e.g. class="hard_coding")
+# instead of naming concrete providers/models. The resolver walks each
+# class's chain in order, picking the first candidate whose auth
+# requirement passes the machine-state check (see internal/auth).
+
+schema_version = "1"
+policy_version = "2.0.0"
+
+# ══════════════════════════════════════════════════════════════════
+# CLASS: hard_coding
+# Complex, multi-file coding tasks needing deep chain-of-thought.
+# Opus 4.7 first: 1 M-token context handles entire repos without
+# chunking. Subscription (CLI) beats API key to cap runaway cost on
+# long agent loops. GPT-5 is the cross-provider escape hatch; Sonnet
+# 4.6 is the affordable safety net.
+# ══════════════════════════════════════════════════════════════════
+[classes.hard_coding]
+description = "Maximum reasoning depth for complex multi-file coding tasks."
+
+  [[classes.hard_coding.chain]]
+  model_id     = "claude-opus-4-7"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:elite"]
+    [classes.hard_coding.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.hard_coding.chain]]
+  model_id     = "claude-opus-4-7"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite"]
+    [classes.hard_coding.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+  [[classes.hard_coding.chain]]
+  model_id     = "gpt-5"
+  driver       = "openai_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite", "cross_provider"]
+    [classes.hard_coding.chain.auth]
+    kind    = "env_var"
+    env_var = "OPENAI_API_KEY"
+
+  [[classes.hard_coding.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "claude_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:mid"]
+    [classes.hard_coding.chain.auth]
+    kind = "cli_session"
+    cli  = "claude"
+
+  [[classes.hard_coding.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:mid"]
+    [classes.hard_coding.chain.auth]
+    kind    = "env_var"
+    env_var = "ANTHROPIC_API_KEY"
+
+# Additional classes (quick_easy, deep_investigation, frontend_aesthetic,
+# architectural_critique) are added by Block 4 Step 2.
