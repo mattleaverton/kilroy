@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
+	"github.com/danshapiro/kilroy/internal/attractor/procutil"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 )
 
@@ -38,7 +40,7 @@ func runsUsage() {
 	fmt.Fprintln(os.Stderr, "  kilroy attractor runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]")
+	fmt.Fprintln(os.Stderr, "  kilroy attractor runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--zombies] [--dry-run | --yes] [--json]")
 }
 
 // runManifest is the subset of manifest.json fields we care about for list/prune.
@@ -342,12 +344,18 @@ func attractorRunsPrune(args []string) {
 	var graphPattern string
 	var labelFilter string
 	var orphansOnly bool
+	var zombies bool
+	var asJSON bool
 	dryRun := true
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--orphans":
 			orphansOnly = true
+		case "--zombies":
+			zombies = true
+		case "--json":
+			asJSON = true
 		case "--before":
 			i++
 			if i >= len(args) {
@@ -385,6 +393,12 @@ func attractorRunsPrune(args []string) {
 			runsUsage()
 			os.Exit(1)
 		}
+	}
+
+	// --zombies mode: mark orphaned running runs as failed.
+	if zombies {
+		pruneZombies(dryRun, asJSON)
+		return
 	}
 
 	// Parse --older-than duration (e.g. 7d, 24h, 30m).
@@ -541,6 +555,216 @@ func pruneFromDB(beforeTime time.Time, graphPattern, labelKey, labelVal string, 
 	}
 	fmt.Printf("%d run(s) pruned from database.\n", n)
 	return true
+}
+
+// --- zombie prune ---
+
+// zombieRunInfo holds a detected zombie run with its PID and diagnosis.
+type zombieRunInfo struct {
+	Run    rundb.RunSummary
+	PID    int
+	Reason string
+}
+
+// pruneZombies detects runs with status=running whose PID is dead (or recycled)
+// and marks them as failed with failure_reason=orphan_detected.
+//
+// Conservative heuristic for "is this pid actually a kilroy worker":
+//  1. PID not alive → definitely orphaned.
+//  2. PID alive AND cmdline contains "kilroy" → not an orphan (leave alone).
+//  3. PID alive AND cmdline does NOT contain "kilroy" AND run.pid mtime > 10 min
+//     → pid was recycled by another process; treat as orphan.
+//  4. PID alive AND cmdline does NOT contain "kilroy" AND run.pid mtime ≤ 10 min
+//     → be conservative, skip (might be a brand-new start).
+//  5. No valid run.pid → skip (cannot determine state; leave alone).
+//
+// False positives (marking a live kilroy run as failed) are worse than missed
+// cleanups, so when in doubt we do nothing.
+func pruneZombies(dryRun, asJSON bool) {
+	db, err := rundb.Open(rundb.DefaultPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "open rundb: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	runs, err := db.ListRuns(rundb.ListFilter{Status: "running"})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "list running runs: %v\n", err)
+		os.Exit(1)
+	}
+
+	var found []zombieRunInfo
+	for _, r := range runs {
+		pidPath := filepath.Join(r.LogsRoot, "run.pid")
+		pid := readPID(pidPath)
+		orphan, reason := isZombieRun(pid, pidPath)
+		if !orphan {
+			continue
+		}
+		found = append(found, zombieRunInfo{Run: r, PID: pid, Reason: reason})
+	}
+
+	if len(found) == 0 {
+		if asJSON {
+			fmt.Println("[]")
+		} else {
+			fmt.Println("no zombie runs found")
+		}
+		return
+	}
+
+	if asJSON {
+		type jsonRecord struct {
+			RunID    string `json:"run_id"`
+			PID      int    `json:"pid"`
+			Reason   string `json:"reason"`
+			Mutated  bool   `json:"mutated"`
+			DryRun   bool   `json:"dry_run"`
+		}
+		var out []jsonRecord
+		for _, z := range found {
+			out = append(out, jsonRecord{
+				RunID:   z.Run.RunID,
+				PID:     z.PID,
+				Reason:  z.Reason,
+				Mutated: !dryRun,
+				DryRun:  dryRun,
+			})
+		}
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+	} else {
+		for _, z := range found {
+			if dryRun {
+				fmt.Printf("%s: orphaned (pid %d not alive); would mark fail\n", z.Run.RunID, z.PID)
+			} else {
+				fmt.Printf("%s: orphaned (pid %d not alive); marked fail\n", z.Run.RunID, z.PID)
+			}
+		}
+	}
+
+	if dryRun {
+		if !asJSON {
+			fmt.Printf("\n%d zombie run(s) found. Re-run with --yes to mark as failed.\n", len(found))
+		}
+		return
+	}
+
+	// Apply mutations.
+	for _, z := range found {
+		if err := db.CompleteRun(z.Run.RunID, "fail", "orphan_detected", "", nil); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: update DB: %v\n", z.Run.RunID, err)
+			continue
+		}
+		writeZombieFinalJSON(z.Run.LogsRoot, z.Run.RunID)
+		appendZombieProgressEvent(z.Run.LogsRoot, z.Run.RunID)
+	}
+	if !asJSON {
+		fmt.Printf("\n%d zombie run(s) marked as failed.\n", len(found))
+	}
+}
+
+// isZombieRun returns (true, reason) if the run identified by pid/pidPath is
+// an orphan. Returns (false, "") if the run appears to be legitimately alive
+// or if we cannot determine its state safely.
+func isZombieRun(pid int, pidPath string) (bool, string) {
+	if pid <= 0 {
+		// No valid PID file — cannot determine state; skip conservatively.
+		return false, ""
+	}
+
+	if !procutil.PIDAlive(pid) {
+		return true, fmt.Sprintf("pid %d not alive", pid)
+	}
+
+	// PID is alive. Check if it looks like a kilroy worker.
+	if pidCmdlineLooksLikeKilroy(pid) {
+		// Definitely still running. Leave it alone.
+		return false, ""
+	}
+
+	// PID is alive but cmdline doesn't match kilroy. Could be a recycled PID.
+	// Only treat as orphan if the pidfile is old enough that a recycled PID is
+	// plausible (>10 minutes). If the file is recent, be conservative.
+	info, err := os.Stat(pidPath)
+	if err != nil {
+		return false, ""
+	}
+	const staleThreshold = 10 * time.Minute
+	if time.Since(info.ModTime()) > staleThreshold {
+		return true, fmt.Sprintf("pid %d alive but not kilroy (recycled; pidfile >10m old)", pid)
+	}
+
+	// Recent pidfile + non-kilroy process: too ambiguous. Skip.
+	return false, ""
+}
+
+// pidCmdlineLooksLikeKilroy reports whether the process cmdline for the given
+// pid appears to be a kilroy worker. Returns true (conservatively) when the
+// cmdline cannot be read, to avoid false positives.
+func pidCmdlineLooksLikeKilroy(pid int) bool {
+	args, err := readPIDCmdline(pid)
+	if err != nil {
+		// Cannot read cmdline: be conservative and assume it's kilroy.
+		return true
+	}
+	if len(args) == 0 {
+		return true
+	}
+	// Match on the basename of the first argument (the executable path).
+	exe := strings.ToLower(filepath.Base(args[0]))
+	return strings.Contains(exe, "kilroy")
+}
+
+// writeZombieFinalJSON writes a final.json to logsRoot marking the run as
+// failed with failure_reason=orphan_detected. It uses the same JSON shape as
+// internal/attractor/runtime.FinalOutcome.
+func writeZombieFinalJSON(logsRoot, runID string) {
+	now := time.Now().UTC()
+	final := map[string]any{
+		"timestamp":            now.Format(time.RFC3339Nano),
+		"status":               "fail",
+		"run_id":               runID,
+		"final_git_commit_sha": "",
+		"failure_reason":       "orphan_detected",
+		"cxdb_context_id":      "",
+		"cxdb_head_turn_id":    "",
+	}
+	data, err := json.MarshalIndent(final, "", "  ")
+	if err != nil {
+		return
+	}
+	path := filepath.Join(logsRoot, "final.json")
+	_ = os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+// appendZombieProgressEvent appends a run_failed terminal event to
+// progress.ndjson, mirroring the shape emitted by the engine (commit 0d78a04).
+func appendZombieProgressEvent(logsRoot, runID string) {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	eventID := fmt.Sprintf("%x", b)
+
+	ev := map[string]any{
+		"event":  "run_failed",
+		"status": "fail",
+		"reason": "orphan_detected",
+		"id":     eventID,
+		"ts":     time.Now().UTC().Format(time.RFC3339Nano),
+		"run_id": runID,
+	}
+	line, err := json.Marshal(ev)
+	if err != nil {
+		return
+	}
+	path := filepath.Join(logsRoot, "progress.ndjson")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	_, _ = f.Write(append(line, '\n'))
+	_ = f.Close()
 }
 
 // --- show ---
