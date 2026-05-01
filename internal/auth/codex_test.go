@@ -1,0 +1,260 @@
+package auth
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// makeTestJWT builds a minimal unsigned JWT with the given exp and optional
+// organizations array. The third segment is a dummy signature.
+func makeTestJWT(exp int64, orgs []jwtOrg) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
+	type payload struct {
+		Exp           int64    `json:"exp"`
+		Organizations []jwtOrg `json:"organizations,omitempty"`
+	}
+	p := payload{Exp: exp, Organizations: orgs}
+	pb, _ := json.Marshal(p)
+	return header + "." + base64.RawURLEncoding.EncodeToString(pb) + ".fakesig"
+}
+
+// writeCodexAuth writes a codex auth JSON file to dir and returns its path.
+func writeCodexAuth(t *testing.T, dir string, content map[string]interface{}) string {
+	t.Helper()
+	path := filepath.Join(dir, "auth.json")
+	data, err := json.Marshal(content)
+	if err != nil {
+		t.Fatalf("marshal auth content: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatalf("write auth file: %v", err)
+	}
+	return path
+}
+
+func TestCodexDetector(t *testing.T) {
+	d := NewCodexDetector()
+	if d.Name() != "codex" {
+		t.Fatalf("Name() = %q, want %q", d.Name(), "codex")
+	}
+
+	t.Run("no_file_no_env_missing", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "") // clear any ambient env var
+		dir := t.TempDir()
+		orig := codexAuthPath
+		codexAuthPath = filepath.Join(dir, "auth.json") // file does not exist
+		t.Cleanup(func() { codexAuthPath = orig })
+
+		entries, err := d.Detect()
+		if err != nil {
+			t.Fatalf("Detect() error: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		if entries[0].State != StateMissing {
+			t.Errorf("state = %q, want %q", entries[0].State, StateMissing)
+		}
+	})
+
+	t.Run("chatgpt_valid_jwt_ok", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "") // clear any ambient env var
+		dir := t.TempDir()
+		futureExp := time.Now().Add(time.Hour).Unix()
+		token := makeTestJWT(futureExp, nil)
+
+		path := writeCodexAuth(t, dir, map[string]interface{}{
+			"auth_mode": "chatgpt",
+			"tokens": map[string]string{
+				"access_token":  token,
+				"refresh_token": "some-refresh-token",
+			},
+		})
+
+		orig := codexAuthPath
+		codexAuthPath = path
+		t.Cleanup(func() { codexAuthPath = orig })
+
+		entries, err := d.Detect()
+		if err != nil {
+			t.Fatalf("Detect() error: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		e := entries[0]
+		if e.State != StateOK {
+			t.Errorf("state = %q, want %q", e.State, StateOK)
+		}
+		if e.Expiry == nil {
+			t.Fatal("Expiry is nil, want populated")
+		}
+		if e.Expiry.AccessTokenExpiresAt == nil {
+			t.Error("AccessTokenExpiresAt is nil")
+		} else {
+			wantExp := time.Unix(futureExp, 0)
+			if !e.Expiry.AccessTokenExpiresAt.Equal(wantExp) {
+				t.Errorf("AccessTokenExpiresAt = %v, want %v", e.Expiry.AccessTokenExpiresAt, wantExp)
+			}
+		}
+		if !e.Expiry.RefreshTokenPresent {
+			t.Error("RefreshTokenPresent = false, want true")
+		}
+		if !e.Expiry.Refreshable {
+			t.Error("Refreshable = false, want true")
+		}
+	})
+
+	t.Run("chatgpt_expired_jwt_with_refresh_ok", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "") // clear any ambient env var
+		dir := t.TempDir()
+		pastExp := time.Now().Add(-time.Hour).Unix()
+		token := makeTestJWT(pastExp, nil)
+
+		path := writeCodexAuth(t, dir, map[string]interface{}{
+			"auth_mode": "chatgpt",
+			"tokens": map[string]string{
+				"access_token":  token,
+				"refresh_token": "present-refresh-token",
+			},
+		})
+
+		orig := codexAuthPath
+		codexAuthPath = path
+		t.Cleanup(func() { codexAuthPath = orig })
+
+		entries, err := d.Detect()
+		if err != nil {
+			t.Fatalf("Detect() error: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		e := entries[0]
+		if e.State != StateOK {
+			t.Errorf("state = %q, want %q", e.State, StateOK)
+		}
+		found := false
+		for _, n := range e.Notes {
+			if n == "access_token expired; refresh_token available" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected note about refresh_token, got notes: %v", e.Notes)
+		}
+	})
+
+	t.Run("chatgpt_expired_jwt_no_refresh_expired", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "") // clear any ambient env var
+		dir := t.TempDir()
+		pastExp := time.Now().Add(-time.Hour).Unix()
+		token := makeTestJWT(pastExp, nil)
+
+		path := writeCodexAuth(t, dir, map[string]interface{}{
+			"auth_mode": "chatgpt",
+			"tokens": map[string]string{
+				"access_token": token,
+				// no refresh_token
+			},
+		})
+
+		orig := codexAuthPath
+		codexAuthPath = path
+		t.Cleanup(func() { codexAuthPath = orig })
+
+		entries, err := d.Detect()
+		if err != nil {
+			t.Fatalf("Detect() error: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		e := entries[0]
+		if e.State != StateExpired {
+			t.Errorf("state = %q, want %q", e.State, StateExpired)
+		}
+	})
+
+	t.Run("malformed_json_ambiguous", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "") // clear any ambient env var
+		dir := t.TempDir()
+		path := filepath.Join(dir, "auth.json")
+		if err := os.WriteFile(path, []byte("{not valid json}"), 0600); err != nil {
+			t.Fatalf("write file: %v", err)
+		}
+
+		orig := codexAuthPath
+		codexAuthPath = path
+		t.Cleanup(func() { codexAuthPath = orig })
+
+		entries, err := d.Detect()
+		if err != nil {
+			t.Fatalf("Detect() error: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("got %d entries, want 1", len(entries))
+		}
+		e := entries[0]
+		if e.State != StateAmbiguous {
+			t.Errorf("state = %q, want %q", e.State, StateAmbiguous)
+		}
+	})
+
+	t.Run("env_shadows_cli", func(t *testing.T) {
+		dir := t.TempDir()
+		futureExp := time.Now().Add(time.Hour).Unix()
+		token := makeTestJWT(futureExp, nil)
+
+		path := writeCodexAuth(t, dir, map[string]interface{}{
+			"auth_mode": "chatgpt",
+			"tokens": map[string]string{
+				"access_token": token,
+			},
+		})
+
+		orig := codexAuthPath
+		codexAuthPath = path
+		t.Cleanup(func() { codexAuthPath = orig })
+
+		t.Setenv("OPENAI_API_KEY", "sk-test-key-value")
+
+		entries, err := d.Detect()
+		if err != nil {
+			t.Fatalf("Detect() error: %v", err)
+		}
+		if len(entries) != 2 {
+			t.Fatalf("got %d entries, want 2", len(entries))
+		}
+
+		envEntry := entries[0]
+		cliEntry := entries[1]
+
+		// Env entry checks.
+		if envEntry.Kind != KindEnvVar {
+			t.Errorf("entries[0].Kind = %q, want %q", envEntry.Kind, KindEnvVar)
+		}
+		if envEntry.State != StateOK {
+			t.Errorf("entries[0].State = %q, want %q", envEntry.State, StateOK)
+		}
+		if len(envEntry.Shadows) == 0 || envEntry.Shadows[0] != "openai.codex.cli" {
+			t.Errorf("entries[0].Shadows = %v, want [openai.codex.cli]", envEntry.Shadows)
+		}
+
+		// CLI entry checks.
+		if cliEntry.State != StateOK {
+			t.Errorf("entries[1].State = %q, want %q", cliEntry.State, StateOK)
+		}
+		if len(cliEntry.ShadowedBy) == 0 || cliEntry.ShadowedBy[0] != "openai.env.OPENAI_API_KEY" {
+			t.Errorf("entries[1].ShadowedBy = %v, want [openai.env.OPENAI_API_KEY]", cliEntry.ShadowedBy)
+		}
+
+		_ = fmt.Sprintf("suppress unused import") // keep fmt imported for test helpers
+	})
+}
