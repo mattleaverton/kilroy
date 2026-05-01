@@ -614,54 +614,105 @@ func pruneZombies(dryRun, asJSON bool) {
 		return
 	}
 
-	if asJSON {
-		type jsonRecord struct {
-			RunID    string `json:"run_id"`
-			PID      int    `json:"pid"`
-			Reason   string `json:"reason"`
-			Mutated  bool   `json:"mutated"`
-			DryRun   bool   `json:"dry_run"`
-		}
-		var out []jsonRecord
-		for _, z := range found {
-			out = append(out, jsonRecord{
-				RunID:   z.Run.RunID,
-				PID:     z.PID,
-				Reason:  z.Reason,
-				Mutated: !dryRun,
-				DryRun:  dryRun,
-			})
-		}
-		b, _ := json.MarshalIndent(out, "", "  ")
-		fmt.Println(string(b))
-	} else {
-		for _, z := range found {
-			if dryRun {
-				fmt.Printf("%s: orphaned (pid %d not alive); would mark fail\n", z.Run.RunID, z.PID)
-			} else {
-				fmt.Printf("%s: orphaned (pid %d not alive); marked fail\n", z.Run.RunID, z.PID)
-			}
-		}
-	}
-
+	// Dry-run: report what would happen, no mutation.
 	if dryRun {
-		if !asJSON {
+		if asJSON {
+			type jsonRecord struct {
+				RunID   string `json:"run_id"`
+				PID     int    `json:"pid"`
+				Reason  string `json:"reason"`
+				Mutated bool   `json:"mutated"`
+				DryRun  bool   `json:"dry_run"`
+			}
+			var out []jsonRecord
+			for _, z := range found {
+				out = append(out, jsonRecord{
+					RunID:   z.Run.RunID,
+					PID:     z.PID,
+					Reason:  z.Reason,
+					Mutated: false,
+					DryRun:  true,
+				})
+			}
+			b, _ := json.MarshalIndent(out, "", "  ")
+			fmt.Println(string(b))
+		} else {
+			for _, z := range found {
+				fmt.Printf("%s: orphaned (pid %d not alive); would mark fail\n", z.Run.RunID, z.PID)
+			}
 			fmt.Printf("\n%d zombie run(s) found. Re-run with --yes to mark as failed.\n", len(found))
 		}
 		return
 	}
 
-	// Apply mutations.
-	for _, z := range found {
-		if err := db.CompleteRun(z.Run.RunID, "fail", "orphan_detected", "", nil); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: update DB: %v\n", z.Run.RunID, err)
-			continue
-		}
-		writeZombieFinalJSON(z.Run.LogsRoot, z.Run.RunID)
-		appendZombieProgressEvent(z.Run.LogsRoot, z.Run.RunID)
+	// Apply mutations and report each row's actual outcome.
+	type mutationResult struct {
+		Run     zombieRunInfo
+		Mutated bool
+		Err     error
 	}
-	if !asJSON {
-		fmt.Printf("\n%d zombie run(s) marked as failed.\n", len(found))
+	results := make([]mutationResult, 0, len(found))
+	for _, z := range found {
+		err := db.CompleteRun(z.Run.RunID, "fail", "orphan_detected", "", nil)
+		if err == nil {
+			writeZombieFinalJSON(z.Run.LogsRoot, z.Run.RunID)
+			appendZombieProgressEvent(z.Run.LogsRoot, z.Run.RunID)
+		}
+		results = append(results, mutationResult{Run: z, Mutated: err == nil, Err: err})
+	}
+
+	mutatedCount := 0
+	failedCount := 0
+	for _, r := range results {
+		if r.Mutated {
+			mutatedCount++
+		} else {
+			failedCount++
+		}
+	}
+
+	if asJSON {
+		type jsonRecord struct {
+			RunID   string `json:"run_id"`
+			PID     int    `json:"pid"`
+			Reason  string `json:"reason"`
+			Mutated bool   `json:"mutated"`
+			DryRun  bool   `json:"dry_run"`
+			Error   string `json:"error,omitempty"`
+		}
+		out := make([]jsonRecord, 0, len(results))
+		for _, r := range results {
+			rec := jsonRecord{
+				RunID:   r.Run.Run.RunID,
+				PID:     r.Run.PID,
+				Reason:  r.Run.Reason,
+				Mutated: r.Mutated,
+				DryRun:  false,
+			}
+			if r.Err != nil {
+				rec.Error = r.Err.Error()
+			}
+			out = append(out, rec)
+		}
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+	} else {
+		for _, r := range results {
+			if r.Mutated {
+				fmt.Printf("%s: orphaned (pid %d not alive); marked fail\n", r.Run.Run.RunID, r.Run.PID)
+			} else {
+				fmt.Fprintf(os.Stderr, "%s: orphaned (pid %d not alive); FAILED to mark fail: %v\n", r.Run.Run.RunID, r.Run.PID, r.Err)
+			}
+		}
+		fmt.Printf("\n%d zombie run(s) marked as failed", mutatedCount)
+		if failedCount > 0 {
+			fmt.Printf("; %d failed to update", failedCount)
+		}
+		fmt.Println(".")
+	}
+
+	if failedCount > 0 {
+		os.Exit(1)
 	}
 }
 
