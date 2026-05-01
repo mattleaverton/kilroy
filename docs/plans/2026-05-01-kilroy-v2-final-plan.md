@@ -815,6 +815,14 @@ This is the workflow we use from §15.3 onwards. It's the precursor to the bless
 
 **Why build `implement` before Block 1 (CLI surface)?** It can be authored as an existing-format DOT graph + a minimal manifest in advance of the formal `workflow.toml` parser landing. We then re-author it in canonical `workflow.toml` once Block 2 lands. Building it twice is acceptable: it's cheap, it validates the format, and it gives us a tool to use in the meantime.
 
+**Status (live note):** Block 4 Steps 1–3 are landed (resolver + classes + `kilroy policy list/show/resolve`). The `implement` workflow is the next dogfood target *after* Block 4 Step 4 (engine wires the resolver into node dispatch). The pre-Step-4 form: a single workflow package at `workflows/implement/` with `class="hard_coding"` declarations on its agentic node — the engine ignores the class attribute today and uses the existing stylesheet path, but the workflow.toml is forward-compatible. When Step 4 lands, the workflow's class declaration starts driving real routing with no edits needed. Specifically:
+
+- Author `workflows/implement/{workflow.toml, graph.dot, prompts/implement.md, scripts/{stage-context.sh, verify.sh, summary.sh}}` per the topology above.
+- Graph adds the verify-fail-retry-once edge (`verify -> agent [condition="outcome=fail"]`) — quick-launch lacks this; with it, the typical "agent forgot an import" or "tiny syntax error" cases self-recover instead of needing human triage.
+- Side-effect declarations: `mutates_git: true, writes_files: true, network_egress: true, idempotent: false`.
+- Use it for Block 4 Step 4 work itself (self-referential dogfood): the implement workflow is what wires the resolver into the engine, and once Step 4 lands the workflow's own `class="hard_coding"` declaration starts being honored.
+- Long-term home: `internal/workflows/implement/` (built-in via `go:embed`) when Block 9 lands.
+
 ### 15.3 Worktree-and-merge-back protocol
 
 Every detached kilroy run already creates an isolated git worktree on its own branch (`attractor/run/<run_id>`) inside the source repo. The worktree lives at `<logs_root>/worktree/`, the branch lives in the source repo's refs. With `commit_per_node: true` in the run config, each node's output is a commit. This is exactly the ingredients we need for parallel paths that merge back.
