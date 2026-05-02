@@ -116,16 +116,6 @@ func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node
 			"backend":  string(backend),
 			"source":   selectionSource,
 		})
-		if route.classResult != nil {
-			exec.Engine.appendProgress(map[string]any{
-				"event":         "policy_class_resolved",
-				"node_id":       node.ID,
-				"class":         route.className,
-				"model":         route.classResult.ModelID,
-				"driver":        route.classResult.Driver,
-				"fallback_rank": route.classResult.FallbackRank,
-			})
-		}
 	}
 
 	switch backend {
@@ -168,60 +158,33 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 // resolveNodeRouteInner resolves the full routing info for a node, including
 // an optional policy.ResolveResult when the node carries a class= attribute.
 func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
-	className := strings.TrimSpace(node.Attr("class", ""))
-	if className != "" {
-		// Load policy data.
-		loadFn := r.policyLoad
-		if loadFn == nil {
-			loadFn = policy.Load
-		}
-		data, err := loadFn()
-		if err != nil {
-			return nodeRoute{}, fmt.Errorf("policy load: %w", err)
-		}
-
-		// Collect machine state.
-		collectFn := r.policyCollect
-		if collectFn == nil {
-			collectFn = policy.CollectMachineState
-		}
-		state := collectFn()
-
-		res, err := policy.Resolve(policy.ResolveRequest{
-			ClassID:    className,
-			NodeID:     node.ID,
-			WorkflowID: graphNameForExec(exec),
-		}, data, state)
-		if err != nil {
-			return nodeRoute{}, fmt.Errorf("policy resolve %q: %w", className, err)
-		}
-
-		prov, be := providerAndBackendForDriver(res.Driver)
-		if prov == "" {
-			return nodeRoute{}, fmt.Errorf("policy resolve %q: unknown driver %q", className, res.Driver)
-		}
-
-		modelID := res.ModelID
-		source := "policy_class:" + className
+	cls, ok, err := ResolveAgentClass(node, exec, PolicyDeps{Load: r.policyLoad, Collect: r.policyCollect})
+	if err != nil {
+		return nodeRoute{}, err
+	}
+	if ok {
+		modelID := cls.Model
+		source := "policy_class:" + cls.Class
 
 		// Apply force-model override when the resolved provider matches.
 		if exec != nil && exec.Engine != nil {
-			if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, prov); forced {
+			if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, cls.Provider); forced {
 				if !strings.EqualFold(modelID, forcedModelID) {
-					WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, prov, forcedModelID, modelID))
+					WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, cls.Provider, forcedModelID, modelID))
 				}
 				modelID = forcedModelID
 				source = "force_model"
 			}
 		}
 
+		result := cls.Result
 		return nodeRoute{
-			provider:    prov,
+			provider:    cls.Provider,
 			model:       modelID,
-			backend:     be,
+			backend:     cls.Backend,
 			source:      source,
-			classResult: &res,
-			className:   className,
+			classResult: &result,
+			className:   cls.Class,
 		}, nil
 	}
 

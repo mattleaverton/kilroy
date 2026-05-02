@@ -25,6 +25,10 @@ type TmuxAgentHandler struct {
 	Tmux      *tmux.Manager
 	Templates *templates.Registry
 	Timeout   time.Duration // default timeout per node (0 = 30 min)
+
+	// PolicyDeps lets tests inject policy data and machine-state collection.
+	// Zero value means production defaults (policy.Load / CollectMachineState).
+	PolicyDeps engine.PolicyDeps
 }
 
 // NewTmuxAgentHandler creates a handler with default tmux manager and templates.
@@ -45,8 +49,35 @@ func (h *TmuxAgentHandler) RequiresProvider() bool { return true }
 // Execute implements engine.Handler. Spawns a CLI tool in a tmux session,
 // waits for completion, captures output, and returns an outcome.
 func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
-	// Resolve which CLI tool to use.
-	toolName := resolveToolName(node)
+	// Class-driven routing first: when the node carries class="...", the
+	// policy resolver picks driver+model and we map driver→tmux tool below.
+	// This is the tmux side of Block 4 Step 4b. Falls through to legacy
+	// stylesheet attributes when no class is set.
+	cls, hasClass, err := engine.ResolveAgentClass(node, exec, h.PolicyDeps)
+	if err != nil {
+		return runtime.Outcome{
+			Status:        runtime.StatusFail,
+			FailureReason: fmt.Sprintf("policy class resolve: %v", err),
+		}, nil
+	}
+
+	// Resolve which CLI tool to use. Prefer the class-resolved driver when
+	// present; otherwise fall back to legacy provider/agent_tool attributes.
+	toolName := ""
+	if hasClass {
+		toolName = toolNameForDriver(cls.Driver)
+		if toolName == "" {
+			return runtime.Outcome{
+				Status: runtime.StatusFail,
+				FailureReason: fmt.Sprintf(
+					"policy class %q resolved to driver %q which has no tmux tool mapping; rerun without --tmux or arrange CLI auth so a CLI candidate matches",
+					cls.Class, cls.Driver),
+			}, nil
+		}
+	}
+	if toolName == "" {
+		toolName = resolveToolName(node)
+	}
 	tmpl := h.Templates.Get(toolName)
 	if tmpl == nil {
 		return runtime.Outcome{
@@ -78,8 +109,32 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	// Build environment variables.
 	env := buildTmuxAgentEnv(tmpl, exec, node.ID)
 
-	// Resolve model from node attributes.
-	modelID := strings.TrimSpace(node.Attr("llm_model", ""))
+	// Resolve model: class-resolved value wins; otherwise legacy llm_model.
+	modelID := ""
+	if hasClass {
+		modelID = cls.Model
+	}
+	if modelID == "" {
+		modelID = strings.TrimSpace(node.Attr("llm_model", ""))
+	}
+
+	// Emit provider_selected event so tmux runs match the API path's surface.
+	if exec != nil && exec.Engine != nil {
+		source := "graph_attrs"
+		provider := strings.TrimSpace(node.Attr("llm_provider", ""))
+		if hasClass {
+			source = "policy_class:" + cls.Class
+			provider = cls.Provider
+		}
+		exec.Engine.AppendProgress(map[string]any{
+			"event":    "provider_selected",
+			"node_id":  node.ID,
+			"provider": provider,
+			"model":    modelID,
+			"backend":  "cli",
+			"source":   source,
+		})
+	}
 
 	// Build and write the command.
 	stageDir := filepath.Join(exec.LogsRoot, node.ID)
@@ -319,6 +374,23 @@ func (h *TmuxAgentHandler) handleStartupDialog(session string, dialog templates.
 			return
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// toolNameForDriver maps a policy driver name to a tmux tool name. Only CLI
+// drivers map to a tool; SDK drivers (anthropic_sdk, openai_sdk, google_sdk)
+// have no tmux tool and return "" — caller treats that as a hard error in
+// --tmux mode.
+func toolNameForDriver(driver string) string {
+	switch driver {
+	case "claude_cli":
+		return "claude"
+	case "codex_cli":
+		return "codex"
+	case "gemini_cli":
+		return "gemini"
+	default:
+		return ""
 	}
 }
 
