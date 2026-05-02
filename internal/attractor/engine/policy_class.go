@@ -98,6 +98,35 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 	}, true, nil
 }
 
+// EffectiveRouteForNode returns the (provider, model) the runtime would
+// actually use for n at launch — class-resolved if class= is set, else
+// the legacy stylesheet attributes (llm_provider/llm_model). Suppresses
+// event emission and resolution.json persistence by passing nil exec, so
+// it's safe to call from preflight, validate, and other pre-run paths.
+//
+// Returns ("", "", err) when class= is set but resolution fails — that is
+// a real preflight-worthy failure (e.g., no auth on this machine for any
+// candidate in the chain) and callers should surface it as such rather
+// than silently falling back to the stylesheet.
+func EffectiveRouteForNode(n *model.Node) (provider, modelID string, err error) {
+	if n == nil {
+		return "", "", nil
+	}
+	cls, ok, err := ResolveAgentClass(n, nil, PolicyDeps{})
+	if err != nil {
+		return "", "", err
+	}
+	if ok {
+		return cls.Provider, cls.Model, nil
+	}
+	provider = strings.TrimSpace(n.Attr("llm_provider", ""))
+	modelID = strings.TrimSpace(n.Attr("llm_model", ""))
+	if modelID == "" {
+		modelID = strings.TrimSpace(n.Attr("model", ""))
+	}
+	return provider, modelID, nil
+}
+
 // resolutionRecord is the on-disk schema for <stage_dir>/resolution.json,
 // matching plan §6.4. Best-effort: missing/nil exec or missing logs_root
 // silently skip the write — the in-memory ResolveResult is still returned

@@ -39,8 +39,8 @@ These shape every downstream decision. If a future change conflicts with one of 
 
 1. **Audit, not approval.** Kilroy records what happened. It does not gate runs on cost, taste, or operator judgment. If a route was selected, a fallback fired, auth was missing, a launch failed — that is captured cleanly. External tools and humans decide what to do with it.
 2. **Agent-primary by default; humans pleasant-secondary.** The design target is an agent juggling a dozen Kilroy calls at once. Async-with-handle, JSON-by-default, polling-not-streaming, typed errors. `--pretty` is the human affordance, not the default.
-3. **Local-first and release-stable.** Built-in workflows, class catalog, and policy data are baked into the binary. Behavior for a given Kilroy build is reproducible. Routing changes are repo PRs.
-4. **Hard cut.** No legacy parallel surface, no migration shims for the current `attractor`-prefixed CLI. The cutover is what makes the simplification real. Where prior shapes were exposed (provider names, model IDs, backend toggles), they recede to expert escape hatches — not part of the default story.
+3. **Local-first and release-stable.** The class catalog and policy data are baked into the binary. Workflow packages live on disk under `workflows/<name>/` and are discovered through a search path (KILROY_WORKFLOW_PATHS, project, user) — **not** embedded; on-disk source-of-truth is editable, dogfoodable, and avoids the embed-cache vs. runtime-edit drift problem. Behavior for a given Kilroy build is reproducible per-machine once the workflows directory is in place; routing changes are repo PRs.
+4. **Additive surface, deprecate later.** The v2 CLI (`kilroy run`, `kilroy workflows`, `kilroy auth`, `kilroy policy`) lands alongside the existing `kilroy attractor *` namespace; both work during the v2 transition. Hard cut comes after consumer scripts have caught up. Where prior shapes were exposed (provider names, model IDs, backend toggles), they recede to expert escape hatches — not part of the default story.
 5. **Failure is a first-class outcome.** Validation failures, missing auth, unreachable models, tool failures — all persisted in the run record from the launch path forward. No zombie runs.
 
 ---
@@ -100,15 +100,18 @@ my-workflow/
 
 ### 5.1 Discovery
 
-Hierarchical with **local-wins** precedence — when the same workflow name exists at multiple levels, the most-local layer is used. Lookup order from highest precedence to lowest:
+Hierarchical with **most-local-wins** precedence — when the same workflow name exists at multiple levels, the highest-precedence entry is used. Lookup order from highest precedence to lowest:
 
 ```
-1. Project   (<project-root>/.kilroy/workflows/)            ← wins
-2. User      ($XDG_CONFIG_HOME/kilroy/workflows/, default ~/.config/kilroy/workflows/)
-3. Built-in  (compiled into the binary via go:embed)        ← fallback
+1. KILROY_WORKFLOW_PATHS  (colon-separated env var)                    ← dev escape hatch
+2. Project                (<project-root>/.kilroy/workflows/)
+3. User                   ($XDG_CONFIG_HOME/kilroy/workflows/,
+                           default ~/.config/kilroy/workflows/)
 ```
 
-The list above is the *resolution order* — kilroy checks Project first, falls through to User, then to Built-in. A project-defined `investigate` shadows a user-defined `investigate`, which shadows the built-in `investigate`. A warning is emitted at workflow-load time on any same-name shadowing so authors notice when a local definition supersedes a blessed one.
+There is **no embedded fallback** — workflow packages are filesystem-only. The shipped workflows in this repo live at `workflows/<name>/`; for end-user installs they're reached by symlink or installer copy into the user-config path, or by setting `KILROY_WORKFLOW_PATHS` during dev.
+
+A project-defined `investigate` shadows a user-defined `investigate`. A warning is emitted at workflow-load time on any same-name shadowing so authors notice when a local definition supersedes another.
 
 (Investigation 3 also recommends `.kilroy/` directory as the project marker — see §7 for the layered-config story.)
 
@@ -743,12 +746,12 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 - [ ] Stress test: launch 12+ sibling runs of distinct workflows from one parent; verify isolation.
 - [ ] Document the load-bearing-property guarantees in `AGENTS.md`.
 
-### Block 9: Built-in workflows — **two workflow-package v0 dogfood scaffolds landed; blessed-built-in milestone NOT yet reached**
+### Block 9: Shipped workflows — **`fix` and `investigate` v0 LANDED on the v2 manifest, run via `kilroy run`; `review` pending**
 
-> **Status discipline:** Block 9's exit bar is *embedded built-ins under `internal/workflows/<name>/` plus a bare-form CLI* (per §10). What is landed today is **workflow-package v0** scaffolds at `workflows/<name>/` using the **legacy `[[inputs]]` manifest shape**, dogfooded end-to-end via `kilroy attractor run --package …`. They are NOT Block 2 schema progress (the v2 `[workflow]`/`[inputs.<name>]`/`[side_effects]`/`[nodes.<id>]` tables described in §5.2 don't have a parser yet), and NOT Block 1 surface progress (no bare form). They ARE useful tooling for the dogfood loop right now.
+> **Status discipline (revised post-reframe):** Block 9's exit bar shifted with the §10 reframe — there is no longer a "blessed bare-form" milestone; the bar is just "the trio is authored, on the v2 manifest schema, and reachable via `kilroy run <name>`." Two of three (`fix`, `investigate`) meet that bar today. `implement` exists at the same shape but isn't part of the v2 trio. `review` remains to author. End-user discoverability without `KILROY_WORKFLOW_PATHS` (i.e., the symlink/installer-copy story) is a packaging concern for release time, not a Block 9 deliverable.
 
-- [x] **`fix` workflow-package v0 (legacy manifest shape, dogfood landed)** at `workflows/fix/{workflow.toml, graph.dot, prompts/fix.md, scripts/{stage-context.sh, verify.sh, diff.sh, summary.sh}}`. Inputs: `issue` (req), `context_files`, `verify_command`, `scope_directive`. Outputs: `result.md`, `fix.patch`. Topology mirrors `implement` with an extra `diff` stage between verify and summary that captures the run-branch diff against the launch HEAD (with pathspec exclusions for run incidentals). Class declaration `hard_coding` drives routing via Step 4b. Live dogfood: run `01KQK99TKTBCCSEFP7PZZZZF6M` against a synthetic broken-Add Go repo (26s, status=success): policy_class_resolved fires, agent finds and fixes the bug, verify passes, fix.patch contains the substantive diff. Re-authoring in the v2 manifest schema and embedding via `go:embed` are deferred until Block 1+2 land.
-- [x] **`investigate` workflow-package v0 (legacy manifest shape, dogfood landed)** at `workflows/investigate/{workflow.toml, graph.dot, prompts/investigate.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `question` (req), `context_files`, `urls`, `scope_directive`. Output: `result.md`. Class=`deep_investigation` (Opus 4.7, 1M context). Simpler topology than `fix`/`implement` — read-only research, no verify, no diff. Live dogfood: run `01KQK9V71Z6AY1F3BG55TMC601` answering an OOP question (37s, success): policy_class_resolved fires with `deep_investigation` → claude-opus-4-7, structured result.md (TL;DR/Findings/Open questions/Methodology) produced as specified.
+- [x] **`fix` v0 (v2 manifest, run via `kilroy run fix`)** at `workflows/fix/{workflow.toml, graph.dot, prompts/fix.md, scripts/{stage-context.sh, verify.sh, diff.sh, summary.sh}}`. Inputs: `issue` (req), `context_files`, `verify_command`, `scope_directive`. Outputs: `result.md`, `fix.patch`. Topology mirrors `implement` with a `diff` stage between verify and summary that captures the run-branch diff against the launch HEAD (with pathspec exclusions for run incidentals). Class declaration `hard_coding` drives routing via Step 4b. Live dogfood: run `01KQK99TKTBCCSEFP7PZZZZF6M` against a synthetic broken-Add Go repo (26s, success).
+- [x] **`investigate` v0 (v2 manifest, run via `kilroy run investigate`)** at `workflows/investigate/{workflow.toml, graph.dot, prompts/investigate.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `question` (req), `context_files`, `urls`, `scope_directive`. Output: `result.md`. Class=`deep_investigation` (Opus 4.7, 1M context). Simpler topology — read-only research, no verify, no diff. Live dogfood: run `01KQK9V71Z6AY1F3BG55TMC601` answering an OOP question (37s, success): policy_class_resolved fires with `deep_investigation` → claude-opus-4-7.
 - [ ] Author `review` as a workflow package (still legacy manifest shape until Block 2 lands).
 - [x] CI-validate workflow-package DOTs. `internal/attractor/validate/shipped_graphs_test.go` walks `workflows/` and runs the same validator the runtime uses; new packages are picked up automatically.
 - [x] **Package-level integrity test** — `internal/attractor/validate/shipped_packages_test.go` walks every `workflows/<name>/workflow.toml` and asserts: manifest parses with required fields (`name`/`description`/`version`); each `[[inputs]]` entry has name+description; the graph parses; every `tool_command bash <path>` references an existing regular file in the package; every agent `class=` attribute resolves to a real policy class. Pre-Step-4b graphs that use `class=` as stylesheet selectors only (`workflows/coding-loop` today) are on a documented bypass list to be migrated separately. Closes the regression-bar gap above DOT-only validation.

@@ -73,7 +73,8 @@ func TestWorkflowsList_JSON_FindsAllPackages(t *testing.T) {
 	writePackage(t, pkgRoot, "review", v2ReviewToml)
 	writePackage(t, pkgRoot, "tiny-investigate", v2InvestigateToml)
 
-	cmd := exec.Command(bin, "workflows", "list", "--json")
+	// JSON is the default per plan §2.2 — no flag needed.
+	cmd := exec.Command(bin, "workflows", "list")
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),
@@ -115,7 +116,8 @@ func TestWorkflowsDescribe_HumanOutput_ShowsAllSections(t *testing.T) {
 	pkgRoot := t.TempDir()
 	writePackage(t, pkgRoot, "review", v2ReviewToml)
 
-	cmd := exec.Command(bin, "workflows", "describe", "review")
+	// --pretty opts into the human view; without it, JSON is default.
+	cmd := exec.Command(bin, "workflows", "describe", "review", "--pretty")
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),
@@ -149,7 +151,8 @@ func TestWorkflowsDescribe_JSON_HasJSONFieldNames(t *testing.T) {
 	pkgRoot := t.TempDir()
 	writePackage(t, pkgRoot, "review", v2ReviewToml)
 
-	cmd := exec.Command(bin, "workflows", "describe", "review", "--json")
+	// JSON is the default — no flag needed.
+	cmd := exec.Command(bin, "workflows", "describe", "review")
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),

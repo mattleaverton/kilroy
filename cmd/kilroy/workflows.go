@@ -36,8 +36,8 @@ func workflowsCmd(args []string) {
 
 func workflowsUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--pretty]            (JSON by default)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--pretty] (JSON by default)")
 }
 
 // workflowsListEntry is the JSON shape for a single workflow in `list`
@@ -53,13 +53,17 @@ type workflowsListEntry struct {
 }
 
 func workflowsList(args []string) {
-	asJSON := false
+	// JSON is the default per plan §2.2 (agent-primary surface).
+	// --pretty switches to the human-readable column view.
+	asJSON := true
 	for _, a := range args {
 		switch a {
 		case "--json":
 			asJSON = true
+		case "--pretty":
+			asJSON = false
 		case "-h", "--help":
-			fmt.Fprintln(os.Stderr, "usage: kilroy workflows list [--json]")
+			fmt.Fprintln(os.Stderr, "usage: kilroy workflows list [--pretty]")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unexpected argument %q\n", a)
@@ -164,14 +168,18 @@ type sideEffectsView struct {
 }
 
 func workflowsDescribe(args []string) {
-	asJSON := false
+	// JSON is the default per plan §2.2 (agent-primary surface).
+	// --pretty switches to the human-readable section view.
+	asJSON := true
 	var name string
 	for _, a := range args {
 		switch a {
 		case "--json":
 			asJSON = true
+		case "--pretty":
+			asJSON = false
 		case "-h", "--help":
-			fmt.Fprintln(os.Stderr, "usage: kilroy workflows describe <name> [--json]")
+			fmt.Fprintln(os.Stderr, "usage: kilroy workflows describe <name> [--pretty]")
 			os.Exit(0)
 		default:
 			if name != "" {

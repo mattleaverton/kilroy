@@ -122,11 +122,19 @@ func validateCLIOnlyModels(g *model.Graph, runtimes map[string]ProviderRuntime, 
 		if pr, ok := reg.Resolve(n).(ProviderRequiringHandler); !ok || !pr.RequiresProvider() {
 			continue
 		}
-		provider := normalizeProviderKey(n.Attr("llm_provider", ""))
-		modelID := strings.TrimSpace(n.Attr("llm_model", ""))
-		if modelID == "" {
-			modelID = strings.TrimSpace(n.Attr("model", ""))
+		// Use the runtime-effective route — class-resolved when class= is
+		// set, else the legacy stylesheet attrs. This is what the engine
+		// will actually dispatch to, so it's what preflight must validate.
+		provRaw, modelID, err := EffectiveRouteForNode(n)
+		if err != nil {
+			report.addCheck(providerPreflightCheck{
+				Name:    "policy_class_resolve",
+				Status:  preflightStatusFail,
+				Message: fmt.Sprintf("class resolution failed for node %s: %v", n.ID, err),
+			})
+			return fmt.Errorf("preflight: %w", err)
 		}
+		provider := normalizeProviderKey(provRaw)
 		// When force-model is active for this provider, the graph-declared
 		// model is replaced at runtime. Validate the forced model instead.
 		if forcedID, forced := forceModelForProvider(forceModels, provider); forced {
@@ -1256,7 +1264,15 @@ func usedProvidersForBackend(g *model.Graph, runtimes map[string]ProviderRuntime
 		if pr, ok := reg.Resolve(n).(ProviderRequiringHandler); !ok || !pr.RequiresProvider() {
 			continue
 		}
-		provider := normalizeProviderKey(n.Attr("llm_provider", ""))
+		// Honor class= via policy resolution; fall back to stylesheet attrs.
+		// On resolution error we silently skip — usedProvidersForBackend is a
+		// hint for which preflight checks to run, not a gate. The downstream
+		// preflight call sites do report errors loudly.
+		provRaw, _, err := EffectiveRouteForNode(n)
+		if err != nil {
+			continue
+		}
+		provider := normalizeProviderKey(provRaw)
 		if provider == "" {
 			continue
 		}
@@ -1301,7 +1317,13 @@ func usedAPIPromptProbeTargetsForProvider(g *model.Graph, runtimes map[string]Pr
 		if pr, ok := reg.Resolve(n).(ProviderRequiringHandler); !ok || !pr.RequiresProvider() {
 			continue
 		}
-		nodeProvider := normalizeProviderKey(n.Attr("llm_provider", ""))
+		// Honor class= when present; the legacy modelIDForNode below would
+		// otherwise return the stylesheet model and miss the resolved one.
+		nodeProvRaw, resolvedModel, err := EffectiveRouteForNode(n)
+		if err != nil {
+			continue
+		}
+		nodeProvider := normalizeProviderKey(nodeProvRaw)
 		if nodeProvider == "" {
 			continue
 		}
@@ -1313,7 +1335,10 @@ func usedAPIPromptProbeTargetsForProvider(g *model.Graph, runtimes map[string]Pr
 			continue
 		}
 
-		sourceModel := modelIDForNode(n)
+		sourceModel := resolvedModel
+		if sourceModel == "" {
+			sourceModel = modelIDForNode(n)
+		}
 		if forcedSourceModel, forced := forceModelForProvider(opts.ForceModels, nodeProvider); forced {
 			sourceModel = forcedSourceModel
 		}
@@ -1482,7 +1507,14 @@ func usedModelsForProviderBackend(g *model.Graph, runtimes map[string]ProviderRu
 		if pr, ok := reg.Resolve(n).(ProviderRequiringHandler); !ok || !pr.RequiresProvider() {
 			continue
 		}
-		nodeProvider := normalizeProviderKey(n.Attr("llm_provider", ""))
+		// Use the runtime-effective route. Class-resolved hits override the
+		// stylesheet attrs so the model probed here matches the model the
+		// engine will dispatch to.
+		nodeProvRaw, resolvedModel, err := EffectiveRouteForNode(n)
+		if err != nil {
+			continue
+		}
+		nodeProvider := normalizeProviderKey(nodeProvRaw)
 		if nodeProvider == "" || nodeProvider != provider {
 			continue
 		}
@@ -1490,7 +1522,10 @@ func usedModelsForProviderBackend(g *model.Graph, runtimes map[string]ProviderRu
 		if !ok || rt.Backend != backend {
 			continue
 		}
-		modelID := modelIDForNode(n)
+		modelID := resolvedModel
+		if modelID == "" {
+			modelID = modelIDForNode(n)
+		}
 		if modelID == "" || seen[modelID] {
 			continue
 		}
