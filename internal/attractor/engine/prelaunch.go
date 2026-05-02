@@ -12,6 +12,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -50,6 +51,10 @@ type PreLaunchPackageCheck struct {
 	Dir    string   `json:"dir,omitempty"`
 	Status string   `json:"status"` // "ok" | "fail"
 	Errors []string `json:"errors,omitempty"`
+	// Notes are non-fatal observations (e.g., class= used as a
+	// stylesheet selector rather than a policy class). They surface in
+	// the report so users see them but don't block validation.
+	Notes []string `json:"notes,omitempty"`
 }
 
 // PreLaunchNodeCheck records the resolution + auth-presence + binary-presence
@@ -176,6 +181,22 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 			WorkflowID: g.Name,
 		}, policyData, state)
 		if err != nil {
+			// Unknown-class errors are soft: the engine treats them as
+			// stylesheet selectors (see ResolveAgentClass), so prelaunch
+			// must agree or it'd block dispatch on a name the engine is
+			// fine with. Surface as a warning by leaving status="ok"
+			// with a Note in Errors so users still see it but don't
+			// hit a fail-fast wall. Other errors (no viable candidate
+			// — i.e., class IS in policy but no auth on this machine)
+			// are still hard fails.
+			var unknownErr policy.ErrUnknownClass
+			if errors.As(err, &unknownErr) {
+				check.Status = "ok"
+				check.Errors = append(check.Errors, fmt.Sprintf("class %q is not a real policy class — treating as stylesheet selector. (Hint: `kilroy policy list` for available classes.)", className))
+				report.Nodes = append(report.Nodes, check)
+				report.Summary.OK++
+				continue
+			}
 			check.Status = "fail"
 			check.Errors = append(check.Errors, fmt.Sprintf("class %q: %v", className, err))
 			report.Nodes = append(report.Nodes, check)
@@ -445,6 +466,11 @@ func validatePackageIntegrity(pkgDir string, g *model.Graph) *PreLaunchPackageCh
 					}
 				}
 			}
+			// class= is a soft check: an unknown name is treated as a
+			// stylesheet selector (matches ResolveAgentClass's tolerant
+			// behavior). Surface as a Note rather than a hard error so
+			// stylesheet-class workflows like coding-loop validate green.
+			// Real typos still surface — they just don't block validation.
 			if cls := strings.TrimSpace(n.Attr("class", "")); cls != "" {
 				if policyData == nil {
 					d, err := policy.Load()
@@ -455,7 +481,7 @@ func validatePackageIntegrity(pkgDir string, g *model.Graph) *PreLaunchPackageCh
 					policyData = d
 				}
 				if !preLaunchClassExists(policyData, cls) {
-					pc.Errors = append(pc.Errors, fmt.Sprintf("node %q: class=%q is not a real policy class or alias (run `kilroy policy list` to see available classes)", id, cls))
+					pc.Notes = append(pc.Notes, fmt.Sprintf("node %q: class=%q is not a real policy class — treated as stylesheet selector. (`kilroy policy list` for the catalog.)", id, cls))
 				}
 			}
 		}

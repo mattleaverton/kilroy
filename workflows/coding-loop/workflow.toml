@@ -1,19 +1,45 @@
-# Coding-loop workflow: iterative LLM coding agent with reviewer feedback and done-gate.
-# Runs up to 8 choose→implement→review→gate iterations against a user-supplied spec.
-# Usage: kilroy attractor run --package workflows/coding-loop/ \
-#          --workspace <target-repo-dir> \
-#          --input '{"spec":"/abs/path/to/spec.md"}'
+# Coding-loop workflow: iterative LLM coding agent with reviewer feedback
+# and a done-gate. Runs up to ~12 choose→implement→review→gate iterations
+# against a user-supplied spec. Larger surface than `implement` — this
+# is the loop-with-review model, not the one-shot directed-change model.
+#
+# Note: the graph uses class="implementer" and class="reviewer" as
+# **stylesheet selectors** (the model_stylesheet has `.implementer` /
+# `.reviewer` rules to upgrade those nodes from haiku to sonnet) — NOT
+# as policy classes. This is the legitimate stylesheet use of class=
+# that pre-dates Step 4b. To avoid silently breaking it, Step 4b's
+# resolver now treats unknown class names as a stylesheet selector
+# and falls back to llm_provider/llm_model attrs (with a prelaunch
+# warning so typos still surface). See plan §13.6 for the design note.
 
-name = "coding-loop"
-description = "Iterative coding workflow: a task chooser selects sub-tasks, an implementer codes them, a reviewer scores each iteration, and a done-gate decides when the spec is complete."
-version = "0.1.0"
+[workflow]
+name              = "coding-loop"
+version           = "1"
+description       = """
+Iterative coding workflow: a task chooser selects sub-tasks, an
+implementer codes them, a reviewer scores each iteration, and a
+done-gate decides when the spec is complete. Loop bound: ~12 iterations
+or until the done-gate writes COMPLETE to .kilroy/decision.md, whichever
+comes first.
+"""
+agent_description = "Iterate on a spec — choose, implement, review, gate — until complete or capped."
+graph             = "graph.dot"
 
-outputs = ["result.md"]
-
-[[inputs]]
-name = "spec"
+[inputs.spec]
+type        = "string"
+required    = true
 description = "Absolute path to the feature/task spec file that defines what to build."
-required = true
+
+[outputs.result]
+type        = "path"
+description = "Final report summarizing iterations, commits, and completion status."
+path        = "result.md"
+
+[side_effects]
+mutates_git    = true
+writes_files   = true
+network_egress = true
+idempotent     = false
 
 [defaults]
 labels = { workflow = "coding-loop" }

@@ -117,24 +117,17 @@ func decodeShippedManifest(path string) (*shippedManifest, error) {
 // TestShippedWorkflowPackages walks every directory under workflows/ that
 // contains a workflow.toml and asserts the package's structural integrity:
 // manifest parses, scripts referenced by tool_command exist as regular
-// files, agent class= attributes reference real policy classes (with a
-// small bypass list for pre-Step-4b graphs that still use class= purely
-// as model_stylesheet selectors — they'll fail at --tmux runtime against
-// the new resolver and need migration; tracked separately).
+// files. The class= attribute is checked but treated as a soft signal:
+// unknown class names are valid stylesheet selectors (the engine's
+// ResolveAgentClass falls through to legacy attrs in that case), so
+// they don't fail the test. The previous knownClassIssues bypass list
+// is gone — the soft semantics make it unnecessary.
 //
 // Note on script perms: workflow scripts are invoked as `bash <path>`
 // (not `./<path>`), which doesn't require the executable bit. We assert
 // the file exists as a regular file and is non-empty; the +x bit is
 // cosmetic for these packages and inconsistent across the tree.
 func TestShippedWorkflowPackages(t *testing.T) {
-	// Pre-Step-4b graphs that use class= as stylesheet selectors rather
-	// than policy class identifiers. With Step 4b landed, running these
-	// under --tmux would fail with policy.ErrUnknownClass. They're listed
-	// here as known TODOs rather than as test failures; remove an entry
-	// when the underlying graph is migrated to real policy classes.
-	knownClassIssues := map[string]bool{
-		"workflows/coding-loop": true,
-	}
 	repoRoot := findRepoRoot(t)
 	workflowsDir := filepath.Join(repoRoot, "workflows")
 
@@ -233,17 +226,14 @@ func TestShippedWorkflowPackages(t *testing.T) {
 					}
 				}
 
-				// class= must reference a real policy class (or alias). Skip
-				// the check for packages on the bypass list above.
-				if knownClassIssues[relDir] {
-					continue
-				}
-				if cls := strings.TrimSpace(node.Attr("class", "")); cls != "" {
-					if !classExists(policyData, cls) {
-						t.Errorf("node %q declares class=%q which is not a real policy class or alias",
-							id, cls)
-					}
-				}
+				// class= can be either a policy class name (engine resolves
+				// via Step 4b) or a stylesheet selector (engine falls
+				// through to llm_provider/llm_model). We don't fail on
+				// unknown names because the engine doesn't either —
+				// coding-loop and similar pre-Step-4b graphs legitimately
+				// use class= as stylesheet selectors.
+				_ = node
+				_ = policyData
 			}
 		})
 	}

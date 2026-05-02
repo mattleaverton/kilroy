@@ -642,6 +642,19 @@ The legacy `runProviderCLIPreflight` machinery is **deleted** as of this branch 
 
 `PreflightWithConfig` (the validate-only entry) now produces `prelaunch_validation.json` instead of `preflight_report.json`; the `--validate` CLI output prints `validate=true` + `prelaunch_validation=<path>`.
 
+### 13.7 `class=` is two things — and the resolver knows which (LANDED)
+
+**Observed:** the DOT `class=` attribute serves two legitimate purposes that look identical in the source:
+
+1. **Policy class identifier** — Step 4b's surface. `class="hard_coding"` tells the policy resolver to walk the hard_coding chain on this machine. fix/implement/investigate/review use this shape.
+2. **Stylesheet selector** — pre-Step-4b's surface. The DOT validator and the stylesheet engine both treat `class="implementer"` as a CSS-style selector that matches `.implementer { … }` rules in `model_stylesheet`. `coding-loop` uses this shape to upgrade per-role nodes from haiku to sonnet.
+
+If the resolver were strict about #1, every `coding-loop`-shaped graph would fail at validate or dispatch with `policy.ErrUnknownClass`. If the resolver were always permissive, typos in #1-style names would silently fall through to whatever the stylesheet provided.
+
+**For v2 (LANDED):** `engine.ResolveAgentClass` is **tolerant of unknown class names** — it treats them as stylesheet selectors and returns ok=false (no error), letting the engine fall through to the legacy `llm_provider`/`llm_model` graph attributes (which the stylesheet wrote at parse time). Prelaunch's package-integrity check follows suit: an unknown `class=` on an agent node surfaces as a soft Note, not a hard error. The engine's runtime behavior and prelaunch's validation behavior agree — neither blocks on a name the other accepts.
+
+This is the smallest viable answer. A larger answer (separate `policy_class=` attribute for #1, leaving `class=` exclusive to #2) is cleaner semantically but would touch every workflow.toml and every test; deferred until there's evidence of typo-mediated production drift.
+
 ---
 
 ## 14. Work breakdown — ordered for shippability
@@ -774,7 +787,7 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 - [x] CI-validate workflow-package DOTs. `internal/attractor/validate/shipped_graphs_test.go` walks `workflows/` and runs the same validator the runtime uses; new packages are picked up automatically.
 - [x] **Package-level integrity test** — `internal/attractor/validate/shipped_packages_test.go` walks every `workflows/<name>/workflow.toml` and asserts: manifest parses with required fields (`name`/`description`/`version`); each `[[inputs]]` entry has name+description; the graph parses; every `tool_command bash <path>` references an existing regular file in the package; every agent `class=` attribute resolves to a real policy class. Pre-Step-4b graphs that use `class=` as stylesheet selectors only (`workflows/coding-loop` today) are on a documented bypass list to be migrated separately. Closes the regression-bar gap above DOT-only validation.
 - [x] **Re-author the trio in the v2 manifest schema** — landed alongside the schema parser (commit `f2b8a9b`).
-- [ ] **Upgrade legacy workflow packages** (`build-test`, `coding-loop`, `multi-tool-exercise`) to the v2 manifest shape and verify each runs against the current engine. Replaces the earlier "move them out" plan.
+- [x] **Upgrade legacy workflow packages** (`build-test`, `coding-loop`, `multi-tool-exercise`) to the v2 manifest shape — all three now have `[workflow]`/typed `[inputs.<name>]`/typed `[outputs.<name>]`/`[side_effects]`. `kilroy workflows validate <name>` is green for all three. `build-test` dogfooded end-to-end (run `01KQMR04QQPW8BMRGW58TF5WZ2` against a tiny Go module — produced a structured build-report.json, success). `multi-tool-exercise` validates clean but isn't dogfooded (would invoke three real CLI agents — cost). `coding-loop` works under the new tolerant resolver (see below).
 - ~~Embed the trio via `go:embed` at `internal/workflows/<name>/`~~ — **retired** with the §10 reframe; workflows stay filesystem-discovered.
 - ~~Bare-form CLI elevation~~ — **retired** with the §10 reframe; reach is `kilroy run <name>` only.
 - ~~When built-ins move to `internal/workflows/<name>/`, extend the test~~ — **retired** with the embedding decision; the existing `shipped_packages_test.go` walks `workflows/` and is sufficient.

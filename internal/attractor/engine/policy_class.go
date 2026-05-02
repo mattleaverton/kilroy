@@ -7,6 +7,7 @@ package engine
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,6 +41,15 @@ type ClassResolution struct {
 // error. On a successful class resolution this is the single source of truth
 // that both AgentRouter (API path) and TmuxAgentHandler (tmux path) consume,
 // and a policy_class_resolved progress event is emitted.
+//
+// Unknown class names — names not in the policy and not aliased — are
+// treated as **stylesheet selectors** rather than typo'd policy classes:
+// returns ok=false, no error. The dispatcher then falls through to the
+// legacy llm_provider/llm_model graph attrs (which the stylesheet wrote
+// at parse time). This keeps pre-Step-4b graphs like coding-loop working
+// (which use class="implementer" to upgrade nodes via stylesheet rules).
+// Typo detection moves to prelaunch's package-integrity check, which
+// emits a warning when an unknown class is seen on an agent node.
 func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (ClassResolution, bool, error) {
 	className := strings.TrimSpace(node.Attr("class", ""))
 	if className == "" {
@@ -67,6 +77,12 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		WorkflowID: graphNameForExec(exec),
 	}, data, state)
 	if err != nil {
+		// Unknown class → stylesheet selector, not a typo'd policy class.
+		// Caller falls through to legacy attrs.
+		var unknownErr policy.ErrUnknownClass
+		if errors.As(err, &unknownErr) {
+			return ClassResolution{}, false, nil
+		}
 		return ClassResolution{}, false, fmt.Errorf("policy resolve %q: %w", className, err)
 	}
 

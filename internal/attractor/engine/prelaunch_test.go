@@ -113,7 +113,14 @@ func TestValidatePreLaunch_ClassResolves_OK(t *testing.T) {
 	}
 }
 
-func TestValidatePreLaunch_UnknownClass_FailsTyped(t *testing.T) {
+// TestValidatePreLaunch_UnknownClass_TreatedAsStylesheet verifies that
+// prelaunch is tolerant of class= names that aren't policy classes —
+// they're treated as stylesheet selectors. The note appears so users
+// see the resolution choice; status stays "ok" so dispatch proceeds.
+// (This matches ResolveAgentClass's tolerant behavior at engine
+// dispatch — without this softening, prelaunch would block runs the
+// engine itself would happily complete.)
+func TestValidatePreLaunch_UnknownClass_TreatedAsStylesheet(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
 		"class": "totally_made_up",
 	})
@@ -130,17 +137,17 @@ func TestValidatePreLaunch_UnknownClass_FailsTyped(t *testing.T) {
 		Load:    func() (*policy.Data, error) { return data, nil },
 		Collect: func() policy.MachineState { return policy.MachineState{} },
 	})
-	if err == nil {
-		t.Fatal("expected error for unknown class")
+	if err != nil {
+		t.Fatalf("expected nil error for unknown-class fall-through, got: %v", err)
 	}
-	if _, ok := err.(*PreLaunchError); !ok {
-		t.Errorf("error type = %T, want *PreLaunchError", err)
+	if report.Summary.Fail != 0 {
+		t.Errorf("summary.fail = %d, want 0 (unknown class is soft)", report.Summary.Fail)
 	}
-	if report.Summary.Fail != 1 {
-		t.Errorf("summary.fail = %d, want 1", report.Summary.Fail)
+	if report.Summary.OK != 1 {
+		t.Errorf("summary.ok = %d, want 1", report.Summary.OK)
 	}
 	if len(report.Nodes[0].Errors) == 0 {
-		t.Error("expected per-node error for unknown class")
+		t.Error("expected an informational note about the unknown class")
 	}
 }
 
@@ -325,25 +332,36 @@ description = "test"
 	}
 }
 
-func TestValidatePreLaunch_PackageIntegrity_BadClass_Fails(t *testing.T) {
-	pkgDir := makeMinimalPackage(t, "bad",
+// TestValidatePreLaunch_PackageIntegrity_UnknownClass_SoftNote verifies
+// that a class= name that isn't a real policy class surfaces as a
+// soft Note in the package check, not a hard error. Engine treats
+// such names as stylesheet selectors (see ResolveAgentClass), so
+// validation must not block dispatch.
+func TestValidatePreLaunch_PackageIntegrity_UnknownClass_SoftNote(t *testing.T) {
+	pkgDir := makeMinimalPackage(t, "softclass",
 		`[workflow]
-name = "bad"
+name = "softclass"
 version = "1"
 description = "test"
 `,
-		`digraph bad {}`,
+		`digraph softclass {}`,
 		nil,
 	)
 	g := graphWithAgentNode(t, "agent", map[string]string{
 		"class": "made_up_class_name",
 	})
-	_, err := ValidatePreLaunch(g, RunOptions{
+	report, err := ValidatePreLaunch(g, RunOptions{
 		LogsRoot:   t.TempDir(),
 		PackageDir: pkgDir,
 	}, PolicyDeps{})
-	if err == nil {
-		t.Fatal("expected fail for unknown class in package check")
+	if err != nil {
+		t.Fatalf("expected nil err — unknown class should be soft, got: %v", err)
+	}
+	if report.Package == nil || report.Package.Status != "ok" {
+		t.Errorf("package status = %+v, want ok", report.Package)
+	}
+	if len(report.Package.Notes) == 0 {
+		t.Error("expected an informational note about the unknown class")
 	}
 }
 

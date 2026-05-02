@@ -1,19 +1,46 @@
-# Multi-tool exercise workflow. Tests agent_tool routing, input/output
-# contracts, .kilroy/ convention files, and per-node observability.
+# Multi-tool exercise: three CLI tools (claude, codex, opencode) each
+# write a perspective on a topic, then a tool node combines them. Used
+# to exercise per-node agent_tool routing, .kilroy/ convention files,
+# input/output contracts, and edge conditions in one workflow.
 
-name = "multi-tool-exercise"
-description = "Exercise workflow: 3 CLI tools write files about a topic, tool node combines them"
-version = "0.1.0"
+[workflow]
+name              = "multi-tool-exercise"
+version           = "1"
+description       = """
+Three CLI tools (claude, codex, opencode) each write a short perspective
+on the input topic. A combine step assembles them into combined-output.md;
+a validate step confirms the output is non-empty. Useful as a smoke test
+for cross-tool routing and the .kilroy/ convention surface.
+"""
+agent_description = "Run three CLI tools on the same topic and combine their outputs."
+graph             = "graph.dot"
 
-[[inputs]]
-name = "topic"
-description = "Subject for the agents to write about"
-required = true
+[inputs.topic]
+type        = "string"
+required    = true
+description = "Subject for the agents to write about."
 
-[[inputs]]
-name = "style"
-description = "Writing style (e.g. technical, poetic, humorous)"
-required = false
+[inputs.style]
+type        = "string"
+required    = false
+description = "Optional writing style (e.g. technical, poetic, humorous)."
 
-[defaults.labels]
-type = "exercise"
+[outputs."combined-output.md"]
+type        = "path"
+description = "Final combined output assembled from all three agents."
+path        = "combined-output.md"
+
+[side_effects]
+mutates_git    = true
+writes_files   = true
+network_egress = true
+idempotent     = false
+
+# This workflow doesn't declare per-node policy classes — it routes via
+# agent_tool=<tool> + legacy stylesheet llm_provider/llm_model attributes.
+# That path still works; class= is the richer v2 surface for nodes that
+# want resolver-driven model selection, but stylesheet routing remains
+# valid for cross-tool exercises like this one.
+
+[defaults]
+labels = { workflow = "multi-tool-exercise", type = "exercise" }

@@ -1,18 +1,40 @@
-name = "build-test"
-description = "Detect build system, build, test, and report results. Pure Layer 0 — no LLM involvement."
-version = "1.0.0"
+# Build-test workflow: detect the build system, build, run tests, write
+# a structured report. Pure layer 0 — no LLM, no policy class. Useful as
+# a verify step in CI or as a sanity gate before launching agentic work.
 
-[[inputs]]
-name = "build_command"
-description = "Override the auto-detected build command"
-required = false
+[workflow]
+name              = "build-test"
+version           = "1"
+description       = """
+Detect the project's build system, build, run tests, and write a
+structured build-report.json. Pure layer 0: no agent, no LLM cost. The
+detect step recognizes Go (go.mod), Rust (Cargo.toml), Node (package.json),
+and Python (pyproject.toml/setup.py); each subsequent step uses commands
+appropriate for the detected system.
+"""
+agent_description = "Detect, build, test, and report — no LLM involvement."
+graph             = "graph.dot"
 
-[[inputs]]
-name = "test_command"
-description = "Override the auto-detected test command"
-required = false
+[inputs.build_command]
+type        = "string"
+required    = false
+description = "Override the auto-detected build command."
+
+[inputs.test_command]
+type        = "string"
+required    = false
+description = "Override the auto-detected test command."
+
+[outputs."build-report.json"]
+type        = "path"
+description = "Structured report with detected build system, build/test status, and command stdout/stderr tails."
+path        = "build-report.json"
+
+[side_effects]
+mutates_git    = false
+writes_files   = true
+network_egress = false
+idempotent     = true
 
 [defaults]
 labels = { workflow = "build-test", layer = "0" }
-
-outputs = ["build-report.json"]
