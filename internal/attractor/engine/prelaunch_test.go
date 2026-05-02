@@ -561,6 +561,52 @@ func TestValidatePreLaunch_RequiredSecrets_PassesWhenSatisfied(t *testing.T) {
 	}
 }
 
+// TestValidatePreLaunch_CLIDriver_BinaryBroken_Fails confirms the new
+// capability probe catches a binary that's on PATH but doesn't actually
+// run cleanly under --help (broken download, missing deps, etc).
+func TestValidatePreLaunch_CLIDriver_BinaryBroken_Fails(t *testing.T) {
+	// Stage a fake `claude` script that exits non-zero from --help.
+	binDir := t.TempDir()
+	fakeClaude := filepath.Join(binDir, "claude")
+	if err := os.WriteFile(fakeClaude, []byte("#!/bin/bash\nexit 7\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"class": "hard_coding",
+	})
+	data := &policy.Data{
+		SchemaVersion: "1",
+		PolicyVersion: "test",
+		Classes: map[string]policy.Class{
+			"hard_coding": {Chain: []policy.Candidate{{
+				ModelID: "claude-opus-4-7",
+				Driver:  "claude_cli",
+				Auth:    policy.AuthReq{Kind: "cli_session", CLI: "claude"},
+			}}},
+		},
+	}
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{{
+			Tool: "claude", Kind: auth.KindCLIOAuth, State: auth.StateOK,
+		}}},
+	}
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{
+		Load:    func() (*policy.Data, error) { return data, nil },
+		Collect: func() policy.MachineState { return state },
+	})
+	if err == nil {
+		t.Fatal("expected fail when --help exits non-zero")
+	}
+	if report.Nodes[0].Status != "fail" {
+		t.Errorf("status = %q, want fail", report.Nodes[0].Status)
+	}
+	if !anyError(report.Nodes[0].Errors, "does not respond to --help") {
+		t.Errorf("expected capability-probe error, got %v", report.Nodes[0].Errors)
+	}
+}
+
 func TestPreLaunchError_MessageMentionsFailedNodes(t *testing.T) {
 	r := &PreLaunchReport{
 		Nodes: []PreLaunchNodeCheck{

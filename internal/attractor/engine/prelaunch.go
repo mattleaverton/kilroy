@@ -10,6 +10,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -187,16 +188,24 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		check.AuthMethod = res.AuthMethod
 		check.AuthSource = res.AuthSource
 
-		// CLI drivers need their binary on PATH. SDK drivers don't (the
-		// http client handles the request).
+		// CLI drivers need their binary on PATH AND need to be executable
+		// (not a corrupt download, wrong arch, etc.). SDK drivers don't —
+		// the HTTP client handles the request, no binary involved.
 		if isCLIDriver(res.Driver) {
 			binaryName := cliBinaryForDriver(res.Driver)
-			_, lookErr := exec.LookPath(binaryName)
+			binaryPath, lookErr := exec.LookPath(binaryName)
 			found := lookErr == nil
 			check.BinaryFound = &found
 			if !found {
 				check.Status = "fail"
 				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %q not found on PATH (required by driver %s)", binaryName, res.Driver))
+				report.Nodes = append(report.Nodes, check)
+				report.Summary.Fail++
+				continue
+			}
+			if probeErr := probeCLIBinary(binaryPath); probeErr != nil {
+				check.Status = "fail"
+				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %s does not respond to --help (required by driver %s): %v", binaryPath, res.Driver, probeErr))
 				report.Nodes = append(report.Nodes, check)
 				report.Summary.Fail++
 				continue
@@ -349,6 +358,21 @@ func isCLIDriver(driver string) bool {
 		return true
 	}
 	return false
+}
+
+// probeCLIBinary runs `<binary> --help` with a short deadline and checks
+// for exit 0. Catches broken binaries that LookPath can't see — wrong
+// arch, missing dynamic deps, partial downloads. Migrated from the
+// legacy provider_preflight; bounded to 5 seconds so a hung binary
+// doesn't stall the launch.
+func probeCLIBinary(binaryPath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binaryPath, "--help")
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // cliBinaryForDriver maps a CLI driver to the expected PATH binary name.
