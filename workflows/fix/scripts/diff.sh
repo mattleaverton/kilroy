@@ -32,7 +32,13 @@ if [ -z "$LAUNCH_HEAD" ]; then
     LAUNCH_HEAD="$(git rev-list --max-parents=0 HEAD 2>/dev/null | tail -n 1)"
 fi
 
-git diff --no-color --no-ext-diff "$LAUNCH_HEAD" HEAD -- . > fix.patch 2>/dev/null || : > fix.patch
+git diff --no-color --no-ext-diff "$LAUNCH_HEAD" HEAD -- . \
+    ':(exclude).gitignore' \
+    ':(exclude)result.md' \
+    ':(exclude)fix.patch' \
+    ':(exclude)status.json' \
+    ':(exclude).kilroy/**' \
+    > fix.patch 2>/dev/null || : > fix.patch
 SIZE=$(wc -c < fix.patch | tr -d ' ')
 echo "{\"status\":\"success\",\"patch_bytes\":$SIZE,\"base\":\"$LAUNCH_HEAD\"}" > "$STATUS"
 exit 0
