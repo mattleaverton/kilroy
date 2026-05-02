@@ -239,6 +239,160 @@ func TestValidatePreLaunch_CLIDriver_BinaryMissing_Fails(t *testing.T) {
 	}
 }
 
+// makeMinimalPackage writes a workflow.toml + graph.dot + a script under
+// scripts/ so the package-integrity check has something to inspect.
+func makeMinimalPackage(t *testing.T, name, manifest, graph string, scripts map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "workflow.toml"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write toml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "graph.dot"), []byte(graph), 0o644); err != nil {
+		t.Fatalf("write dot: %v", err)
+	}
+	if len(scripts) > 0 {
+		scriptDir := filepath.Join(dir, "scripts")
+		if err := os.MkdirAll(scriptDir, 0o755); err != nil {
+			t.Fatalf("mkdir scripts: %v", err)
+		}
+		for n, content := range scripts {
+			if err := os.WriteFile(filepath.Join(scriptDir, n), []byte(content), 0o644); err != nil {
+				t.Fatalf("write %s: %v", n, err)
+			}
+		}
+	}
+	return dir
+}
+
+func TestValidatePreLaunch_PackageIntegrity_OK(t *testing.T) {
+	pkgDir := makeMinimalPackage(t, "ok",
+		`[workflow]
+name = "ok"
+version = "1"
+description = "test"
+default_class = "hard_coding"
+`,
+		`digraph ok {
+  start [shape=Mdiamond, label="Start"]
+  stage [shape=parallelogram, label="stage", tool_command="bash .kilroy/package/scripts/stage.sh"]
+  done [shape=Msquare, label="Done"]
+  start -> stage
+  stage -> done [condition="outcome=success"]
+}`,
+		map[string]string{"stage.sh": "#!/bin/bash\necho ok\n"},
+	)
+	g := graphWithAgentNode(t, "stage", map[string]string{
+		"tool_command": "bash .kilroy/package/scripts/stage.sh",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{
+		LogsRoot:   t.TempDir(),
+		PackageDir: pkgDir,
+	}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+	if report.Package == nil || report.Package.Status != "ok" {
+		t.Errorf("package check = %+v, want status=ok", report.Package)
+	}
+}
+
+func TestValidatePreLaunch_PackageIntegrity_MissingScript_Fails(t *testing.T) {
+	// Manifest fine, graph references a script that doesn't exist.
+	pkgDir := makeMinimalPackage(t, "bad",
+		`[workflow]
+name = "bad"
+version = "1"
+description = "test"
+`,
+		`digraph bad {}`,
+		nil, // no scripts dir
+	)
+	g := graphWithAgentNode(t, "stage", map[string]string{
+		"tool_command": "bash .kilroy/package/scripts/missing.sh",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{
+		LogsRoot:   t.TempDir(),
+		PackageDir: pkgDir,
+	}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail for missing script")
+	}
+	if report.Package == nil || report.Package.Status != "fail" {
+		t.Errorf("package check = %+v, want status=fail", report.Package)
+	}
+	if !anyError(report.Package.Errors, "missing.sh") {
+		t.Errorf("expected error to mention missing.sh, got %v", report.Package.Errors)
+	}
+}
+
+func TestValidatePreLaunch_PackageIntegrity_BadClass_Fails(t *testing.T) {
+	pkgDir := makeMinimalPackage(t, "bad",
+		`[workflow]
+name = "bad"
+version = "1"
+description = "test"
+`,
+		`digraph bad {}`,
+		nil,
+	)
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"class": "made_up_class_name",
+	})
+	_, err := ValidatePreLaunch(g, RunOptions{
+		LogsRoot:   t.TempDir(),
+		PackageDir: pkgDir,
+	}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail for unknown class in package check")
+	}
+}
+
+func TestValidatePreLaunch_PackageIntegrity_MissingRequiredField(t *testing.T) {
+	// Manifest omits version (required).
+	pkgDir := makeMinimalPackage(t, "bad",
+		`[workflow]
+name = "bad"
+description = "test"
+`,
+		`digraph bad {}`,
+		nil,
+	)
+	g := graphWithAgentNode(t, "agent", map[string]string{})
+	_, err := ValidatePreLaunch(g, RunOptions{
+		LogsRoot:   t.TempDir(),
+		PackageDir: pkgDir,
+	}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail for missing version field")
+	}
+}
+
+func TestValidatePreLaunch_NoPackageDir_SkipsPackageCheck(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-6",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{
+		LogsRoot: t.TempDir(),
+		// PackageDir intentionally omitted (raw --graph file launch path).
+	}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+	if report.Package != nil {
+		t.Errorf("expected nil package check when PackageDir empty, got %+v", report.Package)
+	}
+}
+
+func anyError(errs []string, substr string) bool {
+	for _, e := range errs {
+		if strings.Contains(e, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPreLaunchError_MessageMentionsFailedNodes(t *testing.T) {
 	r := &PreLaunchReport{
 		Nodes: []PreLaunchNodeCheck{

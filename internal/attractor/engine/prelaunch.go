@@ -18,17 +18,35 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
+
+// tomlDecodeBytes is a tiny indirection so unit tests can swap in a fake
+// decoder if they ever need to. Today it's just a pass-through.
+func tomlDecodeBytes(data []byte, dest any) (toml.MetaData, error) {
+	return toml.Decode(string(data), dest)
+}
 
 // PreLaunchReport is the structured output of ValidatePreLaunch. Persisted
 // alongside the run as prelaunch_validation.json for after-the-fact
 // inspection (kilroy runs show, kilroy policy explain, etc.).
 type PreLaunchReport struct {
-	GeneratedAt string               `json:"generated_at"`
-	Nodes       []PreLaunchNodeCheck `json:"nodes"`
-	Summary     PreLaunchSummary     `json:"summary"`
+	GeneratedAt string                 `json:"generated_at"`
+	Package     *PreLaunchPackageCheck `json:"package,omitempty"`
+	Nodes       []PreLaunchNodeCheck   `json:"nodes"`
+	Summary     PreLaunchSummary       `json:"summary"`
+}
+
+// PreLaunchPackageCheck records workflow-package integrity findings —
+// manifest required fields, tool_command scripts present, etc. Surfaces
+// only when opts.PackageDir is set (i.e., the run came from a package
+// rather than a raw --graph file).
+type PreLaunchPackageCheck struct {
+	Dir    string   `json:"dir,omitempty"`
+	Status string   `json:"status"` // "ok" | "fail"
+	Errors []string `json:"errors,omitempty"`
 }
 
 // PreLaunchNodeCheck records the resolution + auth-presence + binary-presence
@@ -67,6 +85,20 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 	}
 	if g == nil {
 		return report, nil
+	}
+
+	// Package-integrity check: only when PackageDir is set (i.e., the run
+	// came from a workflow package, not a raw --graph file). Catches
+	// authoring typos at runtime — same checks as shipped_packages_test.go,
+	// but for the user's actual launch path.
+	if opts.PackageDir != "" {
+		pc := validatePackageIntegrity(opts.PackageDir, g)
+		report.Package = pc
+		if pc.Status == "fail" {
+			report.Summary.Fail++
+			_ = writePreLaunchReport(opts.LogsRoot, report)
+			return report, &PreLaunchError{Report: report}
+		}
 	}
 
 	reg := NewDefaultRegistry()
@@ -250,4 +282,147 @@ func cliBinaryForDriver(driver string) string {
 		return "gemini"
 	}
 	return ""
+}
+
+// validatePackageIntegrity is the runtime version of the
+// shipped_packages_test.go gate — workflow.toml parses with required
+// fields, every node's tool_command bash <path> resolves to an existing
+// regular file in the package, and every agent class= references a real
+// policy class. Returns a PreLaunchPackageCheck describing what passed
+// or failed; "fail" status aborts the run before any node is dispatched.
+func validatePackageIntegrity(pkgDir string, g *model.Graph) *PreLaunchPackageCheck {
+	pc := &PreLaunchPackageCheck{Dir: pkgDir}
+
+	// Manifest: required fields. Use the v2-aware parser that
+	// auto-detects legacy/v2 shape.
+	manifestPath := filepath.Join(pkgDir, "workflow.toml")
+	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
+		raw, readErr := os.ReadFile(manifestPath)
+		if readErr != nil {
+			pc.Errors = append(pc.Errors, fmt.Sprintf("read workflow.toml: %v", readErr))
+		} else {
+			m, parseErr := parsePreLaunchManifest(raw)
+			if parseErr != nil {
+				pc.Errors = append(pc.Errors, fmt.Sprintf("parse workflow.toml: %v", parseErr))
+			} else {
+				if strings.TrimSpace(m.Name) == "" {
+					pc.Errors = append(pc.Errors, "workflow.toml: name is required")
+				}
+				if strings.TrimSpace(m.Description) == "" {
+					pc.Errors = append(pc.Errors, "workflow.toml: description is required")
+				}
+				if strings.TrimSpace(m.Version) == "" {
+					pc.Errors = append(pc.Errors, "workflow.toml: version is required")
+				}
+			}
+		}
+	}
+
+	// Walk every node; check tool_command scripts exist and class= names
+	// match real policy classes.
+	if g != nil {
+		nodeIDs := sortedNodeIDs(g)
+		var policyData *policy.Data
+		for _, id := range nodeIDs {
+			n := g.Nodes[id]
+			if n == nil {
+				continue
+			}
+			if cmd := strings.TrimSpace(n.Attr("tool_command", "")); cmd != "" {
+				if rel := preLaunchScriptRelPath(cmd); rel != "" {
+					abs := filepath.Join(pkgDir, rel)
+					info, err := os.Stat(abs)
+					if err != nil {
+						pc.Errors = append(pc.Errors, fmt.Sprintf("node %q: tool_command references %q which does not exist at %s", id, cmd, abs))
+					} else if !info.Mode().IsRegular() {
+						pc.Errors = append(pc.Errors, fmt.Sprintf("node %q: script %s is not a regular file", id, abs))
+					} else if info.Size() == 0 {
+						pc.Errors = append(pc.Errors, fmt.Sprintf("node %q: script %s is empty", id, abs))
+					}
+				}
+			}
+			if cls := strings.TrimSpace(n.Attr("class", "")); cls != "" {
+				if policyData == nil {
+					d, err := policy.Load()
+					if err != nil {
+						pc.Errors = append(pc.Errors, fmt.Sprintf("policy load (for class check): %v", err))
+						break
+					}
+					policyData = d
+				}
+				if !preLaunchClassExists(policyData, cls) {
+					pc.Errors = append(pc.Errors, fmt.Sprintf("node %q: class=%q is not a real policy class or alias (run `kilroy policy list` to see available classes)", id, cls))
+				}
+			}
+		}
+	}
+
+	if len(pc.Errors) > 0 {
+		pc.Status = "fail"
+	} else {
+		pc.Status = "ok"
+	}
+	return pc
+}
+
+// preLaunchManifestHead is a minimal v2-vs-legacy discriminator. Mirrors
+// the workflows package's parser to avoid the import cycle (workflows →
+// engine).
+type preLaunchManifestHead struct {
+	Workflow struct {
+		Name        string `toml:"name"`
+		Version     string `toml:"version"`
+		Description string `toml:"description"`
+	} `toml:"workflow"`
+	Name        string `toml:"name"`
+	Description string `toml:"description"`
+	Version     string `toml:"version"`
+}
+
+func parsePreLaunchManifest(raw []byte) (*preLaunchManifestHead, error) {
+	var head preLaunchManifestHead
+	if _, err := tomlDecodeBytes(raw, &head); err != nil {
+		return nil, err
+	}
+	if head.Workflow.Name != "" || head.Workflow.Version != "" || head.Workflow.Description != "" {
+		return &preLaunchManifestHead{
+			Name:        head.Workflow.Name,
+			Description: head.Workflow.Description,
+			Version:     head.Workflow.Version,
+		}, nil
+	}
+	return &head, nil
+}
+
+func preLaunchScriptRelPath(cmd string) string {
+	fields := strings.Fields(cmd)
+	if len(fields) < 2 {
+		return ""
+	}
+	switch fields[0] {
+	case "bash", "sh", "/bin/bash", "/bin/sh":
+	default:
+		return ""
+	}
+	const prefix = ".kilroy/package/"
+	for _, f := range fields[1:] {
+		if strings.HasPrefix(f, prefix) {
+			return strings.TrimPrefix(f, prefix)
+		}
+	}
+	return ""
+}
+
+func preLaunchClassExists(d *policy.Data, name string) bool {
+	if _, ok := d.Classes[name]; ok {
+		return true
+	}
+	for _, a := range d.Aliases {
+		if a.From == name {
+			if _, ok := d.Classes[a.To]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -609,6 +609,7 @@ func attractorRun(args []string) {
 			ForceModels:   forceModels,
 			Registry:      newLayeredRegistry(useTmux),
 			GitOps:        gitOps,
+			PackageDir:    func() string { if pkg != nil { return pkg.Dir }; return "" }(),
 			OnCXDBStartup: func(info *engine.CXDBStartupInfo) {
 				if info == nil {
 					return
