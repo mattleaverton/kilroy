@@ -365,6 +365,14 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		_ = writePreflightReport(opts.LogsRoot, report)
 		return nil, catalogErr
 	}
+	// Pre-launch validation: cheap, no-LLM-cost auth + class + binary checks.
+	// Runs always (even with --skip-preflight) because it does no real work
+	// — just inspects state and refuses to launch when the resolved route
+	// has no auth or its CLI binary is missing. The legacy preflight, which
+	// can do real LLM probes, runs after this and is gated on SkipPreflight.
+	if _, err := ValidatePreLaunch(g, opts, PolicyDeps{}); err != nil {
+		return nil, err
+	}
 	if opts.SkipPreflight {
 		// Skip CLI prompt probes — caller asserts tools are configured.
 	} else {

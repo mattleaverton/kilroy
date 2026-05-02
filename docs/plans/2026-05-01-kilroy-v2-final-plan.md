@@ -624,6 +624,12 @@ These were not in either prior plan. They emerged from running the six investiga
 
 **For v2:** add a `kilroy runs prune --zombies` (or extend the existing `runs prune`) that detects records with `status: running` whose pid is dead and marks them `status: fail` with `failure_reason: orphan_detected`. Possibly run automatically at every `runs list` invocation, with an opt-out flag.
 
+### 13.6 Pre-launch validation layer (replaces "old garbage preflight" — LANDED)
+
+**Observed:** The legacy `runProviderCLIPreflight` machinery was tangled with the old graph-attribute model, did expensive LLM probes by default, and (until commit `dfd456a`) was even reading raw `llm_provider`/`llm_model` instead of policy-resolved routes. The probes also burn money on every `--validate` invocation. That's a poor fit for "validation during run" the v2 thesis wants — fast, cheap, predictable.
+
+**For v2 (LANDED):** `engine.ValidatePreLaunch` is the new front door. For every agentic node it resolves the `class=` attribute through the policy chain, confirms the resolved candidate's auth is present in the machine-state snapshot, and (for CLI drivers) confirms the binary is on PATH. No LLM calls. Writes `<logs_root>/prelaunch_validation.json` with the resolved tuple per node. Failures abort before the legacy preflight runs, so `--validate` against a typo'd class fails in milliseconds with no provider auto-detection cost. The legacy preflight still runs after prelaunch on real launches (gated by `--skip-preflight`), but is now a deprecated layer to be removed once it covers nothing prelaunch doesn't already.
+
 ---
 
 ## 14. Work breakdown — ordered for shippability
