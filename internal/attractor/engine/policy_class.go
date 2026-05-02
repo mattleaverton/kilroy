@@ -1,11 +1,17 @@
 // Shared policy class-resolution helper consumed by both AgentRouter (API path)
 // and TmuxAgentHandler (tmux path). Routes a node's class= attribute through
-// internal/policy and emits the policy_class_resolved progress event.
+// internal/policy, emits the policy_class_resolved progress event, and
+// persists the full ResolveResult to <logs_root>/<node_id>/resolution.json
+// per plan §6.4.
 package engine
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/policy"
@@ -80,6 +86,8 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		})
 	}
 
+	persistResolution(exec, node.ID, className, res)
+
 	return ClassResolution{
 		Class:    className,
 		Provider: prov,
@@ -88,4 +96,116 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		Backend:  be,
 		Result:   res,
 	}, true, nil
+}
+
+// resolutionRecord is the on-disk schema for <stage_dir>/resolution.json,
+// matching plan §6.4. Best-effort: missing/nil exec or missing logs_root
+// silently skip the write — the in-memory ResolveResult is still returned
+// to the caller and the progress event still fires.
+type resolutionRecord struct {
+	SchemaVersion string             `json:"schema_version"`
+	NodeID        string             `json:"node_id"`
+	WorkflowID    string             `json:"workflow_id,omitempty"`
+	Resolution    resolutionDetails  `json:"resolution"`
+}
+
+type resolutionDetails struct {
+	Requested     resolutionRequested `json:"requested"`
+	Resolved      resolutionResolved  `json:"resolved"`
+	FallbackRank  int                 `json:"fallback_rank"`
+	Skipped       []resolutionSkipped `json:"skipped"`
+	PolicyVersion string              `json:"policy_version"`
+	ResolvedAt    string              `json:"resolved_at"`
+}
+
+type resolutionRequested struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+type resolutionResolved struct {
+	ModelID    string `json:"model_id"`
+	Driver     string `json:"driver"`
+	Transport  string `json:"transport"`
+	AuthMethod string `json:"auth_method"`
+	AuthSource string `json:"auth_source,omitempty"`
+	TurnCodec  string `json:"turn_codec"`
+}
+
+type resolutionSkipped struct {
+	Rank    int    `json:"rank"`
+	ModelID string `json:"model_id"`
+	Driver  string `json:"driver"`
+	Reason  string `json:"reason"`
+}
+
+func persistResolution(exec *Execution, nodeID, className string, res policy.ResolveResult) {
+	if exec == nil {
+		return
+	}
+	logsRoot := strings.TrimSpace(exec.LogsRoot)
+	if logsRoot == "" && exec.Engine != nil {
+		logsRoot = strings.TrimSpace(exec.Engine.LogsRoot)
+	}
+	if logsRoot == "" || nodeID == "" {
+		return
+	}
+
+	requestType := res.RequestType
+	if requestType == "" {
+		requestType = "class"
+	}
+	requestValue := res.RequestValue
+	if requestValue == "" {
+		requestValue = className
+	}
+
+	resolvedAt := res.ResolvedAt
+	if resolvedAt.IsZero() {
+		resolvedAt = time.Now().UTC()
+	}
+
+	skipped := make([]resolutionSkipped, 0, len(res.Skipped))
+	for _, s := range res.Skipped {
+		skipped = append(skipped, resolutionSkipped{
+			Rank:    s.Rank,
+			ModelID: s.ModelID,
+			Driver:  s.Driver,
+			Reason:  s.Reason,
+		})
+	}
+
+	rec := resolutionRecord{
+		SchemaVersion: "1",
+		NodeID:        nodeID,
+		WorkflowID:    graphNameForExec(exec),
+		Resolution: resolutionDetails{
+			Requested: resolutionRequested{
+				Type:  requestType,
+				Value: requestValue,
+			},
+			Resolved: resolutionResolved{
+				ModelID:    res.ModelID,
+				Driver:     res.Driver,
+				Transport:  res.Transport,
+				AuthMethod: res.AuthMethod,
+				AuthSource: res.AuthSource,
+				TurnCodec:  res.HistorySink,
+			},
+			FallbackRank:  res.FallbackRank,
+			Skipped:       skipped,
+			PolicyVersion: res.PolicyVersion,
+			ResolvedAt:    resolvedAt.Format(time.RFC3339Nano),
+		},
+	}
+
+	stageDir := filepath.Join(logsRoot, nodeID)
+	if err := os.MkdirAll(stageDir, 0o755); err != nil {
+		return
+	}
+	b, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(stageDir, "resolution.json"), append(b, '\n'), 0o644)
 }
