@@ -679,7 +679,7 @@ After this block: 182 → 2 known pre-existing failures (`TestRunWithConfig_Allo
 - [ ] Default execution: async-with-handle, `--wait` to block, JSON-by-default with `--pretty` for humans. (`--detach` already gives the async handle; the default is still synchronous; `--pretty` flag is an open polish item.)
 - [ ] Typed-error output schema; document codes.
 
-### Block 2: Workflow registry — **discovery + v2 schema LANDED; secrets resolution still pending**
+### Block 2: Workflow registry — **discovery + v2 schema + workflows CLI + secrets all LANDED**
 
 - [x] **`workflow.toml` v2 schema** (§5.2): `[workflow]`/`[inputs.<name>]`/`[outputs.<name>]`/`[side_effects]`/`[nodes.<id>]`/`[secrets]` tables. Parser in `internal/attractor/workflows/manifest_v2.go` auto-detects v2 vs legacy `[[inputs]]` and emits a unified `Manifest`. `LoadPackage` populates both `Manifest` (v2) and the legacy `PackageManifest` shim during the transition — no hard cut.
 - [x] **Filesystem discovery** with KILROY_WORKFLOW_PATHS > project (`<root>/.kilroy/workflows/`) > user (`$XDG_CONFIG_HOME/kilroy/workflows/`) precedence in `internal/attractor/workflows/discovery.go`. No embedding — workflow source-of-truth stays on disk where authors edit it.
@@ -801,7 +801,7 @@ The work above is the *what*. This section is the *how* — specifically, how to
 | **Block 4** (policy resolver) | Workflows ask for `class=hard_coding` instead of stylesheet model overrides. Switch the `implement` workflow to class-based requests. |
 | **Block 5** (auth) | `kilroy auth list` shows the dev's machine state. Use it as a preflight in dogfooding scripts ("don't launch if no auth"). |
 | **Block 6** (agent backend) | Adding a new backend (Ollama) is a forcing function for the abstraction. It's a self-test: if Ollama slots in cleanly, the tuple is right. |
-| **Block 9** (built-in workflows) | `kilroy fix` and `kilroy review` exist as blessed forms. From this point, all remaining v2 work uses them on itself. The `kilroy review` workflow is what reviews `kilroy review`'s own PRs. |
+| **Block 9** (shipped workflows) | `kilroy run fix` / `kilroy run review` reach the shipped trio via filesystem discovery. From this point, remaining v2 work uses them on itself. (Reframed: no bare-form `kilroy fix`; workflows reach via `kilroy run <name>`.) |
 
 The sequence is real, not aspirational: each row above can only meaningfully start when the prior rows have landed. The corollary is that **Block 0 must finish first**, and it must finish for-real (validated, merged, deployed to the dev's `~/.local/bin/kilroy`) before serious dogfooding starts. Otherwise we'll spend more time triaging zombie runs than benefiting from parallelism.
 
@@ -854,7 +854,7 @@ This is the workflow we use from §15.3 onwards. It's the precursor to the bless
 - Graph adds the verify-fail-retry-once edge (`verify -> agent [condition="outcome=fail"]`) — quick-launch lacks this; with it, the typical "agent forgot an import" or "tiny syntax error" cases self-recover instead of needing human triage.
 - Side-effect declarations: `mutates_git: true, writes_files: true, network_egress: true, idempotent: false`.
 - Use it for Block 4 Step 4 work itself (self-referential dogfood): the implement workflow is what wires the resolver into the engine, and once Step 4 lands the workflow's own `class="hard_coding"` declaration starts being honored.
-- Long-term home: `internal/workflows/implement/` (built-in via `go:embed`) when Block 9 lands.
+- Long-term home: stays at `workflows/implement/` (filesystem-discovered, **not embedded** per the §10 reframe). For end-user installs, the user-config path (`~/.config/kilroy/workflows/`) is populated via symlink during dev or installer copy at packaging time.
 
 ### 15.3 Worktree-and-merge-back protocol
 
@@ -913,7 +913,7 @@ The win comes when work is genuinely independent (different files, different mod
 | Block 6 (agent backend) | Partial | Codec extraction is 4 parallel; transport/auth/orchestration are sequential | 4 parallel runs for codecs, then sequential refactor + Ollama backend |
 | Block 7 (recursion) | **No** | Schema + env-var contract + show-output all depend on each other | Sequential |
 | Block 8 (concurrency hardening) | **No** | This block IS a stress test of parallelism, not parallelizable itself | Sequential analysis + test authoring |
-| Block 9 (built-in workflows) | **Yes** | 3 workflows × independent packages | 3 parallel runs, one per blessed workflow |
+| Block 9 (shipped workflows) | **Yes** | 3 workflows × independent packages | 3 parallel runs, one per shipped workflow (post-reframe: no "blessed" tier — they're just workflows) |
 | Block 10 (docs) | Yes | Each doc is independent | N parallel runs, light supervision |
 
 **Three flagship parallel campaigns** worth planning explicitly:
