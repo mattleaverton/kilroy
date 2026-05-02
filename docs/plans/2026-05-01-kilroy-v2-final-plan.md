@@ -624,7 +624,7 @@ These were not in either prior plan. They emerged from running the six investiga
 
 **For v2:** add a `kilroy runs prune --zombies` (or extend the existing `runs prune`) that detects records with `status: running` whose pid is dead and marks them `status: fail` with `failure_reason: orphan_detected`. Possibly run automatically at every `runs list` invocation, with an opt-out flag.
 
-### 13.6 Pre-launch validation layer (replaces "old garbage preflight" — LANDED)
+### 13.6 Pre-launch validation layer (legacy preflight DELETED — LANDED)
 
 **Observed:** The legacy `runProviderCLIPreflight` machinery was tangled with the old graph-attribute model, did expensive LLM probes by default, and (until commit `dfd456a`) was even reading raw `llm_provider`/`llm_model` instead of policy-resolved routes. The probes also burn money on every `--validate` invocation. That's a poor fit for "validation during run" the v2 thesis wants — fast, cheap, predictable.
 
@@ -638,7 +638,9 @@ These were not in either prior plan. They emerged from running the six investiga
 
 No LLM calls. Writes `<logs_root>/prelaunch_validation.json` with full structured findings. Failures abort before the legacy preflight runs, so `--validate` against a typo'd class fails in milliseconds with no provider auto-detection cost.
 
-The legacy `runProviderCLIPreflight` still runs after prelaunch on real launches (gated by `--skip-preflight`). With prelaunch now covering binary presence + capability probe + auth + class resolution, the legacy layer's only remaining unique contribution is the optional LLM prompt probe (KILROY_PREFLIGHT_PROMPT_PROBE_MODE). When that's deemed unneeded — or moved behind an explicit opt-in flag rather than env var — the legacy preflight can be deleted.
+The legacy `runProviderCLIPreflight` machinery is **deleted** as of this branch — the entire `provider_preflight.go` file (1738 lines) plus four test files (~2530 lines) are gone, along with `--skip-preflight` (no longer meaningful), `RunOptions.SkipPreflight`, and the `validateProviderModelPairs` catalog gate. The remaining catalog-typo-catching is implicit (a wrong model ID surfaces as a typed run failure at first node, not a preflight wall). The remaining capability-flag-checking is implicit (a CLI that's missing a flag surfaces as `providerCLIErrorKindCapabilityMissing` via `provider_error_classification.go`'s "unknown option" matcher).
+
+`PreflightWithConfig` (the validate-only entry) now produces `prelaunch_validation.json` instead of `preflight_report.json`; the `--validate` CLI output prints `validate=true` + `prelaunch_validation=<path>`.
 
 ---
 

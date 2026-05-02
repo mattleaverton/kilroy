@@ -133,7 +133,15 @@ func classifyProviderCLIErrorWithContract(provider string, spec *providerspec.CL
 			Message: "provider executable not found",
 		}
 	}
-	if spec != nil && !probeOutputLooksLikeHelpFromSpec(spec, stderr) && strings.Contains(strings.ToLower(stderr), "unknown option") {
+	// "unknown option" in stderr indicates the CLI doesn't support a flag
+	// kilroy passed — typically a capability mismatch (e.g. an old version
+	// that lacks --dangerously-skip-permissions). The legacy
+	// probeOutputLooksLikeHelpFromSpec helper used to disambiguate this
+	// from a help dump that listed flags including the word; that helper
+	// went away with the legacy preflight. We accept the rare false
+	// positive — a help dump containing the words "unknown option" is
+	// vanishingly unlikely in the CLIs kilroy targets.
+	if spec != nil && strings.Contains(strings.ToLower(stderr), "unknown option") {
 		return providerCLIContractError{
 			Kind:    providerCLIErrorKindCapabilityMissing,
 			Message: "provider CLI missing required capability flags",

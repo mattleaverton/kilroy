@@ -597,10 +597,10 @@ digraph G {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
-	if !strings.Contains(out, "preflight=true") {
+	if !strings.Contains(out, "validate=true") {
 		t.Fatalf("expected preflight marker, got:\n%s", out)
 	}
-	if !strings.Contains(out, "preflight_report=") {
+	if !strings.Contains(out, "prelaunch_validation=") {
 		t.Fatalf("expected preflight report output, got:\n%s", out)
 	}
 }
@@ -625,7 +625,7 @@ digraph G {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
-	if !strings.Contains(out, "preflight=true") {
+	if !strings.Contains(out, "validate=true") {
 		t.Fatalf("expected preflight marker, got:\n%s", out)
 	}
 }
@@ -650,7 +650,7 @@ digraph G {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
-	if !strings.Contains(out, "preflight=true") {
+	if !strings.Contains(out, "validate=true") {
 		t.Fatalf("expected preflight marker, got:\n%s", out)
 	}
 }
@@ -700,7 +700,7 @@ digraph G {
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
-	if !strings.Contains(out, "preflight=true") {
+	if !strings.Contains(out, "validate=true") {
 		t.Fatalf("expected preflight marker, got:\n%s", out)
 	}
 	if strings.Contains(out, "worktree=") {

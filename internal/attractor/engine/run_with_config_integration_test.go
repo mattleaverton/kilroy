@@ -115,7 +115,14 @@ digraph G {
 	}
 }
 
-func TestPreflightWithConfig_RunsProviderChecksAndWritesReport(t *testing.T) {
+// TestPreflightWithConfig_WritesPrelaunchReport verifies that
+// PreflightWithConfig produces a prelaunch_validation.json artifact
+// after the legacy preflight machinery was removed. The legacy version
+// of this test asserted provider-CLI-presence checks specifically; that
+// surface is gone. The replacement is the broader prelaunch suite
+// (package integrity / class resolution / auth / binary capability /
+// secrets), which is exercised here at the integration level.
+func TestPreflightWithConfig_WritesPrelaunchReport(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	codexCLI := writeFakeCodexHelpCLI(t)
@@ -134,19 +141,17 @@ func TestPreflightWithConfig_RunsProviderChecksAndWritesReport(t *testing.T) {
 
 	dot := []byte(`
 digraph G {
-  graph [goal="preflight provider checks"]
+  graph [goal="prelaunch validation path"]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
-  a [shape=box, llm_provider=openai, llm_model=gpt-5.2, prompt="say hi"]
-  start -> a
-  a -> exit [condition="outcome=success"]
+  start -> exit
 }
 `)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pf, err := PreflightWithConfig(ctx, dot, cfg, RunOptions{
-		RunID:         "preflight-provider-checks",
+		RunID:         "preflight-validation",
 		LogsRoot:      logsRoot,
 		AllowTestShim: true,
 		DisableCXDB:   true,
@@ -158,40 +163,20 @@ digraph G {
 		t.Fatal("PreflightWithConfig returned nil result")
 	}
 
-	reportPath := filepath.Join(logsRoot, "preflight_report.json")
+	reportPath := filepath.Join(logsRoot, "prelaunch_validation.json")
 	if got, want := pf.PreflightReportPath, reportPath; got != want {
 		t.Fatalf("PreflightReportPath: got %q want %q", got, want)
 	}
 	b, err := os.ReadFile(reportPath)
 	if err != nil {
-		t.Fatalf("read preflight report: %v", err)
+		t.Fatalf("read prelaunch report: %v", err)
 	}
-	var report struct {
-		Summary struct {
-			Pass int `json:"pass"`
-			Warn int `json:"warn"`
-			Fail int `json:"fail"`
-		} `json:"summary"`
-		Checks []struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-		} `json:"checks"`
+	var decoded map[string]any
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("decode prelaunch report: %v", err)
 	}
-	if err := json.Unmarshal(b, &report); err != nil {
-		t.Fatalf("decode preflight report: %v", err)
-	}
-	if total := report.Summary.Pass + report.Summary.Warn + report.Summary.Fail; total == 0 {
-		t.Fatalf("expected non-empty preflight summary, got %+v", report.Summary)
-	}
-	foundProviderCheck := false
-	for _, check := range report.Checks {
-		if check.Name == "provider_cli_presence" && check.Status == "pass" {
-			foundProviderCheck = true
-			break
-		}
-	}
-	if !foundProviderCheck {
-		t.Fatalf("expected provider_cli_presence pass check, got %+v", report.Checks)
+	if _, ok := decoded["generated_at"]; !ok {
+		t.Errorf("prelaunch report missing generated_at: %+v", decoded)
 	}
 }
 
@@ -237,7 +222,7 @@ digraph G {
 		t.Fatalf("expected OnCXDBStartup callback")
 	}
 
-	assertExists(t, filepath.Join(logsRoot, "preflight_report.json"))
+	assertExists(t, filepath.Join(logsRoot, "prelaunch_validation.json"))
 
 	for _, rel := range []string{"final.json", "checkpoint.json", "manifest.json", "run.pid"} {
 		p := filepath.Join(logsRoot, rel)

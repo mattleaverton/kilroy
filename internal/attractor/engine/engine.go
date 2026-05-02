@@ -129,11 +129,6 @@ type RunOptions struct {
 	// is not satisfied by a healthy auth entry on this machine.
 	RequiredSecrets []string
 
-	// When true, skip provider preflight probes (CLI prompt probes,
-	// API key validation). Useful when using tmux-managed sessions
-	// with isolated auth that differs from the host environment.
-	SkipPreflight bool
-
 	// CLI arguments used to launch this run. Captured from os.Args.
 	Invocation []string
 }

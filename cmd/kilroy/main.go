@@ -174,7 +174,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  kilroy run <workflow-name> [flags]   (resolves <name> via filesystem discovery)")
 	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--json]")
 	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run (--graph <file.dot> | --package <dir>) [--tmux] [--detach] [--validate|--preflight|--test-run] [--skip-preflight] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--input <path|json>] [--prompt-file <file>] [--workspace <dir>] [--label KEY=VALUE ...]")
+	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run (--graph <file.dot> | --package <dir>) [--tmux] [--detach] [--validate|--preflight|--test-run] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--input <path|json>] [--prompt-file <file>] [--workspace <dir>] [--label KEY=VALUE ...]")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --logs-root <dir>")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --cxdb <http_base_url> --context-id <id>")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --run-branch <attractor/run/...> [--repo <path>]")
@@ -241,7 +241,6 @@ func attractorRun(args []string) {
 	var workspace string
 	var labelSpecs []string
 	var useTmux bool
-	var skipPreflight bool
 	var packagePath string
 
 	for i := 0; i < len(args); i++ {
@@ -325,8 +324,6 @@ func attractorRun(args []string) {
 			labelSpecs = append(labelSpecs, args[i])
 		case "--tmux":
 			useTmux = true
-		case "--skip-preflight":
-			skipPreflight = true
 		case "--package":
 			i++
 			if i >= len(args) {
@@ -553,9 +550,6 @@ func attractorRun(args []string) {
 		if useTmux {
 			childArgs = append(childArgs, "--tmux")
 		}
-		if skipPreflight {
-			childArgs = append(childArgs, "--skip-preflight")
-		}
 		for _, spec := range labelSpecs {
 			childArgs = append(childArgs, "--label", spec)
 		}
@@ -629,10 +623,10 @@ func attractorRun(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("preflight=true\n")
+		fmt.Printf("validate=true\n")
 		fmt.Printf("run_id=%s\n", pf.RunID)
 		fmt.Printf("logs_root=%s\n", pf.LogsRoot)
-		fmt.Printf("preflight_report=%s\n", pf.PreflightReportPath)
+		fmt.Printf("prelaunch_validation=%s\n", pf.PreflightReportPath)
 		if pf.CXDBUIURL != "" {
 			fmt.Printf("cxdb_ui=%s\n", pf.CXDBUIURL)
 		}
@@ -665,7 +659,6 @@ func attractorRun(args []string) {
 		LogsRoot:      logsRoot,
 		AllowTestShim: allowTestShim,
 		DisableCXDB:   noCXDB,
-		SkipPreflight: skipPreflight,
 		ForceModels:   forceModels,
 		Registry:      newLayeredRegistry(useTmux),
 		RunDB:         rdb,

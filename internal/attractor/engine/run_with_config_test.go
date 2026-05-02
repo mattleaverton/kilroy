@@ -162,7 +162,14 @@ digraph G {
 	}
 }
 
-func TestRunWithConfig_ProfilePolicyFailure_WritesPreflightReport(t *testing.T) {
+// TestRunWithConfig_ProfilePolicyFailure_SurfacesError verifies that when
+// the CLI profile policy fails (e.g. KILROY_CODEX_PATH unset under the
+// "real" profile), RunWithConfig returns an error before launching the
+// run. The legacy preflight machinery used to also write a structured
+// preflight_report.json on this path; that surface was deleted along
+// with the rest of the legacy preflight, so we now just assert that the
+// error is correctly surfaced with provider-policy details in its message.
+func TestRunWithConfig_ProfilePolicyFailure_SurfacesError(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	t.Setenv("KILROY_CODEX_PATH", "/tmp/fake/codex")
@@ -194,36 +201,10 @@ digraph G {
 	if err == nil {
 		t.Fatalf("expected policy error, got nil")
 	}
-
-	reportPath := filepath.Join(logsRoot, "preflight_report.json")
-	b, readErr := os.ReadFile(reportPath)
-	if readErr != nil {
-		t.Fatalf("read %s: %v", reportPath, readErr)
-	}
-	var report struct {
-		Summary struct {
-			Fail int `json:"fail"`
-		} `json:"summary"`
-		Checks []struct {
-			Name   string `json:"name"`
-			Status string `json:"status"`
-		} `json:"checks"`
-	}
-	if unmarshalErr := json.Unmarshal(b, &report); unmarshalErr != nil {
-		t.Fatalf("decode preflight report: %v", unmarshalErr)
-	}
-	if report.Summary.Fail == 0 {
-		t.Fatalf("expected fail count in preflight report, got %+v", report.Summary)
-	}
-	found := false
-	for _, check := range report.Checks {
-		if check.Name == "provider_executable_policy" && check.Status == "fail" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected provider_executable_policy fail check, got %+v", report.Checks)
+	// Error message should mention the env var that failed validation,
+	// since that's the user's actionable signal.
+	if !strings.Contains(err.Error(), "KILROY_CODEX_PATH") {
+		t.Errorf("error %q should mention KILROY_CODEX_PATH", err.Error())
 	}
 }
 
@@ -263,7 +244,7 @@ digraph G {
 		t.Fatal("PreflightWithConfig returned nil result")
 	}
 
-	reportPath := filepath.Join(logsRoot, "preflight_report.json")
+	reportPath := filepath.Join(logsRoot, "prelaunch_validation.json")
 	if got, want := res.PreflightReportPath, reportPath; got != want {
 		t.Fatalf("PreflightReportPath: got %q want %q", got, want)
 	}
@@ -327,17 +308,17 @@ digraph G {
 		t.Fatalf("LogsRoot: got %q want %q", got, want)
 	}
 
-	reportPath := filepath.Join(logsRoot, "preflight_report.json")
+	reportPath := filepath.Join(logsRoot, "prelaunch_validation.json")
 	if got, want := res.PreflightReportPath, reportPath; got != want {
 		t.Fatalf("PreflightReportPath: got %q want %q", got, want)
 	}
 	b, readErr := os.ReadFile(reportPath)
 	if readErr != nil {
-		t.Fatalf("read preflight_report.json: %v", readErr)
+		t.Fatalf("read prelaunch_validation.json: %v", readErr)
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal(b, &decoded); err != nil {
-		t.Fatalf("decode preflight_report.json: %v", err)
+		t.Fatalf("decode prelaunch_validation.json: %v", err)
 	}
 }
 

@@ -87,32 +87,12 @@ echo '{"type":"done","text":"ok"}'
 	}
 }
 
-func TestAnthropicCLIContract_PreflightFailsWhenVerboseCapabilityMissing(t *testing.T) {
-	repo := initTestRepo(t)
-	catalog := writeCatalogForPreflight(t, `{
-  "data": [
-    {"id": "anthropic/claude-sonnet-4-20250514"}
-  ]
-}`)
-	claudeCLI := writeFakeCLI(t, "claude", "Usage: claude -p --output-format stream-json --model MODEL", 0)
-
-	cfg := testPreflightConfigForProviders(repo, catalog, map[string]BackendKind{
-		"anthropic": BackendCLI,
-	})
-	cfg.LLM.Providers["anthropic"] = ProviderConfig{Backend: BackendCLI, Executable: claudeCLI}
-	dot := singleProviderDot("anthropic", "claude-sonnet-4-20250514")
-
-	logsRoot := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, err := RunWithConfig(ctx, dot, cfg, RunOptions{RunID: "anthropic-contract-missing-verbose", LogsRoot: logsRoot, AllowTestShim: true})
-	if err == nil {
-		t.Fatalf("expected anthropic preflight failure, got nil")
-	}
-	if !strings.Contains(err.Error(), "preflight: provider anthropic capability probe missing required tokens") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(err.Error(), "--verbose") {
-		t.Fatalf("expected missing --verbose token in error, got %v", err)
-	}
-}
+// (Removed) TestAnthropicCLIContract_PreflightFailsWhenVerboseCapabilityMissing
+// asserted the legacy preflight's per-provider capability-token gate
+// (rejecting `claude` if `claude --help` didn't list `--verbose`). That
+// gate was deleted along with the rest of the legacy preflight; the
+// replacement is the broader CLI capability probe in
+// internal/attractor/engine/prelaunch.go (binary on PATH + responds 0
+// to --help) plus runtime error classification in
+// provider_error_classification.go (`"unknown option"` in stderr maps
+// to providerCLIErrorKindCapabilityMissing).

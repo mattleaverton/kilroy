@@ -229,7 +229,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		opts.RunBranchPrefix = overrides.RunBranchPrefix
 	}
 	opts.AllowTestShim = overrides.AllowTestShim
-	opts.SkipPreflight = overrides.SkipPreflight
 	opts.ForceModels = normalizeForceModels(overrides.ForceModels)
 	opts.ProgressSink = overrides.ProgressSink
 	opts.Interviewer = overrides.Interviewer
@@ -296,20 +295,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	}
 
 	if err := validateRunCLIProfilePolicy(cfg, opts, runUsesCLIProviders); err != nil {
-		report := &providerPreflightReport{
-			GeneratedAt:         time.Now().UTC().Format(time.RFC3339Nano),
-			CLIProfile:          normalizedCLIProfile(cfg),
-			AllowTestShim:       opts.AllowTestShim,
-			StrictCapabilities:  parseBool(strings.TrimSpace(os.Getenv("KILROY_PREFLIGHT_STRICT_CAPABILITIES")), false),
-			CapabilityProbeMode: capabilityProbeMode(),
-			PromptProbeMode:     promptProbeMode(cfg),
-		}
-		report.addCheck(providerPreflightCheck{
-			Name:    "provider_executable_policy",
-			Status:  preflightStatusFail,
-			Message: err.Error(),
-		})
-		_ = writePreflightReport(opts.LogsRoot, report)
 		return nil, err
 	}
 
@@ -350,36 +335,14 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		modelCatalogSource = "embedded"
 		modelCatalogPath = ""
 	}
-	catalogChecks, catalogErr := validateProviderModelPairs(g, runtimes, catalog, opts)
-	if catalogErr != nil {
-		report := &providerPreflightReport{
-			GeneratedAt:         time.Now().UTC().Format(time.RFC3339Nano),
-			CLIProfile:          normalizedCLIProfile(cfg),
-			AllowTestShim:       opts.AllowTestShim,
-			StrictCapabilities:  parseBool(strings.TrimSpace(os.Getenv("KILROY_PREFLIGHT_STRICT_CAPABILITIES")), false),
-			CapabilityProbeMode: capabilityProbeMode(),
-			PromptProbeMode:     promptProbeMode(cfg),
-		}
-		for _, c := range catalogChecks {
-			report.addCheck(c)
-		}
-		_ = writePreflightReport(opts.LogsRoot, report)
-		return nil, catalogErr
-	}
-	// Pre-launch validation: cheap, no-LLM-cost auth + class + binary checks.
-	// Runs always (even with --skip-preflight) because it does no real work
-	// — just inspects state and refuses to launch when the resolved route
-	// has no auth or its CLI binary is missing. The legacy preflight, which
-	// can do real LLM probes, runs after this and is gated on SkipPreflight.
+	// Pre-launch validation: cheap, no-LLM-cost checks (package integrity,
+	// class resolution, auth, CLI binary capability, secrets). This is
+	// the only validation pass on the launch path — the legacy
+	// runProviderCLIPreflight machinery (catalog gates, real LLM prompt
+	// probes) was removed; everything that mattered moved here, and the
+	// rest was either obsolete under v2 routing or noisy and expensive.
 	if _, err := ValidatePreLaunch(g, opts, PolicyDeps{}); err != nil {
 		return nil, err
-	}
-	if opts.SkipPreflight {
-		// Skip CLI prompt probes — caller asserts tools are configured.
-	} else {
-		if _, err := runProviderCLIPreflight(ctx, g, runtimes, cfg, opts, catalog, catalogChecks); err != nil {
-			return nil, err
-		}
 	}
 
 	var (
@@ -440,71 +403,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		CXDBBin:                 bin,
 		Startup:                 startup,
 	}, nil
-}
-
-func validateProviderModelPairs(g *model.Graph, runtimes map[string]ProviderRuntime, catalog *modeldb.Catalog, opts RunOptions) ([]providerPreflightCheck, error) {
-	if g == nil || catalog == nil {
-		return nil, nil
-	}
-	reg := opts.Registry
-	if reg == nil {
-		reg = NewDefaultRegistry()
-	}
-	var checks []providerPreflightCheck
-	warnedUncovered := map[string]bool{}
-	for _, n := range g.Nodes {
-		if n == nil {
-			continue
-		}
-		if pr, ok := reg.Resolve(n).(ProviderRequiringHandler); !ok || !pr.RequiresProvider() {
-			continue
-		}
-		provider := normalizeProviderKey(n.Attr("llm_provider", ""))
-		modelID := modelIDForNode(n)
-		if provider == "" || modelID == "" {
-			continue
-		}
-		rt, ok := runtimes[provider]
-		if !ok {
-			return checks, fmt.Errorf("preflight: provider %s missing runtime definition", provider)
-		}
-		backend := rt.Backend
-		if backend != BackendCLI && backend != BackendAPI {
-			continue
-		}
-		if _, forced := forceModelForProvider(opts.ForceModels, provider); forced {
-			continue
-		}
-		if !modeldb.CatalogCoversProvider(catalog, provider) {
-			if !warnedUncovered[provider] {
-				warnedUncovered[provider] = true
-				checks = append(checks, providerPreflightCheck{
-					Name:     "provider_model_catalog",
-					Provider: provider,
-					Status:   preflightStatusWarn,
-					Message:  fmt.Sprintf("model validation skipped: provider %s not in catalog (prompt probe will validate)", provider),
-					Details: map[string]any{
-						"model":   modelID,
-						"backend": string(backend),
-					},
-				})
-			}
-			continue
-		}
-		if !modeldb.CatalogHasProviderModel(catalog, provider, modelID) {
-			checks = append(checks, providerPreflightCheck{
-				Name:     "provider_model_catalog",
-				Provider: provider,
-				Status:   preflightStatusWarn,
-				Message:  fmt.Sprintf("llm_provider=%s backend=%s model=%s not present in run catalog (catalog may be stale; prompt probe will validate)", provider, backend, modelID),
-				Details: map[string]any{
-					"model":   modelID,
-					"backend": string(backend),
-				},
-			})
-		}
-	}
-	return checks, nil
 }
 
 func loadCatalogForRun(path string) (*modeldb.Catalog, error) {
