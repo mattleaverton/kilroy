@@ -68,14 +68,13 @@ The top-level surface is small and stable. The `attractor` namespace dissolves e
 | Command | Purpose |
 |---|---|
 | `kilroy run <workflow> [args]` | Canonical workflow launch. Returns a JSON run handle. Async by default; `--wait` to block. |
-| `kilroy <workflow> [args]` | Bare form — only for the **hardcoded** blessed built-in set: `investigate`, `review`, `fix` (see §10). |
 | `kilroy runs list / show / wait / prune` | Run inspection. JSON by default; `--pretty` for humans. |
 | `kilroy auth list / use / suggest-fix` | Discovery and routing of credentials (see §8). |
 | `kilroy workflows list / describe / validate` | Workflow package discovery, inspection, validation. |
 | `kilroy policy list / show / explain` | Read-only view of class catalog and how a class resolves on this machine. |
 | `kilroy serve` | Data API server (existing). |
 
-Reserved verbs that the bare form must never collide with: `run`, `runs`, `auth`, `workflows`, `policy`, `serve`, `help`, `version`, `init`, `config`, `status`, `logs`, `list`, `update`, `upgrade`, `login`, `logout`, `whoami`, `env`, `shell`. The bare-form parser must match exact tokens, not prefixes.
+> **Bare-form retirement.** An earlier draft proposed a `kilroy <workflow>` bare form for a hard-coded blessed trio (`investigate`, `review`, `fix`). That feature is retired. Workflows are discovered uniformly via `kilroy run <name>`; there is no special bare command, no reserved-word list to maintain, and no first-class/second-class distinction between built-in and user-authored workflows.
 
 ### Output contract
 
@@ -503,11 +502,11 @@ This order minimizes regression risk by extracting the high-coupling pieces (cod
 
 ---
 
-## 10. First-class built-in workflows
+## 10. Shipped workflows
 
-Investigation 6 evaluated 11 candidates against four filters: generality, stable interface, distinctness, resistance to taxonomy creep. The bar held.
+Investigation 6 evaluated 11 candidates against four filters: generality, stable interface, distinctness, resistance to taxonomy creep. The bar held — `investigate`, `review`, and `fix` ship in the source tree under `workflows/<name>/`. They are reached via `kilroy run <name>` like any other workflow; **the earlier "blessed three with bare-form CLI" framing is retired** (see §4 note). The trio is "shipped" in the sense that we author them; not "blessed" in the sense of getting a special CLI surface.
 
-### 10.1 The blessed three: `investigate`, `review`, `fix`
+### 10.1 The shipped trio: `investigate`, `review`, `fix`
 
 | Workflow | Class | Inputs | Outputs | Side effects |
 |---|---|---|---|---|
@@ -525,17 +524,16 @@ The trio carves up the three orthogonal coding-workspace operations: *understand
 - **`test`** — fatally ambiguous (generate vs run); two different graphs sharing a verb is a smell.
 - **`document`**, **`fix-flake`**, **`audit-deps`**, **`scope-pr`** — too narrow or not weekly.
 
-### 10.3 Built-in workflow packaging
+### 10.3 Shipped workflow packaging
 
-Built-ins live at `internal/workflows/<name>/` in the kilroy repo, embedded via `go:embed`. They are validated in CI by the same validator the runtime uses (see §13). They use the public workflow.toml schema — no special privileges.
+Shipped workflows live at `workflows/<name>/` in the kilroy repo. They're discovered through the filesystem search path (KILROY_WORKFLOW_PATHS, project, user) — **not** embedded via `go:embed`. The earlier embed-and-`internal/workflows/` plan was dropped; on-disk source-of-truth is editable, dogfoodable, and avoids the embed-cache vs runtime-edit drift problem. Validated in CI by the same validator the runtime uses (see §13). They use the public workflow.toml schema — no special privileges.
 
-Designed to spin out into a separate repo later through the same loading mechanism if and when curation pressure justifies it.
+For end users, the discovery story makes shipped workflows reachable from any cwd via the user-config path (`~/.config/kilroy/workflows/`) populated either by symlink during dev (`ln -s <repo>/workflows ~/.config/kilroy/workflows`) or by an installer copy at packaging time.
 
 ### 10.4 Versioning
 
 - The `version` field in `workflow.toml` is the **interface contract version**. Integer. Increments only on breaking changes (required input added, output renamed, side-effect class widened, agent class upgraded with cost implications).
-- Bare form (`kilroy investigate`) always resolves to the **current stable major** version.
-- `kilroy run investigate@1` syntax allows pinning. Bare form is the stability promise; pinning is an expert affordance.
+- `kilroy run investigate@1` syntax allows pinning to a major version. (Implementation deferred — current state is unpinned.)
 - Breaking changes follow a two-phase deprecation: announce (warning), remove (no sooner than the next minor CLI release).
 - Non-breaking changes (prompt rewording, internal script swaps, model upgrades within the same class) are transparent and don't bump the version.
 
@@ -651,22 +649,25 @@ Surfaced during Block 0 dogfooding. Commit `95637c9` tightened the validator; ~1
 
 After this block: 182 → 2 known pre-existing failures (`TestRunWithConfig_AllowsKimiAndZai_WhenCatalogUsesOpenRouterPrefixes`, `TestRunWithConfig_PreflightPromptProbe_AllProvidersWhenGraphUsesAll`) — both kimi/zai-catalog issues already in project memory.
 
-### Block 1: CLI surface collapse
+### Block 1: CLI surface collapse — **`kilroy run` LANDED; cobra + bare-form retired; namespace dissolution still pending**
 
-- [ ] Replace hand-rolled arg parsing with cobra (or similar).
-- [ ] Drop `attractor` namespace; move all subcommands to top level.
-- [ ] Implement `kilroy run <workflow>` canonical form.
-- [ ] Implement reserved-word-list bare form (only `investigate`, `review`, `fix` initially blessed).
-- [ ] Default execution: async-with-handle, `--wait` to block, JSON-by-default with `--pretty` for humans.
+> **Reframe (this branch):** the §10 "blessed three with bare form" feature is retired. Workflows are discovered, not bare commands. `kilroy fix` will not exist; `kilroy run fix` does. Reserved-word complexity goes away with it. Cobra is also out — current arg parsing handles this fine.
+
+- [x] **`kilroy run <workflow-name>` canonical form.** Resolves the name via filesystem discovery (see Block 2 below) and dispatches to the existing engine entry point. `kilroy attractor run` keeps working in parallel — additive, not a hard cut. Tests in `cmd/kilroy/run_test.go`. Live dogfood: run `01KQMAPDKGSSGHARZSXM7MXPVB` (`kilroy run implement` against the in-tree workflows via `KILROY_WORKFLOW_PATHS`).
+- [ ] Drop `attractor` namespace; move remaining subcommands to top level. (Out of scope for now — we're aliasing rather than cutting until consumer scripts catch up.)
+- [ ] Replace hand-rolled arg parsing with cobra. **Retired.** Cosmetic; current parsing is adequate.
+- [ ] Reserved-word-list bare form for the blessed three. **Retired.** Workflows are discovered uniformly via `kilroy run <name>`; no special bare commands.
+- [ ] Default execution: async-with-handle, `--wait` to block, JSON-by-default with `--pretty` for humans. (`--detach` already gives the async handle; the default is still synchronous; `--pretty` flag is an open polish item.)
 - [ ] Typed-error output schema; document codes.
 
-### Block 2: Workflow registry
+### Block 2: Workflow registry — **discovery + v2 schema LANDED; secrets resolution still pending**
 
-- [ ] Define `workflow.toml` schema (§5.2).
-- [ ] Implement hierarchical discovery with project > user > built-in resolution order (§5.1).
-- [ ] Migrate existing demo graphs in `workflows/` to package format.
-- [ ] Implement `kilroy workflows list / describe / validate`.
-- [ ] Define `[secrets]` block semantics (just the names, not values; resolved through auth layer).
+- [x] **`workflow.toml` v2 schema** (§5.2): `[workflow]`/`[inputs.<name>]`/`[outputs.<name>]`/`[side_effects]`/`[nodes.<id>]`/`[secrets]` tables. Parser in `internal/attractor/workflows/manifest_v2.go` auto-detects v2 vs legacy `[[inputs]]` and emits a unified `Manifest`. `LoadPackage` populates both `Manifest` (v2) and the legacy `PackageManifest` shim during the transition — no hard cut.
+- [x] **Filesystem discovery** with KILROY_WORKFLOW_PATHS > project (`<root>/.kilroy/workflows/`) > user (`$XDG_CONFIG_HOME/kilroy/workflows/`) precedence in `internal/attractor/workflows/discovery.go`. No embedding — workflow source-of-truth stays on disk where authors edit it.
+- [x] **Re-author existing workflows** (`fix`, `implement`, `investigate`) in v2 shape. All three now declare `[workflow]`, typed `[inputs.<name>]`, typed `[outputs.<name>]`, `[side_effects]`, and `[nodes.agent].class`. Live dogfood: run `01KQMB4SHM9X807HPRQAHY1Q6C` (`kilroy run implement` via v2 manifest, 22s, success, `policy_class_resolved` fired).
+- [x] **`kilroy workflows list / describe`** in `cmd/kilroy/workflows.go`. List shows name/class/description across all discovery paths (sorted, shadowing applied). Describe surfaces full v2 schema (inputs with types/required/defaults, outputs, side effects, node overrides, secrets). JSON-by-default tagging via struct tags. Tests in `cmd/kilroy/workflows_test.go`.
+- [ ] **`kilroy workflows validate`** as a discovery-aware sibling of `kilroy attractor validate --graph`. (DOT validation is already gated by `shipped_graphs_test.go`; this would be the user-facing CLI.)
+- [ ] **`[secrets]` block semantics** — currently the names parse and surface in `describe` output but aren't resolved through the auth layer at run time.
 
 ### Block 3: CWD-aware defaults and config layering
 

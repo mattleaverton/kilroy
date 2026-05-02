@@ -95,6 +95,8 @@ func main() {
 		policyCmd(args[1:])
 	case "run":
 		runCmd(args[1:])
+	case "workflows":
+		workflowsCmd(args[1:])
 	default:
 		usage()
 		os.Exit(1)
@@ -170,6 +172,8 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy --version")
 	fmt.Fprintln(os.Stderr, "  kilroy run <workflow-name> [flags]   (resolves <name> via filesystem discovery)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--json]")
 	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run (--graph <file.dot> | --package <dir>) [--tmux] [--detach] [--validate|--preflight|--test-run] [--skip-preflight] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--input <path|json>] [--prompt-file <file>] [--workspace <dir>] [--label KEY=VALUE ...]")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --logs-root <dir>")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --cxdb <http_base_url> --context-id <id>")

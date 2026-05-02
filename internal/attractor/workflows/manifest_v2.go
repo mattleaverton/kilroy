@@ -54,23 +54,23 @@ type Manifest struct {
 // what either shape provides; the legacy shape leaves type-related
 // fields zero-valued.
 type InputSpec struct {
-	Name        string
-	Type        string  // "string"|"integer"|"float"|"boolean"|"path"|"enum"; legacy → ""
-	Required    bool
-	Default     string
-	Description string
-	EnumValues  []string  // type=="enum"
-	Positional  int       // 0 means "not positional"; v2-only
-	Flag        string    // "--context", etc.; v2-only
+	Name        string   `json:"name"`
+	Type        string   `json:"type,omitempty"` // "string"|"integer"|"float"|"boolean"|"path"|"enum"; legacy → ""
+	Required    bool     `json:"required"`
+	Default     string   `json:"default,omitempty"`
+	Description string   `json:"description,omitempty"`
+	EnumValues  []string `json:"enum_values,omitempty"` // type=="enum"
+	Positional  int      `json:"positional,omitempty"`  // 0 means "not positional"; v2-only
+	Flag        string   `json:"flag,omitempty"`        // "--context", etc.; v2-only
 }
 
 // OutputSpec describes a workflow output (file or scalar produced).
 type OutputSpec struct {
-	Name        string
-	Type        string  // "path"|"string"|"integer"|"float"|"boolean"
-	Description string
-	Optional    bool
-	Path        string  // type=="path": relative to workspace root
+	Name        string `json:"name"`
+	Type        string `json:"type,omitempty"` // "path"|"string"|"integer"|"float"|"boolean"
+	Description string `json:"description,omitempty"`
+	Optional    bool   `json:"optional,omitempty"`
+	Path        string `json:"path,omitempty"` // type=="path": relative to workspace root
 }
 
 // SideEffects mirrors plan §5.2's [side_effects] table — declarative
@@ -89,8 +89,8 @@ type SideEffects struct {
 // NodeOverride lets a workflow author pin a specific node to a different
 // policy class or to a strict model (mutually exclusive per §5.2).
 type NodeOverride struct {
-	Class string
-	Model string
+	Class string `json:"class,omitempty"`
+	Model string `json:"model,omitempty"`
 }
 
 // LoadManifest reads a workflow.toml from path and returns the unified
