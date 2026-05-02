@@ -11,6 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/danshapiro/kilroy/internal/attractor/dot"
+	"github.com/danshapiro/kilroy/internal/attractor/engine"
+	"github.com/danshapiro/kilroy/internal/attractor/style"
+	"github.com/danshapiro/kilroy/internal/attractor/validate"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
 )
 
@@ -24,6 +28,8 @@ func workflowsCmd(args []string) {
 		workflowsList(args[1:])
 	case "describe":
 		workflowsDescribe(args[1:])
+	case "validate":
+		workflowsValidate(args[1:])
 	case "-h", "--help", "help":
 		workflowsUsage()
 		os.Exit(0)
@@ -38,6 +44,7 @@ func workflowsUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--pretty]            (JSON by default)")
 	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--pretty] (JSON by default)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows validate <name> [--pretty] (JSON by default)")
 }
 
 // workflowsListEntry is the JSON shape for a single workflow in `list`
@@ -331,6 +338,212 @@ func workflowsDescribe(args []string) {
 
 	if len(view.Secrets) > 0 {
 		fmt.Printf("\nsecrets needed: %s\n", strings.Join(view.Secrets, ", "))
+	}
+}
+
+// workflowsValidateResult is the JSON shape for `validate <name>`.
+type workflowsValidateResult struct {
+	Name       string                          `json:"name"`
+	Source     string                          `json:"source"`
+	Dir        string                          `json:"dir"`
+	GraphFile  string                          `json:"graph_file"`
+	Schema     string                          `json:"schema,omitempty"`
+	DOTIssues  []validateDOTIssue              `json:"dot_issues,omitempty"`
+	PreLaunch  *engine.PreLaunchReport         `json:"prelaunch,omitempty"`
+	Status     string                          `json:"status"` // "ok"|"fail"
+}
+
+type validateDOTIssue struct {
+	Severity string `json:"severity"`
+	Rule     string `json:"rule"`
+	Message  string `json:"message"`
+	NodeID   string `json:"node_id,omitempty"`
+	EdgeFrom string `json:"edge_from,omitempty"`
+	EdgeTo   string `json:"edge_to,omitempty"`
+	Fix      string `json:"fix,omitempty"`
+}
+
+// workflowsValidate runs the same checks the runtime runs at launch:
+// DOT-level validation + package integrity + class resolution + auth +
+// CLI binary presence. No LLM calls. Useful for development without
+// kicking off a real run.
+func workflowsValidate(args []string) {
+	asJSON := true
+	var name string
+	for _, a := range args {
+		switch a {
+		case "--json":
+			asJSON = true
+		case "--pretty":
+			asJSON = false
+		case "-h", "--help":
+			fmt.Fprintln(os.Stderr, "usage: kilroy workflows validate <name> [--pretty]")
+			os.Exit(0)
+		default:
+			if name != "" {
+				fmt.Fprintf(os.Stderr, "unexpected argument %q\n", a)
+				os.Exit(1)
+			}
+			name = a
+		}
+	}
+	if name == "" {
+		fmt.Fprintln(os.Stderr, "workflow name required")
+		fmt.Fprintln(os.Stderr, "usage: kilroy workflows validate <name> [--pretty]")
+		os.Exit(1)
+	}
+
+	cwd, _ := os.Getwd()
+	projectRoot := workflows.FindProjectRoot(cwd)
+
+	d, err := workflows.Find(name, projectRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "find: %v\n", err)
+		os.Exit(1)
+	}
+	if d == nil {
+		fmt.Fprintf(os.Stderr, "workflow %q not found\n", name)
+		os.Exit(1)
+	}
+
+	manifestPath := filepath.Join(d.Dir, "workflow.toml")
+	m, err := workflows.LoadManifest(manifestPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load manifest: %v\n", err)
+		os.Exit(1)
+	}
+
+	graphFile := "graph.dot"
+	if m != nil && m.GraphFile != "" {
+		graphFile = m.GraphFile
+	}
+	graphPath := filepath.Join(d.Dir, graphFile)
+	graphSrc, err := os.ReadFile(graphPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read graph: %v\n", err)
+		os.Exit(1)
+	}
+
+	g, err := dot.Parse(graphSrc)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "parse graph: %v\n", err)
+		os.Exit(1)
+	}
+
+	if raw := strings.TrimSpace(g.Attrs["model_stylesheet"]); raw != "" {
+		rules, parseErr := style.ParseStylesheet(raw)
+		if parseErr == nil {
+			_ = style.ApplyStylesheet(g, rules)
+		}
+	}
+
+	out := workflowsValidateResult{
+		Name:      name,
+		Source:    d.Source,
+		Dir:       d.Dir,
+		GraphFile: graphFile,
+	}
+	if m != nil {
+		out.Schema = m.Schema
+	}
+
+	// DOT-level validation (semantic rules, terminal-edge gates, etc.).
+	for _, diag := range validate.Validate(g) {
+		out.DOTIssues = append(out.DOTIssues, validateDOTIssue{
+			Severity: severityString(diag.Severity),
+			Rule:     diag.Rule,
+			Message:  diag.Message,
+			NodeID:   diag.NodeID,
+			EdgeFrom: diag.EdgeFrom,
+			EdgeTo:   diag.EdgeTo,
+			Fix:      diag.Fix,
+		})
+	}
+
+	// Package + class + auth + binary check (no LLM cost).
+	report, _ := engine.ValidatePreLaunch(g, engine.RunOptions{PackageDir: d.Dir}, engine.PolicyDeps{})
+	out.PreLaunch = report
+
+	failed := false
+	for _, issue := range out.DOTIssues {
+		if issue.Severity == "error" {
+			failed = true
+			break
+		}
+	}
+	if report != nil && report.Summary.Fail > 0 {
+		failed = true
+	}
+	if report != nil && report.Package != nil && report.Package.Status == "fail" {
+		failed = true
+	}
+	if failed {
+		out.Status = "fail"
+	} else {
+		out.Status = "ok"
+	}
+
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(out)
+	} else {
+		fmt.Printf("name:      %s\n", out.Name)
+		fmt.Printf("dir:       %s\n", out.Dir)
+		fmt.Printf("status:    %s\n", out.Status)
+		if len(out.DOTIssues) > 0 {
+			fmt.Println("\ndot issues:")
+			for _, d := range out.DOTIssues {
+				fmt.Printf("  [%s] %s: %s", d.Severity, d.Rule, d.Message)
+				if d.NodeID != "" {
+					fmt.Printf(" (node: %s)", d.NodeID)
+				}
+				fmt.Println()
+			}
+		}
+		if out.PreLaunch != nil {
+			if out.PreLaunch.Package != nil && out.PreLaunch.Package.Status == "fail" {
+				fmt.Println("\npackage:")
+				for _, e := range out.PreLaunch.Package.Errors {
+					fmt.Printf("  ERROR: %s\n", e)
+				}
+			}
+			if len(out.PreLaunch.Nodes) > 0 {
+				fmt.Println("\nnode resolutions:")
+				for _, n := range out.PreLaunch.Nodes {
+					marker := "✓"
+					if n.Status == "fail" {
+						marker = "✗"
+					}
+					fmt.Printf("  %s %s", marker, n.NodeID)
+					if n.Class != "" {
+						fmt.Printf(" class=%s", n.Class)
+					}
+					if n.ResolvedModel != "" {
+						fmt.Printf(" → %s via %s", n.ResolvedModel, n.ResolvedDriver)
+					}
+					fmt.Println()
+					for _, e := range n.Errors {
+						fmt.Printf("    %s\n", e)
+					}
+				}
+			}
+		}
+	}
+
+	if failed {
+		os.Exit(1)
+	}
+}
+
+func severityString(s validate.Severity) string {
+	switch s {
+	case validate.SeverityError:
+		return "error"
+	case validate.SeverityWarning:
+		return "warn"
+	default:
+		return "info"
 	}
 }
 
