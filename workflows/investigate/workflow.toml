@@ -1,54 +1,52 @@
 # Investigate workflow: research a focused question and write structured
 # notes to result.md. Class=deep_investigation drives long-context routing
 # via Step 4b. Idempotent and read-only — no code changes are made.
-#
-# Sibling of implement and fix; together the trio carves up understanding
-# (investigate), evaluation (review, pending), transformation (implement
-# and its v0.1 fix variant).
-#
-# NOTE: legacy workflow.toml shape (single top-level fields + [[inputs]]).
-# Block 2 will re-author in the v2 schema (per plan §5.2).
 
-name        = "investigate"
-description = "Research a focused question; produce a structured result.md."
-version     = "1"
+[workflow]
+name              = "investigate"
+version           = "1"
+description       = """
+Research a focused question. The agent reads context files and URLs
+(when provided), distinguishes evidence from inference, and produces
+result.md with TL;DR, findings, open questions, and methodology.
+"""
+agent_description = "Research a question and produce structured findings in result.md."
+default_class     = "deep_investigation"
+graph             = "graph.dot"
 
-outputs = ["result.md"]
-
-[[inputs]]
-name        = "question"
-description = "What you're trying to find out. Be specific: what would a complete answer look like?"
+[inputs.question]
+type        = "string"
 required    = true
+description = "What you're trying to find out. Be specific: what would a complete answer look like?"
 
-[[inputs]]
-name        = "context_files"
-description = "Newline-separated paths the agent should read for context. Optional."
+[inputs.context_files]
+type        = "string"
 required    = false
+description = "Newline-separated paths the agent should read for context."
 
-[[inputs]]
-name        = "urls"
-description = "Newline-separated URLs the agent should fetch and analyze. Optional."
+[inputs.urls]
+type        = "string"
 required    = false
+description = "Newline-separated URLs the agent should fetch and analyze."
 
-[[inputs]]
-name        = "scope_directive"
-description = "Hard scope guardrail rendered into the agent's prompt. Optional."
+[inputs.scope_directive]
+type        = "string"
 required    = false
+description = "Hard scope guardrail rendered into the agent's prompt."
+
+[outputs.result]
+type        = "path"
+description = "Structured research output (TL;DR, findings, open questions, methodology)."
+path        = "result.md"
+
+[side_effects]
+mutates_git    = false
+writes_files   = true
+network_egress = true
+idempotent     = true
+
+[nodes.agent]
+class = "deep_investigation"
 
 [defaults]
 labels = { workflow = "investigate" }
-
-# v2 (Block 2) preview — these declarations will move into [workflow] /
-# [side_effects] / [nodes.agent] tables once the new manifest schema lands.
-#
-# [workflow]
-#   default_class = "deep_investigation"
-#
-# [side_effects]
-#   mutates_git    = false
-#   writes_files   = true   # only result.md
-#   network_egress = true   # urls input may trigger fetches
-#   idempotent     = true
-#
-# [nodes.agent]
-#   class = "deep_investigation"

@@ -3,51 +3,61 @@
 # summary. Sibling of `implement` for directed bug-fix work; differs by
 # input framing (issue, not open prompt) and by emitting a fix.patch
 # alongside result.md so consumers (review, etc.) can chain on the diff.
-#
-# NOTE: legacy workflow.toml shape (single top-level fields + [[inputs]]).
-# Block 2 will re-author in the v2 schema (per plan §5.2).
 
-name        = "fix"
-description = "Fix a described bug with build+test verification; emits a patch."
-version     = "1"
+[workflow]
+name              = "fix"
+version           = "1"
+description       = """
+Fix a described bug. The agent stages context, makes the smallest change
+that addresses the root cause, the verify stage runs your build+test
+command, and a fix.patch is captured against the launch HEAD. Failed
+verify retries the agent once.
+"""
+agent_description = "Fix a described bug; verifies via build+test and emits a fix.patch."
+default_class     = "hard_coding"
+graph             = "graph.dot"
 
-outputs = ["result.md", "fix.patch"]
-
-[[inputs]]
-name        = "issue"
-description = "Description of the bug to fix. Be specific: symptom, expected behavior, and a reproduction if you have one."
+[inputs.issue]
+type        = "string"
 required    = true
+description = "Description of the bug to fix. Be specific: symptom, expected behavior, and a reproduction if you have one."
 
-[[inputs]]
-name        = "context_files"
-description = "Newline-separated absolute paths the agent should read for context. Optional."
+[inputs.context_files]
+type        = "string"
 required    = false
+description = "Newline-separated absolute paths the agent should read for context."
 
-[[inputs]]
-name        = "verify_command"
+[inputs.verify_command]
+type        = "string"
+required    = false
 description = "Shell command run by the verify stage. Default builds and runs targeted tests."
-required    = false
+default     = "go build ./... && go test ./... -timeout 60s"
 
-[[inputs]]
-name        = "scope_directive"
-description = "Hard scope guardrail rendered into the agent's prompt. Optional."
+[inputs.scope_directive]
+type        = "string"
 required    = false
+description = "Hard scope guardrail rendered into the agent's prompt."
+
+[outputs.result]
+type        = "path"
+description = "Structured fix summary."
+path        = "result.md"
+
+[outputs."fix.patch"]
+type        = "path"
+description = "Git diff capturing the substantive change against the launch HEAD."
+path        = "fix.patch"
+
+[side_effects]
+# The change is staged in the run worktree only; the user merges it
+# from fix.patch. mutates_git stays false for that reason.
+mutates_git    = false
+writes_files   = true
+network_egress = true
+idempotent     = false
+
+[nodes.agent]
+class = "hard_coding"
 
 [defaults]
 labels = { workflow = "fix" }
-
-# v2 (Block 2) preview — these declarations will move into [workflow] /
-# [side_effects] / [nodes.agent] tables once the new manifest schema lands.
-#
-# [workflow]
-#   default_class = "hard_coding"
-#
-# [side_effects]
-#   mutates_git    = false   # change is staged in the run worktree only;
-#                            # the user merges it from fix.patch
-#   writes_files   = true
-#   network_egress = true
-#   idempotent     = false
-#
-# [nodes.agent]
-#   class = "hard_coding"

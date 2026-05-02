@@ -17,22 +17,101 @@ import (
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
-// shippedManifest is a deliberately-narrow TOML view of workflow.toml for
-// integrity assertions only. It mirrors the legacy shape consumed by
-// internal/attractor/workflows.PackageManifest but lives here to avoid an
-// import cycle (workflows → engine → validate). Block 2's v2 schema will
-// supersede this; the test will be re-shaped along with the parser.
+// shippedManifest is a narrow TOML view of workflow.toml for integrity
+// assertions only. Lives here (rather than reusing the workflows package
+// loader) to avoid the workflows → engine → validate import cycle.
+// Handles both shapes: legacy ([[inputs]] array) and v2 ([workflow]
+// table + [inputs.<name>] tables). Detection mirrors workflows.ParseManifest:
+// presence of a [workflow] table is the v2 marker.
 type shippedManifest struct {
-	Name        string                 `toml:"name"`
-	Description string                 `toml:"description"`
-	Version     string                 `toml:"version"`
-	Inputs      []shippedManifestInput `toml:"inputs"`
+	Name        string
+	Description string
+	Version     string
+	Inputs      []shippedManifestInput
+	Schema      string // "v2" or "legacy"
 }
 
 type shippedManifestInput struct {
+	Name        string
+	Description string
+	Required    bool
+}
+
+type shippedHead struct {
+	Workflow struct {
+		Name        string `toml:"name"`
+		Version     string `toml:"version"`
+		Description string `toml:"description"`
+	} `toml:"workflow"`
+	Name string `toml:"name"`
+}
+
+type shippedV2 struct {
+	Workflow struct {
+		Name        string `toml:"name"`
+		Version     string `toml:"version"`
+		Description string `toml:"description"`
+	} `toml:"workflow"`
+	Inputs map[string]struct {
+		Description string `toml:"description"`
+		Required    bool   `toml:"required"`
+	} `toml:"inputs"`
+}
+
+type shippedLegacy struct {
 	Name        string `toml:"name"`
 	Description string `toml:"description"`
-	Required    bool   `toml:"required"`
+	Version     string `toml:"version"`
+	Inputs      []struct {
+		Name        string `toml:"name"`
+		Description string `toml:"description"`
+		Required    bool   `toml:"required"`
+	} `toml:"inputs"`
+}
+
+// decodeShippedManifest parses workflow.toml at path into the unified
+// shippedManifest, auto-detecting v2 vs legacy.
+func decodeShippedManifest(path string) (*shippedManifest, error) {
+	var head shippedHead
+	if _, err := toml.DecodeFile(path, &head); err != nil {
+		return nil, err
+	}
+	out := &shippedManifest{}
+	if head.Workflow.Name != "" || head.Workflow.Version != "" || head.Workflow.Description != "" {
+		var v2 shippedV2
+		if _, err := toml.DecodeFile(path, &v2); err != nil {
+			return nil, err
+		}
+		out.Schema = "v2"
+		out.Name = v2.Workflow.Name
+		out.Description = v2.Workflow.Description
+		out.Version = v2.Workflow.Version
+		for name, in := range v2.Inputs {
+			out.Inputs = append(out.Inputs, shippedManifestInput{
+				Name:        name,
+				Description: in.Description,
+				Required:    in.Required,
+			})
+		}
+		sort.Slice(out.Inputs, func(i, j int) bool { return out.Inputs[i].Name < out.Inputs[j].Name })
+		return out, nil
+	}
+	var legacy shippedLegacy
+	if _, err := toml.DecodeFile(path, &legacy); err != nil {
+		return nil, err
+	}
+	out.Schema = "legacy"
+	out.Name = legacy.Name
+	out.Description = legacy.Description
+	out.Version = legacy.Version
+	for _, in := range legacy.Inputs {
+		out.Inputs = append(out.Inputs, shippedManifestInput{
+			Name:        in.Name,
+			Description: in.Description,
+			Required:    in.Required,
+		})
+	}
+	return out, nil
 }
 
 // TestShippedWorkflowPackages walks every directory under workflows/ that
@@ -84,12 +163,12 @@ func TestShippedWorkflowPackages(t *testing.T) {
 		}
 		t.Run(relDir, func(t *testing.T) {
 			tomlPath := filepath.Join(dir, "workflow.toml")
-			var m shippedManifest
-			if _, err := toml.DecodeFile(tomlPath, &m); err != nil {
+			m, err := decodeShippedManifest(tomlPath)
+			if err != nil {
 				t.Fatalf("parse %s: %v", tomlPath, err)
 			}
 
-			// Required manifest fields.
+			// Required manifest fields (same in both shapes).
 			if strings.TrimSpace(m.Name) == "" {
 				t.Error("workflow.toml: name is required")
 			}
@@ -100,14 +179,13 @@ func TestShippedWorkflowPackages(t *testing.T) {
 				t.Error("workflow.toml: version is required")
 			}
 
-			// Every [[inputs]] entry must have name + description (legacy shape;
-			// will move to [inputs.<name>] tables once Block 2 lands).
+			// Every input must have a name + description, regardless of shape.
 			for i, in := range m.Inputs {
 				if strings.TrimSpace(in.Name) == "" {
-					t.Errorf("workflow.toml [[inputs]] %d: name is required", i)
+					t.Errorf("workflow.toml inputs[%d]: name is required", i)
 				}
 				if strings.TrimSpace(in.Description) == "" {
-					t.Errorf("workflow.toml [[inputs]] %q: description is required", in.Name)
+					t.Errorf("workflow.toml input %q: description is required", in.Name)
 				}
 			}
 

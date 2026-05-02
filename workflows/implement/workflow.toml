@@ -1,55 +1,56 @@
 # Implement workflow: stage context, run agent (class=hard_coding), verify
 # build+test, write a summary. Dogfood workhorse for kilroy's own v2 work.
 #
-# NOTE: this manifest uses the LEGACY workflow.toml shape (single top-level
-# fields + [[inputs]] array) for compatibility with the existing package
-# loader. Block 2 will introduce the v2 manifest schema (per plan §5.2:
-# [workflow] / [inputs.<name>] / [outputs.<name>] / [side_effects] /
-# [nodes.<id>] tables) and re-author this manifest in the new shape. The
-# v2 fields are documented in comments below for forward reference.
+# v2 workflow.toml schema (plan §5.2). Loader supports both shapes during
+# the transition; this manifest is on the v2 shape as of the schema
+# parser landing.
 
-name        = "implement"
-description = "Implement a directed change with build+test verification."
-version     = "1"
+[workflow]
+name              = "implement"
+version           = "1"
+description       = """
+Implement a directed change with build+test verification. The agent stages
+the context, makes the change, the verify stage runs your build+test
+command, and a summary is written. Failed verify retries the agent once.
+"""
+agent_description = "Implement a directed change in a kilroy worktree; verifies via build+test."
+default_class     = "hard_coding"
+graph             = "graph.dot"
 
-outputs = ["result.md"]
-
-[[inputs]]
-name        = "prompt"
-description = "What to implement. Tightly scoped and specific."
+[inputs.prompt]
+type        = "string"
 required    = true
+description = "What to implement. Tightly scoped and specific."
 
-[[inputs]]
-name        = "context_files"
-description = "Newline-separated absolute paths the agent should read for context. Optional."
+[inputs.context_files]
+type        = "string"
 required    = false
+description = "Newline-separated absolute paths the agent should read for context."
 
-[[inputs]]
-name        = "verify_command"
+[inputs.verify_command]
+type        = "string"
+required    = false
 description = "Shell command run by the verify stage. Default builds and runs targeted tests."
-required    = false
+default     = "go build ./... && go test ./... -timeout 60s"
 
-[[inputs]]
-name        = "scope_directive"
-description = "Hard scope guardrail rendered into the agent's prompt. Optional."
+[inputs.scope_directive]
+type        = "string"
 required    = false
+description = "Hard scope guardrail rendered into the agent's prompt."
+
+[outputs.result]
+type        = "path"
+description = "Structured run summary the agent (or summary.sh) writes."
+path        = "result.md"
+
+[side_effects]
+mutates_git    = true
+writes_files   = true
+network_egress = true
+idempotent     = false
+
+[nodes.agent]
+class = "hard_coding"
 
 [defaults]
 labels = { workflow = "implement" }
-
-# v2 (Block 2) preview — these declarations will move into [workflow] /
-# [side_effects] / [nodes.agent] tables once the new manifest schema lands.
-# They live here as comments so the design intent stays visible.
-#
-# [workflow]
-#   default_class = "hard_coding"
-#
-# [side_effects]
-#   mutates_git    = true
-#   writes_files   = true
-#   network_egress = true
-#   idempotent     = false
-#
-# [nodes.agent]
-#   class = "hard_coding"   # honored by the engine's policy resolver as of
-#                           # Block 4 Step 4 (commit e6cb6b5).

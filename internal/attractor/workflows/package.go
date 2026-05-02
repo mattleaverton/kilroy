@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 )
 
 // Package represents a self-contained workflow directory.
@@ -19,8 +17,16 @@ type Package struct {
 	// GraphPath is the path to the DOT graph file.
 	GraphPath string
 
-	// Manifest is the parsed workflow.toml (nil if no manifest).
+	// Manifest is the parsed workflow.toml in the legacy struct shape
+	// (nil if no manifest). New code should prefer ManifestV2 below;
+	// Manifest is preserved for back-compat with run-config plumbing
+	// that still consumes the older shape during the v2 transition.
 	Manifest *PackageManifest
+
+	// ManifestV2 is the unified, schema-aware manifest produced by
+	// LoadManifest/ParseManifest. Populated regardless of on-disk
+	// shape (legacy or v2). Nil only when workflow.toml is absent.
+	ManifestV2 *Manifest
 }
 
 // PackageManifest declares package metadata alongside the DOT graph.
@@ -81,14 +87,18 @@ func LoadPackage(dir string) (*Package, error) {
 		GraphPath: graphPath,
 	}
 
-	// Load optional manifest.
+	// Load optional manifest. Both v2 and legacy shapes route through
+	// LoadManifest, which auto-detects and assembles the unified
+	// ManifestV2. Existing callers reading pkg.Manifest get the legacy
+	// view via LegacyFromRaw so nothing breaks during the transition.
 	manifestPath := filepath.Join(absDir, "workflow.toml")
 	if _, err := os.Stat(manifestPath); err == nil {
-		var m PackageManifest
-		if _, err := toml.DecodeFile(manifestPath, &m); err != nil {
-			return nil, fmt.Errorf("parse workflow.toml: %w", err)
+		v2, err := LoadManifest(manifestPath)
+		if err != nil {
+			return nil, err
 		}
-		pkg.Manifest = &m
+		pkg.ManifestV2 = v2
+		pkg.Manifest = LegacyFromRaw(v2)
 	}
 
 	return pkg, nil
