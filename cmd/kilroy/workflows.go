@@ -42,7 +42,7 @@ func workflowsCmd(args []string) {
 
 func workflowsUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--pretty]            (JSON by default)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--pretty] [--all]    (JSON by default; v2 only unless --all)")
 	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--pretty] (JSON by default)")
 	fmt.Fprintln(os.Stderr, "  kilroy workflows validate <name> [--pretty] (JSON by default)")
 }
@@ -63,14 +63,23 @@ func workflowsList(args []string) {
 	// JSON is the default per plan §2.2 (agent-primary surface).
 	// --pretty switches to the human-readable column view.
 	asJSON := true
+	// Curated by default: only show workflows on the v2 manifest schema.
+	// Legacy `[[inputs]]` packages (stubs from before the reframe) still
+	// resolve via `kilroy run <name>` if you know the name, but they
+	// don't clutter the default list. --all shows everything.
+	includeAll := false
 	for _, a := range args {
 		switch a {
 		case "--json":
 			asJSON = true
 		case "--pretty":
 			asJSON = false
+		case "--all":
+			includeAll = true
 		case "-h", "--help":
-			fmt.Fprintln(os.Stderr, "usage: kilroy workflows list [--pretty]")
+			fmt.Fprintln(os.Stderr, "usage: kilroy workflows list [--pretty] [--all]")
+			fmt.Fprintln(os.Stderr, "  default: v2-shape workflows only.")
+			fmt.Fprintln(os.Stderr, "  --all:   include legacy [[inputs]] packages too.")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unexpected argument %q\n", a)
@@ -99,6 +108,12 @@ func workflowsList(args []string) {
 			e.DefaultClass = m.DefaultClass
 			e.Schema = m.Schema
 			e.Version = m.Version
+		}
+		// Default view filters out legacy-shape packages. They remain
+		// reachable via `kilroy run <name>` and `--all`; this just keeps
+		// the default surface tight.
+		if !includeAll && e.Schema != "v2" {
+			continue
 		}
 		entries = append(entries, e)
 	}

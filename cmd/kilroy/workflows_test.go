@@ -52,6 +52,20 @@ required    = true
 description = "What to ask."
 `
 
+// legacyToml uses the pre-v2 [[inputs]] shape (top-level name/description/version,
+// inputs as an array of tables). Curated `kilroy workflows list` should hide
+// these unless --all is passed.
+const legacyToml = `
+name        = "legacy-stub"
+description = "Pre-v2 workflow with [[inputs]] shape."
+version     = "1"
+outputs = ["result.md"]
+[[inputs]]
+name        = "x"
+description = "x"
+required    = true
+`
+
 func writePackage(t *testing.T, root, name, manifest string) string {
 	t.Helper()
 	dir := filepath.Join(root, name)
@@ -172,6 +186,56 @@ func TestWorkflowsDescribe_JSON_HasJSONFieldNames(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("json output missing %s\nfull:\n%s", want, s)
 		}
+	}
+}
+
+// TestWorkflowsList_DefaultsToV2_HidesLegacy confirms the curated default
+// list excludes legacy `[[inputs]]` packages. The packages remain
+// reachable via `kilroy run <name>` and via --all.
+func TestWorkflowsList_DefaultsToV2_HidesLegacy(t *testing.T) {
+	bin := buildTestBinary(t)
+	pkgRoot := t.TempDir()
+	writePackage(t, pkgRoot, "v2pkg", v2ReviewToml)
+	writePackage(t, pkgRoot, "old-stub", legacyToml)
+
+	// Default: only v2.
+	cmd := exec.Command(bin, "workflows", "list")
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS="+pkgRoot,
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("default list: %v\n%s", err, out)
+	}
+	var got struct {
+		Workflows []struct {
+			Name   string `json:"name"`
+			Schema string `json:"schema"`
+		} `json:"workflows"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out)
+	}
+	if len(got.Workflows) != 1 || got.Workflows[0].Name != "v2pkg" {
+		t.Errorf("default list should show only v2pkg, got %+v", got.Workflows)
+	}
+
+	// --all: both.
+	cmd = exec.Command(bin, "workflows", "list", "--all")
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS="+pkgRoot,
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	out, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("--all list: %v\n%s", err, out)
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out)
+	}
+	if len(got.Workflows) != 2 {
+		t.Errorf("--all list should show both, got %+v", got.Workflows)
 	}
 }
 
