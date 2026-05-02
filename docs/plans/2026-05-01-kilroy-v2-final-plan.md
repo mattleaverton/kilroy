@@ -739,17 +739,17 @@ Live dogfood against the dev machine produces 8 clean entries (anthropic, cursor
 **Block 9 follow-ups (open from the package integrity gate):**
 - `workflows/coding-loop` uses `class="implementer"`/`class="reviewer"` as model_stylesheet selectors only — pre-Step-4b. Under `--tmux` + Step 4b these now hit `policy.ErrUnknownClass`. Migrate to either real policy classes (`hard_coding`?) or split into a separate `stylesheet_class` attribute. Currently bypassed in `shipped_packages_test.go::knownClassIssues`.
 
-### Block 6: Agent-conversation untangling
+### Block 6: Agent-conversation untangling — **Step 1 LANDED; Steps 2–7 pending**
 
 This is the largest block. Order from Inv5 §7 / §9.4:
 
-- [ ] Define `TurnEvent` types and `TurnStream` interface.
-- [ ] Extract turn codecs (Anthropic SSE, OpenAI SSE, claude-CLI JSONL, codex-CLI JSONL) — standalone parsers with tests.
-- [ ] Define `AgentBackend`, `ToolControlMode`; wrap `AgentHandler` and `TmuxAgentHandler` as adapters.
-- [ ] Extract transport layer (HTTP client, tmux pty) — standalone.
-- [ ] Define `AuthResolver`; inject; touch every key-read site.
-- [ ] Implement the `ToolControlKilroy` loop in orchestration; verify against both existing backends.
-- [ ] Add Ollama backend as a forcing-function third implementation. If it slots in cleanly, the abstraction is right.
+- [x] **Step 1: Foundational types.** `internal/attractor/agentbackend/` with `TurnEvent`/`TurnEventType` (text, thinking, tool_use, tool_result, turn_end, error variants), `TurnStream`, `AgentBackend`, `ToolControlMode` (kilroy/driver), `UserMessage`, `TurnOptions`, `ToolSchema`, `ToolCall`, `ToolResult`, `TurnEndInfo`, `BackendCapabilities`, and the `ErrToolControlDriver` sentinel. Types only — no backend implementations yet. Sanity tests exercise discriminator stringification, variant zero-values, and errors.Is identity for the sentinel.
+- [ ] Step 2: Extract turn codecs (Anthropic SSE, OpenAI SSE, claude-CLI JSONL, codex-CLI JSONL) — standalone parsers with tests.
+- [ ] Step 3: Wrap `AgentHandler` and `TmuxAgentHandler` as adapters that implement `AgentBackend` (no behavior change; pure refactor under test).
+- [ ] Step 4: Extract transport layer (HTTP client, tmux pty) — standalone.
+- [ ] Step 5: Define `AuthResolver`; inject; touch every key-read site.
+- [ ] Step 6: Implement the `ToolControlKilroy` loop in orchestration; verify against both existing backends.
+- [ ] Step 7: Add Ollama backend as a forcing-function third implementation. If it slots in cleanly with no new types — only new values — the tuple is doing its job.
 
 ### Block 7: Recursion linkage
 
