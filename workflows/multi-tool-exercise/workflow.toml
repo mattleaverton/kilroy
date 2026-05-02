@@ -14,6 +14,9 @@ for cross-tool routing and the .kilroy/ convention surface.
 """
 agent_description = "Run three CLI tools on the same topic and combine their outputs."
 graph             = "graph.dot"
+# Experimental: smoke-test harness, not part of the curated default
+# `kilroy workflows list` surface.
+experimental      = true
 
 [inputs.topic]
 type        = "string"

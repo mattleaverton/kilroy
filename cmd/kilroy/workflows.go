@@ -55,18 +55,20 @@ type workflowsListEntry struct {
 	Source       string `json:"source"` // search-path root this workflow was found under
 	Description  string `json:"description,omitempty"`
 	DefaultClass string `json:"default_class,omitempty"`
-	Schema       string `json:"schema,omitempty"` // "v2" or "legacy"
+	Schema       string `json:"schema,omitempty"`        // "v2" or "legacy"
 	Version      string `json:"version,omitempty"`
+	Experimental bool   `json:"experimental,omitempty"`
 }
 
 func workflowsList(args []string) {
 	// JSON is the default per plan §2.2 (agent-primary surface).
 	// --pretty switches to the human-readable column view.
 	asJSON := true
-	// Curated by default: only show workflows on the v2 manifest schema.
-	// Legacy `[[inputs]]` packages (stubs from before the reframe) still
-	// resolve via `kilroy run <name>` if you know the name, but they
-	// don't clutter the default list. --all shows everything.
+	// Curated by default: hide workflows marked [workflow].experimental
+	// = true (build-test, coding-loop, multi-tool-exercise — useful as
+	// harnesses but not what you'd point a user at). Experimental
+	// workflows stay reachable via `kilroy run <name>` if you know the
+	// name, and via `--all` here.
 	includeAll := false
 	for _, a := range args {
 		switch a {
@@ -78,8 +80,8 @@ func workflowsList(args []string) {
 			includeAll = true
 		case "-h", "--help":
 			fmt.Fprintln(os.Stderr, "usage: kilroy workflows list [--pretty] [--all]")
-			fmt.Fprintln(os.Stderr, "  default: v2-shape workflows only.")
-			fmt.Fprintln(os.Stderr, "  --all:   include legacy [[inputs]] packages too.")
+			fmt.Fprintln(os.Stderr, "  default: hides workflows with [workflow].experimental = true")
+			fmt.Fprintln(os.Stderr, "  --all:   include experimental workflows too")
 			os.Exit(0)
 		default:
 			fmt.Fprintf(os.Stderr, "unexpected argument %q\n", a)
@@ -108,12 +110,15 @@ func workflowsList(args []string) {
 			e.DefaultClass = m.DefaultClass
 			e.Schema = m.Schema
 			e.Version = m.Version
+			e.Experimental = m.Experimental
 		}
-		// Default view filters out legacy-shape packages. They remain
-		// reachable via `kilroy run <name>` and `--all`; this just keeps
-		// the default surface tight.
-		if !includeAll && e.Schema != "v2" {
-			continue
+		// Default view hides workflows marked experimental. Pre-v2
+		// (legacy `[[inputs]]`) packages are also hidden by default
+		// since they can't carry the experimental flag — same intent.
+		if !includeAll {
+			if e.Experimental || e.Schema != "v2" {
+				continue
+			}
 		}
 		entries = append(entries, e)
 	}

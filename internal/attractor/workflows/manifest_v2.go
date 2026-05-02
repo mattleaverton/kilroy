@@ -32,14 +32,21 @@ type Manifest struct {
 	Description      string
 	AgentDescription string
 	Version          string
-	GraphFile        string  // relative to package dir; defaults to "graph.dot"
-	DefaultClass     string  // policy class used by agentic nodes that don't override
+	GraphFile        string // relative to package dir; defaults to "graph.dot"
+	DefaultClass     string // policy class used by agentic nodes that don't override
 
 	Inputs      []InputSpec
 	Outputs     []OutputSpec
 	SideEffects SideEffects
 	Nodes       map[string]NodeOverride
-	Secrets     []string  // abstract credential names this workflow needs
+	Secrets     []string // abstract credential names this workflow needs
+
+	// Experimental marks workflows that aren't part of the curated default
+	// surface. `kilroy workflows list` hides experimental entries unless
+	// --all is passed. Used to keep harnesses/exercises (build-test,
+	// coding-loop, multi-tool-exercise) reachable but not surfaced
+	// alongside the shipped tools (fix, implement, investigate, review).
+	Experimental bool
 
 	// Defaults preserves legacy [defaults] for back-compat with run-config
 	// label injection. Out of v2 scope; pass-through for now.
@@ -182,6 +189,7 @@ type rawWorkflowSection struct {
 	Tags             []string
 	Graph            string `toml:"graph"`
 	DefaultClass     string `toml:"default_class"`
+	Experimental     bool   `toml:"experimental"`
 }
 
 type rawV2Input struct {
@@ -230,6 +238,7 @@ func assembleV2(raw *rawV2Manifest) *Manifest {
 		Version:          raw.Workflow.Version,
 		GraphFile:        defaultStr(raw.Workflow.Graph, "graph.dot"),
 		DefaultClass:     raw.Workflow.DefaultClass,
+		Experimental:     raw.Workflow.Experimental,
 		Nodes:            make(map[string]NodeOverride, len(raw.Nodes)),
 		Secrets:          append([]string(nil), raw.Secrets.Needs...),
 		Defaults:         ManifestDefaults{Labels: raw.Defaults.Labels},

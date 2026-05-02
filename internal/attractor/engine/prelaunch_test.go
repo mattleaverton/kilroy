@@ -49,7 +49,7 @@ func TestValidatePreLaunch_NoClass_PassesWithoutPolicyLoad(t *testing.T) {
 
 func TestValidatePreLaunch_ClassResolves_OK(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
-		"class": "hard_coding",
+		"agent_class": "hard_coding",
 	})
 	logsRoot := t.TempDir()
 
@@ -113,16 +113,12 @@ func TestValidatePreLaunch_ClassResolves_OK(t *testing.T) {
 	}
 }
 
-// TestValidatePreLaunch_UnknownClass_TreatedAsStylesheet verifies that
-// prelaunch is tolerant of class= names that aren't policy classes —
-// they're treated as stylesheet selectors. The note appears so users
-// see the resolution choice; status stays "ok" so dispatch proceeds.
-// (This matches ResolveAgentClass's tolerant behavior at engine
-// dispatch — without this softening, prelaunch would block runs the
-// engine itself would happily complete.)
-func TestValidatePreLaunch_UnknownClass_TreatedAsStylesheet(t *testing.T) {
+// TestValidatePreLaunch_UnknownAgentClass_FailsTyped verifies that an
+// unknown agent_class= name fails prelaunch loudly. agent_class is the
+// policy surface and must be strict — typos are non-negotiable.
+func TestValidatePreLaunch_UnknownAgentClass_FailsTyped(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
-		"class": "totally_made_up",
+		"agent_class": "totally_made_up",
 	})
 	logsRoot := t.TempDir()
 	data := &policy.Data{
@@ -137,23 +133,23 @@ func TestValidatePreLaunch_UnknownClass_TreatedAsStylesheet(t *testing.T) {
 		Load:    func() (*policy.Data, error) { return data, nil },
 		Collect: func() policy.MachineState { return policy.MachineState{} },
 	})
-	if err != nil {
-		t.Fatalf("expected nil error for unknown-class fall-through, got: %v", err)
+	if err == nil {
+		t.Fatal("expected error for unknown agent_class")
 	}
-	if report.Summary.Fail != 0 {
-		t.Errorf("summary.fail = %d, want 0 (unknown class is soft)", report.Summary.Fail)
+	if _, ok := err.(*PreLaunchError); !ok {
+		t.Errorf("error type = %T, want *PreLaunchError", err)
 	}
-	if report.Summary.OK != 1 {
-		t.Errorf("summary.ok = %d, want 1", report.Summary.OK)
+	if report.Summary.Fail != 1 {
+		t.Errorf("summary.fail = %d, want 1", report.Summary.Fail)
 	}
 	if len(report.Nodes[0].Errors) == 0 {
-		t.Error("expected an informational note about the unknown class")
+		t.Error("expected per-node error for unknown agent_class")
 	}
 }
 
 func TestValidatePreLaunch_NoAuth_FailsWithSkippedReason(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
-		"class": "hard_coding",
+		"agent_class": "hard_coding",
 	})
 	data := &policy.Data{
 		SchemaVersion: "1",
@@ -183,7 +179,7 @@ func TestValidatePreLaunch_NoAuth_FailsWithSkippedReason(t *testing.T) {
 
 func TestValidatePreLaunch_CLIDriver_BinaryMissing_Fails(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
-		"class": "hard_coding",
+		"agent_class": "hard_coding",
 	})
 	data := &policy.Data{
 		SchemaVersion: "1",
@@ -332,36 +328,30 @@ description = "test"
 	}
 }
 
-// TestValidatePreLaunch_PackageIntegrity_UnknownClass_SoftNote verifies
-// that a class= name that isn't a real policy class surfaces as a
-// soft Note in the package check, not a hard error. Engine treats
-// such names as stylesheet selectors (see ResolveAgentClass), so
-// validation must not block dispatch.
-func TestValidatePreLaunch_PackageIntegrity_UnknownClass_SoftNote(t *testing.T) {
-	pkgDir := makeMinimalPackage(t, "softclass",
+// TestValidatePreLaunch_PackageIntegrity_UnknownAgentClass_FailsHard
+// verifies that an unknown agent_class= name on an agent node is a
+// hard package-integrity failure (not a soft note). agent_class is
+// the strict policy-routing attribute. Use the unrelated `class=`
+// attribute for stylesheet selectors instead.
+func TestValidatePreLaunch_PackageIntegrity_UnknownAgentClass_FailsHard(t *testing.T) {
+	pkgDir := makeMinimalPackage(t, "bad",
 		`[workflow]
-name = "softclass"
+name = "bad"
 version = "1"
 description = "test"
 `,
-		`digraph softclass {}`,
+		`digraph bad {}`,
 		nil,
 	)
 	g := graphWithAgentNode(t, "agent", map[string]string{
-		"class": "made_up_class_name",
+		"agent_class": "made_up_class_name",
 	})
-	report, err := ValidatePreLaunch(g, RunOptions{
+	_, err := ValidatePreLaunch(g, RunOptions{
 		LogsRoot:   t.TempDir(),
 		PackageDir: pkgDir,
 	}, PolicyDeps{})
-	if err != nil {
-		t.Fatalf("expected nil err — unknown class should be soft, got: %v", err)
-	}
-	if report.Package == nil || report.Package.Status != "ok" {
-		t.Errorf("package status = %+v, want ok", report.Package)
-	}
-	if len(report.Package.Notes) == 0 {
-		t.Error("expected an informational note about the unknown class")
+	if err == nil {
+		t.Fatal("expected fail for unknown agent_class in package check")
 	}
 }
 
@@ -592,7 +582,7 @@ func TestValidatePreLaunch_CLIDriver_BinaryBroken_Fails(t *testing.T) {
 	t.Setenv("PATH", binDir)
 
 	g := graphWithAgentNode(t, "agent", map[string]string{
-		"class": "hard_coding",
+		"agent_class": "hard_coding",
 	})
 	data := &policy.Data{
 		SchemaVersion: "1",

@@ -76,7 +76,7 @@ func TestResolveAgentClass_PersistsResolutionJSON(t *testing.T) {
 	}
 
 	node := model.NewNode("agent")
-	node.Attrs["class"] = "hard_coding"
+	node.Attrs["agent_class"] = "hard_coding"
 
 	cls, ok, err := ResolveAgentClass(node, exec, PolicyDeps{
 		Load:    func() (*policy.Data, error) { return data, nil },
@@ -185,7 +185,7 @@ func TestResolveAgentClass_PersistResolution_NoLogsRootIsSafe(t *testing.T) {
 	}
 
 	node := model.NewNode("agent")
-	node.Attrs["class"] = "hard_coding"
+	node.Attrs["agent_class"] = "hard_coding"
 
 	cls, ok, err := ResolveAgentClass(node, nil, PolicyDeps{
 		Load:    func() (*policy.Data, error) { return data, nil },

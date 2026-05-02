@@ -642,18 +642,25 @@ The legacy `runProviderCLIPreflight` machinery is **deleted** as of this branch 
 
 `PreflightWithConfig` (the validate-only entry) now produces `prelaunch_validation.json` instead of `preflight_report.json`; the `--validate` CLI output prints `validate=true` + `prelaunch_validation=<path>`.
 
-### 13.7 `class=` is two things — and the resolver knows which (LANDED)
+### 13.7 `class=` and `agent_class=` — two attributes, two surfaces (LANDED)
 
-**Observed:** the DOT `class=` attribute serves two legitimate purposes that look identical in the source:
+**Observed:** the single DOT `class=` attribute previously served two purposes that look identical in source but mean different things:
 
-1. **Policy class identifier** — Step 4b's surface. `class="hard_coding"` tells the policy resolver to walk the hard_coding chain on this machine. fix/implement/investigate/review use this shape.
-2. **Stylesheet selector** — pre-Step-4b's surface. The DOT validator and the stylesheet engine both treat `class="implementer"` as a CSS-style selector that matches `.implementer { … }` rules in `model_stylesheet`. `coding-loop` uses this shape to upgrade per-role nodes from haiku to sonnet.
+1. **Policy class identifier** — Step 4b's surface. Tells the policy resolver to walk the named chain on this machine.
+2. **Stylesheet selector** — pre-Step-4b's surface. The DOT validator and the stylesheet engine both treat `class="implementer"` as a CSS-style selector that matches `.implementer { … }` rules in `model_stylesheet`. `coding-loop` uses this to upgrade per-role nodes from haiku to sonnet.
 
-If the resolver were strict about #1, every `coding-loop`-shaped graph would fail at validate or dispatch with `policy.ErrUnknownClass`. If the resolver were always permissive, typos in #1-style names would silently fall through to whatever the stylesheet provided.
+A single attribute can't be both safely. An earlier "tolerant" version that fell through silently for unknown names was the wrong trade — it weakened the typo-detection contract Step 4b had built. (Reviewer-flagged.)
 
-**For v2 (LANDED):** `engine.ResolveAgentClass` is **tolerant of unknown class names** — it treats them as stylesheet selectors and returns ok=false (no error), letting the engine fall through to the legacy `llm_provider`/`llm_model` graph attributes (which the stylesheet wrote at parse time). Prelaunch's package-integrity check follows suit: an unknown `class=` on an agent node surfaces as a soft Note, not a hard error. The engine's runtime behavior and prelaunch's validation behavior agree — neither blocks on a name the other accepts.
+**For v2 (LANDED):** the two surfaces have **separate attributes**:
 
-This is the smallest viable answer. A larger answer (separate `policy_class=` attribute for #1, leaving `class=` exclusive to #2) is cleaner semantically but would touch every workflow.toml and every test; deferred until there's evidence of typo-mediated production drift.
+- **`class="…"`** — CSS-style stylesheet selector. The DOT/stylesheet engine matches it. The policy resolver does not read it. Anything goes; unknown names are just selectors with no rule.
+- **`agent_class="…"`** — policy class identifier. The policy resolver reads it. The stylesheet engine ignores it. Unknown names are a **hard error** at validation — typos surface immediately at `kilroy workflows validate <name>` and at run launch via prelaunch.
+
+Migration done: fix/implement/investigate/review graphs use `agent_class="hard_coding"` etc. coding-loop unchanged — its `class="implementer"`/`class="reviewer"` keep doing CSS-style stylesheet matching.
+
+`engine.PolicyClassAttr` is the exported constant for the new attribute name; both `ResolveAgentClass` (engine dispatch) and `ValidatePreLaunch` / `validatePackageIntegrity` (prelaunch) consume it. Unknown agent_class= → typed `*PreLaunchError` at validate, typed `policy.ErrUnknownClass` at engine.
+
+This is what was always wanted; the two-step path (tolerant → strict-with-rename) was a self-correction.
 
 ---
 
@@ -750,7 +757,7 @@ Live dogfood against the dev machine produces 8 clean entries (anthropic, cursor
 - Gemini OAuth note rephrase: "expired; refreshable" reads weirdly when state shows OK. Cosmetic.
 
 **Block 9 follow-ups (open from the package integrity gate):**
-- `workflows/coding-loop` uses `class="implementer"`/`class="reviewer"` as model_stylesheet selectors only — pre-Step-4b. Under `--tmux` + Step 4b these now hit `policy.ErrUnknownClass`. Migrate to either real policy classes (`hard_coding`?) or split into a separate `stylesheet_class` attribute. Currently bypassed in `shipped_packages_test.go::knownClassIssues`.
+- ~~`workflows/coding-loop` uses `class="implementer"`/`class="reviewer"` as stylesheet selectors~~ — **resolved** in §13.7 by splitting the attribute. `agent_class=` is the strict policy attribute; `class=` is the unrestricted CSS-style stylesheet selector. coding-loop runs as-is on the new contract.
 
 ### Block 6: Agent-conversation untangling — **Step 1 LANDED; Steps 2–7 pending**
 
@@ -785,7 +792,7 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 - [x] **`investigate` v0 (v2 manifest, run via `kilroy run investigate`)** at `workflows/investigate/{workflow.toml, graph.dot, prompts/investigate.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `question` (req), `context_files`, `urls`, `scope_directive`. Output: `result.md`. Class=`deep_investigation` (Opus 4.7, 1M context). Simpler topology — read-only research, no verify, no diff. Live dogfood: run `01KQK9V71Z6AY1F3BG55TMC601` answering an OOP question (37s, success): policy_class_resolved fires with `deep_investigation` → claude-opus-4-7.
 - [x] **`review` v0 (v2 manifest, authored by parallel kilroy worker)** at `workflows/review/{workflow.toml, graph.dot, prompts/review.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `target` (req — .patch path, branch ref, or PR URL), `checklist`, `context_files`, `scope_directive`. Outputs: `result.md`, `review.json`. Class=`hard_coding`. The stage_context script handles three target shapes (.patch verbatim copy, git ref via `git diff`, PR URL → TODO). Read-only review with structured severity scale (blocker/major/minor/info) and verdict scale (MERGE/MERGE-FIX/FIX-MERGE/REJECT). Authored end-to-end by `kilroy run implement` worker `01KQMEEWBR3WB6TEXFMVVVKHKD` (4m44s, success); cherry-picked into the branch.
 - [x] CI-validate workflow-package DOTs. `internal/attractor/validate/shipped_graphs_test.go` walks `workflows/` and runs the same validator the runtime uses; new packages are picked up automatically.
-- [x] **Package-level integrity test** — `internal/attractor/validate/shipped_packages_test.go` walks every `workflows/<name>/workflow.toml` and asserts: manifest parses with required fields (`name`/`description`/`version`); each `[[inputs]]` entry has name+description; the graph parses; every `tool_command bash <path>` references an existing regular file in the package; every agent `class=` attribute resolves to a real policy class. Pre-Step-4b graphs that use `class=` as stylesheet selectors only (`workflows/coding-loop` today) are on a documented bypass list to be migrated separately. Closes the regression-bar gap above DOT-only validation.
+- [x] **Package-level integrity test** — `internal/attractor/validate/shipped_packages_test.go` walks every `workflows/<name>/workflow.toml` and asserts: manifest parses with required fields (`name`/`description`/`version`); each `[[inputs]]` entry has name+description; the graph parses; every `tool_command bash <path>` references an existing regular file in the package. Strict `agent_class=` typo detection lives in `prelaunch_test.go` instead — `validatePackageIntegrity` checks every node's `agent_class=` resolves to a real policy class and fails hard on typos (per §13.7). The earlier `knownClassIssues` bypass list was removed once the attribute split made it unnecessary. Closes the regression-bar gap above DOT-only validation.
 - [x] **Re-author the trio in the v2 manifest schema** — landed alongside the schema parser (commit `f2b8a9b`).
 - [x] **Upgrade legacy workflow packages** (`build-test`, `coding-loop`, `multi-tool-exercise`) to the v2 manifest shape — all three now have `[workflow]`/typed `[inputs.<name>]`/typed `[outputs.<name>]`/`[side_effects]`. `kilroy workflows validate <name>` is green for all three. `build-test` dogfooded end-to-end (run `01KQMR04QQPW8BMRGW58TF5WZ2` against a tiny Go module — produced a structured build-report.json, success). `multi-tool-exercise` validates clean but isn't dogfooded (would invoke three real CLI agents — cost). `coding-loop` works under the new tolerant resolver (see below).
 - ~~Embed the trio via `go:embed` at `internal/workflows/<name>/`~~ — **retired** with the §10 reframe; workflows stay filesystem-discovered.

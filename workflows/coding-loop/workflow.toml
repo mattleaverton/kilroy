@@ -24,6 +24,9 @@ comes first.
 """
 agent_description = "Iterate on a spec — choose, implement, review, gate — until complete or capped."
 graph             = "graph.dot"
+# Experimental: exploratory loop pattern, not part of the curated
+# default `kilroy workflows list` surface.
+experimental      = true
 
 [inputs.spec]
 type        = "string"

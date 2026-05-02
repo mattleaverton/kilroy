@@ -12,7 +12,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -145,11 +144,11 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		}
 		check := PreLaunchNodeCheck{NodeID: id}
 
-		className := strings.TrimSpace(n.Attr("class", ""))
+		className := strings.TrimSpace(n.Attr(PolicyClassAttr, ""))
 		if className == "" {
-			// Pre-Step-4b graphs that use only stylesheet routing — we
-			// can't validate them without an LLM probe. Mark as ok and
-			// move on; the legacy preflight covers them if enabled.
+			// No agent_class= attribute — node uses legacy stylesheet
+			// routing (llm_provider/llm_model). Mark ok and move on;
+			// validating that without an LLM probe isn't possible.
 			check.Status = "ok"
 			report.Nodes = append(report.Nodes, check)
 			report.Summary.OK++
@@ -181,24 +180,13 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 			WorkflowID: g.Name,
 		}, policyData, state)
 		if err != nil {
-			// Unknown-class errors are soft: the engine treats them as
-			// stylesheet selectors (see ResolveAgentClass), so prelaunch
-			// must agree or it'd block dispatch on a name the engine is
-			// fine with. Surface as a warning by leaving status="ok"
-			// with a Note in Errors so users still see it but don't
-			// hit a fail-fast wall. Other errors (no viable candidate
-			// — i.e., class IS in policy but no auth on this machine)
-			// are still hard fails.
-			var unknownErr policy.ErrUnknownClass
-			if errors.As(err, &unknownErr) {
-				check.Status = "ok"
-				check.Errors = append(check.Errors, fmt.Sprintf("class %q is not a real policy class — treating as stylesheet selector. (Hint: `kilroy policy list` for available classes.)", className))
-				report.Nodes = append(report.Nodes, check)
-				report.Summary.OK++
-				continue
-			}
+			// Unknown agent_class= names are typos. They fail loudly —
+			// the policy surface is non-overloaded (use plain `class=`
+			// for stylesheet selectors). Other errors (no viable
+			// candidate — class IS in policy but no auth on this
+			// machine) are also hard fails.
 			check.Status = "fail"
-			check.Errors = append(check.Errors, fmt.Sprintf("class %q: %v", className, err))
+			check.Errors = append(check.Errors, fmt.Sprintf("agent_class %q: %v", className, err))
 			report.Nodes = append(report.Nodes, check)
 			report.Summary.Fail++
 			continue
@@ -466,22 +454,22 @@ func validatePackageIntegrity(pkgDir string, g *model.Graph) *PreLaunchPackageCh
 					}
 				}
 			}
-			// class= is a soft check: an unknown name is treated as a
-			// stylesheet selector (matches ResolveAgentClass's tolerant
-			// behavior). Surface as a Note rather than a hard error so
-			// stylesheet-class workflows like coding-loop validate green.
-			// Real typos still surface — they just don't block validation.
-			if cls := strings.TrimSpace(n.Attr("class", "")); cls != "" {
+			// agent_class= is the policy-resolution attribute. An unknown
+			// name here is a typo and fails validation hard. (`class=` is
+			// the unrelated CSS-style stylesheet selector — we don't
+			// touch it here; the stylesheet engine handles its own
+			// matching at parse time.)
+			if cls := strings.TrimSpace(n.Attr(PolicyClassAttr, "")); cls != "" {
 				if policyData == nil {
 					d, err := policy.Load()
 					if err != nil {
-						pc.Errors = append(pc.Errors, fmt.Sprintf("policy load (for class check): %v", err))
+						pc.Errors = append(pc.Errors, fmt.Sprintf("policy load (for agent_class check): %v", err))
 						break
 					}
 					policyData = d
 				}
 				if !preLaunchClassExists(policyData, cls) {
-					pc.Notes = append(pc.Notes, fmt.Sprintf("node %q: class=%q is not a real policy class — treated as stylesheet selector. (`kilroy policy list` for the catalog.)", id, cls))
+					pc.Errors = append(pc.Errors, fmt.Sprintf("node %q: agent_class=%q is not a real policy class or alias (run `kilroy policy list` to see available classes)", id, cls))
 				}
 			}
 		}

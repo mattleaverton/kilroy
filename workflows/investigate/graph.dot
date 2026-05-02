@@ -10,7 +10,7 @@ digraph investigate {
     start         [shape=Mdiamond, label="Start"]
     stage_context [shape=parallelogram, label="stage-context",
                    tool_command="bash .kilroy/package/scripts/stage-context.sh"]
-    agent         [shape=box, label="investigate", agent_tool="claude", class="deep_investigation",
+    agent         [shape=box, label="investigate", agent_tool="claude", agent_class="deep_investigation",
                    prompt="You are a research agent in a kilroy worktree. Your task is in .kilroy/INPUT.md under the ## question section. If a ## context_files section is present, those paths point at files to read for context. If a ## urls section is present, fetch and analyze those URLs. If a ## scope_directive section is present, treat it as a hard guardrail. Investigate thoroughly: read source material, follow chains of reasoning, distinguish what you know from what you're inferring. Time-cap: if a single line of inquiry is not converging within ~30 minutes, write what you have and stop. Do not modify any code files — write only result.md at the workspace root. Required structure: TL;DR (2-3 sentences answering the question directly), Findings (numbered, with evidence and citations to context files or URLs), Open questions (what would change the answer if you knew it), Methodology (one paragraph on what you did and what you didn't). When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
                    outputs="result.md"]
     summary       [shape=parallelogram, label="summary",

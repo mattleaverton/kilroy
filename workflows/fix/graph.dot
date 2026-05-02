@@ -10,7 +10,7 @@ digraph fix {
     start         [shape=Mdiamond, label="Start"]
     stage_context [shape=parallelogram, label="stage-context",
                    tool_command="bash .kilroy/package/scripts/stage-context.sh"]
-    agent         [shape=box, label="fix", agent_tool="claude", class="hard_coding",
+    agent         [shape=box, label="fix", agent_tool="claude", agent_class="hard_coding",
                    prompt="You are working in a kilroy worktree on a bug fix. Code changes are auto-committed at node end. Do not run git commit yourself. Your task is in .kilroy/INPUT.md under the ## issue section. If a ## context_files section is present, those paths point at files the user wants you to read for context. If a ## scope_directive section is present, treat it as a hard guardrail: do not touch files outside the named scope. Do NOT run go test ./... — too noisy; use go test <package> -run <pattern> for targeted verification. Time-cap your work: if a single approach is not converging within ~15 minutes, write what you have to result.md with a BLOCKED: prefix and stop. Output: write result.md at the workspace root. Required sections: Summary (1-2 sentences), Root cause, Files touched, Diff outline, Tests added, Verification (how you confirmed the fix works), Open questions. When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
                    outputs="result.md"]
     verify        [shape=parallelogram, label="verify",

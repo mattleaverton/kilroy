@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
@@ -67,7 +68,7 @@ func TestAgentRouter_ClassAttribute_OverridesStylesheet(t *testing.T) {
 	router := makeTestRouter(makeTestPolicy(), makeTestState())
 
 	node := model.NewNode("test-node")
-	node.Attrs["class"] = "hard_coding"
+	node.Attrs["agent_class"] = "hard_coding"
 	// Set bogus stylesheet values to prove the override is real.
 	node.Attrs["llm_provider"] = "bad"
 	node.Attrs["llm_model"] = "bad-model"
@@ -91,43 +92,24 @@ func TestAgentRouter_ClassAttribute_OverridesStylesheet(t *testing.T) {
 	}
 }
 
-// TestAgentRouter_ClassAttribute_UnknownClass_FallsThrough verifies that
-// an unknown class name is treated as a stylesheet selector, not as a
-// typo'd policy class. The resolver returns ok=false (no error) and the
-// router falls through to legacy llm_provider/llm_model attrs. This is
-// what makes pre-Step-4b graphs like coding-loop (which use
-// class="implementer" purely as a stylesheet selector) keep working.
-func TestAgentRouter_ClassAttribute_UnknownClass_FallsThrough(t *testing.T) {
-	runtimes := map[string]ProviderRuntime{
-		"anthropic": {Key: "anthropic", Backend: BackendAPI},
-	}
-	router := &AgentRouter{
-		policyLoad:       func() (*policy.Data, error) { return makeTestPolicy(), nil },
-		policyCollect:    func() policy.MachineState { return makeTestState() },
-		providerRuntimes: runtimes,
-	}
+// TestAgentRouter_AgentClass_UnknownClass_Errors verifies that an
+// unknown agent_class= name fails loudly (typed policy.ErrUnknownClass).
+// agent_class is the policy-routing attribute and must be strict — typos
+// are caught at validation time, not silently fallen through. (CSS-style
+// stylesheet selectors live on the unrelated `class=` attribute.)
+func TestAgentRouter_AgentClass_UnknownClass_Errors(t *testing.T) {
+	router := makeTestRouter(makeTestPolicy(), makeTestState())
 
 	node := model.NewNode("test-node")
-	node.Attrs["class"] = "totally_made_up"
-	// Stylesheet attrs are what the engine should fall through to.
-	node.Attrs["llm_provider"] = "anthropic"
-	node.Attrs["llm_model"] = "claude-sonnet-4-6"
+	node.Attrs["agent_class"] = "totally_made_up"
 
-	prov, mdl, backend, source, err := router.resolveNodeRoute(node, nil)
-	if err != nil {
-		t.Fatalf("expected fall-through (no error) for unknown class, got: %v", err)
+	_, _, _, _, err := router.resolveNodeRoute(node, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown agent_class, got nil")
 	}
-	if prov != "anthropic" {
-		t.Errorf("provider = %q, want anthropic (fall-through to stylesheet)", prov)
-	}
-	if mdl != "claude-sonnet-4-6" {
-		t.Errorf("model = %q, want claude-sonnet-4-6 (fall-through)", mdl)
-	}
-	if backend != BackendAPI {
-		t.Errorf("backend = %q, want %q", backend, BackendAPI)
-	}
-	if source != "graph_attrs" {
-		t.Errorf("source = %q, want graph_attrs (the fall-through marker)", source)
+	var unknownErr policy.ErrUnknownClass
+	if !errors.As(err, &unknownErr) {
+		t.Errorf("error %v does not wrap policy.ErrUnknownClass", err)
 	}
 }
 

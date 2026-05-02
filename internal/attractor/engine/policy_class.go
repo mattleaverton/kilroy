@@ -7,7 +7,6 @@ package engine
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,22 +35,34 @@ type ClassResolution struct {
 	Result   policy.ResolveResult
 }
 
-// ResolveAgentClass resolves the class attribute on a node via the policy
-// resolver. If the node has no class attribute, returns ok=false with no
-// error. On a successful class resolution this is the single source of truth
-// that both AgentRouter (API path) and TmuxAgentHandler (tmux path) consume,
-// and a policy_class_resolved progress event is emitted.
+// PolicyClassAttr is the DOT node attribute that drives Step 4b's policy
+// resolver. It is **distinct** from the legacy `class=` attribute, which
+// is a CSS-style stylesheet selector matched by `model_stylesheet`
+// rules. Splitting them lets workflow authors:
 //
-// Unknown class names — names not in the policy and not aliased — are
-// treated as **stylesheet selectors** rather than typo'd policy classes:
-// returns ok=false, no error. The dispatcher then falls through to the
-// legacy llm_provider/llm_model graph attrs (which the stylesheet wrote
-// at parse time). This keeps pre-Step-4b graphs like coding-loop working
-// (which use class="implementer" to upgrade nodes via stylesheet rules).
-// Typo detection moves to prelaunch's package-integrity check, which
-// emits a warning when an unknown class is seen on an agent node.
+//   - use `class="…"` purely as a stylesheet selector (e.g. coding-loop's
+//     `.implementer { llm_model: claude-sonnet-4.6 }` rule), and
+//   - use `agent_class="hard_coding"` to drive deterministic policy
+//     routing.
+//
+// Crucially, unknown values of `agent_class=` are a **hard error** at
+// validation time — typo detection is non-negotiable for the policy
+// surface. (An earlier "tolerant" version that fell through to
+// stylesheet attrs was rolled back; see plan §13.7.)
+const PolicyClassAttr = "agent_class"
+
+// ResolveAgentClass resolves the agent_class attribute on a node via
+// the policy resolver. If the node has no agent_class attribute, returns
+// ok=false with no error. On a successful resolution this is the single
+// source of truth that both AgentRouter (API path) and TmuxAgentHandler
+// (tmux path) consume, and a policy_class_resolved progress event is
+// emitted.
+//
+// Unknown agent_class names are an error — they're never silently
+// treated as stylesheet selectors (use the unrelated `class=` attribute
+// for that). This keeps the policy surface explicit and typo-safe.
 func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (ClassResolution, bool, error) {
-	className := strings.TrimSpace(node.Attr("class", ""))
+	className := strings.TrimSpace(node.Attr(PolicyClassAttr, ""))
 	if className == "" {
 		return ClassResolution{}, false, nil
 	}
@@ -77,12 +88,6 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		WorkflowID: graphNameForExec(exec),
 	}, data, state)
 	if err != nil {
-		// Unknown class → stylesheet selector, not a typo'd policy class.
-		// Caller falls through to legacy attrs.
-		var unknownErr policy.ErrUnknownClass
-		if errors.As(err, &unknownErr) {
-			return ClassResolution{}, false, nil
-		}
 		return ClassResolution{}, false, fmt.Errorf("policy resolve %q: %w", className, err)
 	}
 
@@ -115,15 +120,16 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 }
 
 // EffectiveRouteForNode returns the (provider, model) the runtime would
-// actually use for n at launch — class-resolved if class= is set, else
-// the legacy stylesheet attributes (llm_provider/llm_model). Suppresses
-// event emission and resolution.json persistence by passing nil exec, so
-// it's safe to call from preflight, validate, and other pre-run paths.
+// actually use for n at launch — class-resolved if agent_class= is set,
+// else the legacy stylesheet attributes (llm_provider/llm_model).
+// Suppresses event emission and resolution.json persistence by passing
+// nil exec, so it's safe to call from preflight, validate, and other
+// pre-run paths.
 //
-// Returns ("", "", err) when class= is set but resolution fails — that is
-// a real preflight-worthy failure (e.g., no auth on this machine for any
-// candidate in the chain) and callers should surface it as such rather
-// than silently falling back to the stylesheet.
+// Returns ("", "", err) when agent_class= is set but resolution fails —
+// that is a real preflight-worthy failure (typo, no auth on this machine
+// for any candidate in the chain) and callers should surface it as such
+// rather than silently falling back to the stylesheet.
 func EffectiveRouteForNode(n *model.Node) (provider, modelID string, err error) {
 	if n == nil {
 		return "", "", nil

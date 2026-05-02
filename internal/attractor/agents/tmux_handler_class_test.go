@@ -146,7 +146,7 @@ exit 0
 	workDir := t.TempDir()
 
 	node := model.NewNode("agent")
-	node.Attrs["class"] = "hard_coding"
+	node.Attrs["agent_class"] = "hard_coding"
 	// Bogus stylesheet values prove the override is real.
 	node.Attrs["llm_provider"] = "bogus_provider"
 	node.Attrs["llm_model"] = "bogus-model"
@@ -271,7 +271,7 @@ func TestTmuxAgentHandler_ClassAttribute_NonCLIDriver_Errors(t *testing.T) {
 	workDir := t.TempDir()
 
 	node := model.NewNode("agent")
-	node.Attrs["class"] = "hard_coding"
+	node.Attrs["agent_class"] = "hard_coding"
 
 	execCtx := &engine.Execution{
 		Graph:       model.NewGraph("test"),
