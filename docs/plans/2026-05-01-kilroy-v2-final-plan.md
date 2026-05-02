@@ -714,6 +714,9 @@ Live dogfood against the dev machine produces 8 clean entries (anthropic, cursor
 - Linux keychain probe via libsecret / `secret-tool`. Windows via Credential Manager.
 - Gemini OAuth note rephrase: "expired; refreshable" reads weirdly when state shows OK. Cosmetic.
 
+**Block 9 follow-ups (open from the package integrity gate):**
+- `workflows/coding-loop` uses `class="implementer"`/`class="reviewer"` as model_stylesheet selectors only — pre-Step-4b. Under `--tmux` + Step 4b these now hit `policy.ErrUnknownClass`. Migrate to either real policy classes (`hard_coding`?) or split into a separate `stylesheet_class` attribute. Currently bypassed in `shipped_packages_test.go::knownClassIssues`.
+
 ### Block 6: Agent-conversation untangling
 
 This is the largest block. Order from Inv5 §7 / §9.4:
@@ -739,14 +742,19 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 - [ ] Stress test: launch 12+ sibling runs of distinct workflows from one parent; verify isolation.
 - [ ] Document the load-bearing-property guarantees in `AGENTS.md`.
 
-### Block 9: Built-in workflows — **`fix` and `investigate` v0 LANDED; `review` pending**
+### Block 9: Built-in workflows — **two workflow-package v0 dogfood scaffolds landed; blessed-built-in milestone NOT yet reached**
 
-- [x] Author **`fix`** v0 as a workflow package: `workflows/fix/{workflow.toml, graph.dot, prompts/fix.md, scripts/{stage-context.sh, verify.sh, diff.sh, summary.sh}}`. Inputs: `issue` (req), `context_files`, `verify_command`, `scope_directive`. Outputs: `result.md`, `fix.patch`. Topology mirrors `implement` with an extra `diff` stage between verify and summary that captures the run-branch diff against the launch HEAD. Class declaration `hard_coding` drives routing via Step 4b. Live dogfood: run `01KQK99TKTBCCSEFP7PZZZZF6M` against a synthetic broken-Add Go repo (26s, status=success): policy_class_resolved fires correctly, agent finds and fixes the bug, verify passes, fix.patch (1.4 KB) contains the diff.
-- [x] Author **`investigate`** v0 at `workflows/investigate/{workflow.toml, graph.dot, prompts/investigate.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `question` (req), `context_files`, `urls`, `scope_directive`. Output: `result.md`. Class=`deep_investigation` (Opus 4.7 with 1M context for long-form synthesis). Topology is simpler than `fix`/`implement`: no verify, no diff — investigate is read-only research. Live dogfood: run `01KQK9V71Z6AY1F3BG55TMC601` answering an OOP question (37s, success): `policy_class_resolved` fires with `deep_investigation` → claude-opus-4-7, structured result.md with TL;DR/Findings/Open questions/Methodology produced as specified.
-- [ ] Author `review` as a workflow package.
-- [ ] CI-validate them. The Block 0 §13.2 test (`internal/attractor/validate/shipped_graphs_test.go`) already walks `workflows/`; new packages are picked up automatically. When built-ins move to `internal/workflows/`, extend the test (or add a sibling) to walk that directory too. Both should be validated until `workflows/` is fully retired.
-- [ ] Bare-form CLI elevation (covered by Block 1).
-- [ ] Author `prompts/` for each.
+> **Status discipline:** Block 9's exit bar is *embedded built-ins under `internal/workflows/<name>/` plus a bare-form CLI* (per §10). What is landed today is **workflow-package v0** scaffolds at `workflows/<name>/` using the **legacy `[[inputs]]` manifest shape**, dogfooded end-to-end via `kilroy attractor run --package …`. They are NOT Block 2 schema progress (the v2 `[workflow]`/`[inputs.<name>]`/`[side_effects]`/`[nodes.<id>]` tables described in §5.2 don't have a parser yet), and NOT Block 1 surface progress (no bare form). They ARE useful tooling for the dogfood loop right now.
+
+- [x] **`fix` workflow-package v0 (legacy manifest shape, dogfood landed)** at `workflows/fix/{workflow.toml, graph.dot, prompts/fix.md, scripts/{stage-context.sh, verify.sh, diff.sh, summary.sh}}`. Inputs: `issue` (req), `context_files`, `verify_command`, `scope_directive`. Outputs: `result.md`, `fix.patch`. Topology mirrors `implement` with an extra `diff` stage between verify and summary that captures the run-branch diff against the launch HEAD (with pathspec exclusions for run incidentals). Class declaration `hard_coding` drives routing via Step 4b. Live dogfood: run `01KQK99TKTBCCSEFP7PZZZZF6M` against a synthetic broken-Add Go repo (26s, status=success): policy_class_resolved fires, agent finds and fixes the bug, verify passes, fix.patch contains the substantive diff. Re-authoring in the v2 manifest schema and embedding via `go:embed` are deferred until Block 1+2 land.
+- [x] **`investigate` workflow-package v0 (legacy manifest shape, dogfood landed)** at `workflows/investigate/{workflow.toml, graph.dot, prompts/investigate.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `question` (req), `context_files`, `urls`, `scope_directive`. Output: `result.md`. Class=`deep_investigation` (Opus 4.7, 1M context). Simpler topology than `fix`/`implement` — read-only research, no verify, no diff. Live dogfood: run `01KQK9V71Z6AY1F3BG55TMC601` answering an OOP question (37s, success): policy_class_resolved fires with `deep_investigation` → claude-opus-4-7, structured result.md (TL;DR/Findings/Open questions/Methodology) produced as specified.
+- [ ] Author `review` as a workflow package (still legacy manifest shape until Block 2 lands).
+- [x] CI-validate workflow-package DOTs. `internal/attractor/validate/shipped_graphs_test.go` walks `workflows/` and runs the same validator the runtime uses; new packages are picked up automatically.
+- [x] **Package-level integrity test** — `internal/attractor/validate/shipped_packages_test.go` walks every `workflows/<name>/workflow.toml` and asserts: manifest parses with required fields (`name`/`description`/`version`); each `[[inputs]]` entry has name+description; the graph parses; every `tool_command bash <path>` references an existing regular file in the package; every agent `class=` attribute resolves to a real policy class. Pre-Step-4b graphs that use `class=` as stylesheet selectors only (`workflows/coding-loop` today) are on a documented bypass list to be migrated separately. Closes the regression-bar gap above DOT-only validation.
+- [ ] When built-ins move to `internal/workflows/<name>/`, extend the test (or add a sibling) to walk that directory too. Both should be validated until `workflows/` is fully retired.
+- [ ] **Re-author all workflow packages in the v2 manifest schema** (depends on Block 2's loader).
+- [ ] **Embed the trio via `go:embed`** at `internal/workflows/<name>/`.
+- [ ] **Bare-form CLI elevation** (depends on Block 1's cobra migration).
 - [ ] Author `scripts/` for the script-node helpers (`kilroy-stage-context`, `kilroy-fetch-diff`, `kilroy-write-result`, `kilroy-write-fix-result`, `kilroy-apply-patch`, `kilroy-post-review`).
 
 ### Block 10: Documentation
