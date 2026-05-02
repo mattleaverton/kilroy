@@ -1,0 +1,53 @@
+# Fix workflow: stage context, run agent (class=hard_coding) on a bug
+# description, verify build+test, capture the diff as fix.patch, write a
+# summary. Sibling of `implement` for directed bug-fix work; differs by
+# input framing (issue, not open prompt) and by emitting a fix.patch
+# alongside result.md so consumers (review, etc.) can chain on the diff.
+#
+# NOTE: legacy workflow.toml shape (single top-level fields + [[inputs]]).
+# Block 2 will re-author in the v2 schema (per plan §5.2).
+
+name        = "fix"
+description = "Fix a described bug with build+test verification; emits a patch."
+version     = "1"
+
+outputs = ["result.md", "fix.patch"]
+
+[[inputs]]
+name        = "issue"
+description = "Description of the bug to fix. Be specific: symptom, expected behavior, and a reproduction if you have one."
+required    = true
+
+[[inputs]]
+name        = "context_files"
+description = "Newline-separated absolute paths the agent should read for context. Optional."
+required    = false
+
+[[inputs]]
+name        = "verify_command"
+description = "Shell command run by the verify stage. Default builds and runs targeted tests."
+required    = false
+
+[[inputs]]
+name        = "scope_directive"
+description = "Hard scope guardrail rendered into the agent's prompt. Optional."
+required    = false
+
+[defaults]
+labels = { workflow = "fix" }
+
+# v2 (Block 2) preview — these declarations will move into [workflow] /
+# [side_effects] / [nodes.agent] tables once the new manifest schema lands.
+#
+# [workflow]
+#   default_class = "hard_coding"
+#
+# [side_effects]
+#   mutates_git    = false   # change is staged in the run worktree only;
+#                            # the user merges it from fix.patch
+#   writes_files   = true
+#   network_egress = true
+#   idempotent     = false
+#
+# [nodes.agent]
+#   class = "hard_coding"

@@ -1,0 +1,39 @@
+digraph fix {
+    graph [
+        inputs="issue",
+        outputs="result.md,fix.patch",
+        model_stylesheet="
+            * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
+        "
+    ]
+
+    start         [shape=Mdiamond, label="Start"]
+    stage_context [shape=parallelogram, label="stage-context",
+                   tool_command="bash .kilroy/package/scripts/stage-context.sh"]
+    agent         [shape=box, label="fix", agent_tool="claude", class="hard_coding",
+                   prompt="You are working in a kilroy worktree on a bug fix. Code changes are auto-committed at node end. Do not run git commit yourself. Your task is in .kilroy/INPUT.md under the ## issue section. If a ## context_files section is present, those paths point at files the user wants you to read for context. If a ## scope_directive section is present, treat it as a hard guardrail: do not touch files outside the named scope. Do NOT run go test ./... — too noisy; use go test <package> -run <pattern> for targeted verification. Time-cap your work: if a single approach is not converging within ~15 minutes, write what you have to result.md with a BLOCKED: prefix and stop. Output: write result.md at the workspace root. Required sections: Summary (1-2 sentences), Root cause, Files touched, Diff outline, Tests added, Verification (how you confirmed the fix works), Open questions. When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
+                   outputs="result.md"]
+    verify        [shape=parallelogram, label="verify",
+                   tool_command="bash .kilroy/package/scripts/verify.sh"]
+    diff          [shape=parallelogram, label="diff",
+                   tool_command="bash .kilroy/package/scripts/diff.sh"]
+    summary       [shape=parallelogram, label="summary",
+                   tool_command="bash .kilroy/package/scripts/summary.sh"]
+    done          [shape=Msquare, label="Done"]
+
+    // Failure paths route through `summary` so the run captures what
+    // happened in result.md before terminating. summary always succeeds.
+    // diff runs on success; it captures the worktree diff for fix.patch
+    // and is permitted to be empty (agent declined to change anything).
+    start         -> stage_context
+    stage_context -> agent          [condition="outcome=success"]
+    stage_context -> summary        [condition="outcome!=success"]
+    agent         -> verify         [condition="outcome=success"]
+    agent         -> summary        [condition="outcome!=success"]
+    verify        -> diff           [condition="outcome=success"]
+    verify        -> agent          [condition="outcome!=success", label="retry once"]
+    // diff always succeeds (it captures whatever's there, possibly empty),
+    // so route unconditionally to summary.
+    diff          -> summary
+    summary       -> done            [condition="outcome=success"]
+}

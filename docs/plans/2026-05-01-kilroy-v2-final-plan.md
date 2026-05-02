@@ -739,10 +739,11 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 - [ ] Stress test: launch 12+ sibling runs of distinct workflows from one parent; verify isolation.
 - [ ] Document the load-bearing-property guarantees in `AGENTS.md`.
 
-### Block 9: Built-in workflows
+### Block 9: Built-in workflows — **`fix` v0 LANDED at `workflows/fix/` (sibling of `implement`)**
 
-- [ ] Author `investigate`, `review`, `fix` as built-in packages under `internal/workflows/<name>/`.
-- [ ] CI-validate them. The Block 0 §13.2 test currently walks `workflows/` (today's shipped tree); when built-ins move to `internal/workflows/`, extend the test (or add a sibling) to walk that directory too. Both should be validated until `workflows/` is fully retired.
+- [x] Author **`fix`** v0 as a workflow package: `workflows/fix/{workflow.toml, graph.dot, prompts/fix.md, scripts/{stage-context.sh, verify.sh, diff.sh, summary.sh}}`. Inputs: `issue` (req), `context_files`, `verify_command`, `scope_directive`. Outputs: `result.md`, `fix.patch`. Topology mirrors `implement` with an extra `diff` stage between verify and summary that captures the run-branch diff against the launch HEAD. Class declaration `hard_coding` drives routing via Step 4b. Live dogfood: run `01KQK99TKTBCCSEFP7PZZZZF6M` against a synthetic broken-Add Go repo (26s, status=success): policy_class_resolved fires correctly, agent finds and fixes the bug, verify passes, fix.patch (1.4 KB) contains the diff. The blessed-three trio's other two (`investigate`, `review`) are still pending; bare-form CLI elevation also still pending (covered by Block 1).
+- [ ] Author `investigate` and `review` as workflow packages.
+- [ ] CI-validate them. The Block 0 §13.2 test (`internal/attractor/validate/shipped_graphs_test.go`) already walks `workflows/`; new packages are picked up automatically. When built-ins move to `internal/workflows/`, extend the test (or add a sibling) to walk that directory too. Both should be validated until `workflows/` is fully retired.
 - [ ] Bare-form CLI elevation (covered by Block 1).
 - [ ] Author `prompts/` for each.
 - [ ] Author `scripts/` for the script-node helpers (`kilroy-stage-context`, `kilroy-fetch-diff`, `kilroy-write-result`, `kilroy-write-fix-result`, `kilroy-apply-patch`, `kilroy-post-review`).
