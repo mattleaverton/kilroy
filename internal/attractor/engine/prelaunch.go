@@ -20,6 +20,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
+	"github.com/danshapiro/kilroy/internal/auth"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
@@ -36,6 +37,7 @@ type PreLaunchReport struct {
 	GeneratedAt string                 `json:"generated_at"`
 	Package     *PreLaunchPackageCheck `json:"package,omitempty"`
 	Nodes       []PreLaunchNodeCheck   `json:"nodes"`
+	Secrets     []PreLaunchSecretCheck `json:"secrets,omitempty"`
 	Summary     PreLaunchSummary       `json:"summary"`
 }
 
@@ -63,6 +65,15 @@ type PreLaunchNodeCheck struct {
 	BinaryFound *bool    `json:"binary_found,omitempty"`
 	Status      string   `json:"status"` // "ok" | "fail"
 	Errors      []string `json:"errors,omitempty"`
+}
+
+// PreLaunchSecretCheck records whether a single required secret (a
+// workflow.toml [secrets].needs entry, expressed as a provider name) has
+// at least one healthy auth entry on this machine.
+type PreLaunchSecretCheck struct {
+	Name   string   `json:"name"`
+	Status string   `json:"status"` // "ok" | "fail"
+	Errors []string `json:"errors,omitempty"`
 }
 
 // PreLaunchSummary is a quick rollup for tooling.
@@ -197,6 +208,25 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		report.Summary.OK++
 	}
 
+	// Per-secret checks against the workflow's [secrets].needs list. If we
+	// haven't loaded machine state yet (no class-bearing nodes triggered
+	// it), do so now so secrets can be validated independently.
+	if len(opts.RequiredSecrets) > 0 {
+		if !stateLoaded {
+			state = collectFn()
+			stateLoaded = true
+		}
+		secretChecks := validateSecrets(opts.RequiredSecrets, state)
+		report.Secrets = secretChecks
+		for _, sc := range secretChecks {
+			if sc.Status == "fail" {
+				report.Summary.Fail++
+			} else {
+				report.Summary.OK++
+			}
+		}
+	}
+
 	if err := writePreLaunchReport(opts.LogsRoot, report); err != nil {
 		// Persisting the report is best-effort; failure to write should
 		// not mask a successful validation. Surface as a soft warning
@@ -208,6 +238,41 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		return report, &PreLaunchError{Report: report}
 	}
 	return report, nil
+}
+
+// validateSecrets checks whether each required secret name (a provider name
+// like "github" or "anthropic") has at least one auth entry in StateOK on
+// this machine. Returns one PreLaunchSecretCheck per `needs` entry, in the
+// order they were given.
+func validateSecrets(needs []string, state policy.MachineState) []PreLaunchSecretCheck {
+	if len(needs) == 0 {
+		return nil
+	}
+	checks := make([]PreLaunchSecretCheck, 0, len(needs))
+	for _, raw := range needs {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		check := PreLaunchSecretCheck{Name: name}
+		satisfied := false
+		for _, e := range state.Auth.Entries {
+			if e.Provider == name && e.State == auth.StateOK {
+				satisfied = true
+				break
+			}
+		}
+		if satisfied {
+			check.Status = "ok"
+		} else {
+			check.Status = "fail"
+			check.Errors = append(check.Errors, fmt.Sprintf(
+				"required secret %q not satisfied: no auth entry with provider=%s and state=ok found (hint: run `kilroy auth list` and configure the credential for %s)",
+				name, name, name))
+		}
+		checks = append(checks, check)
+	}
+	return checks
 }
 
 // PreLaunchError is the typed error returned when one or more nodes fail
@@ -227,8 +292,23 @@ func (e *PreLaunchError) Error() string {
 			failedNodes = append(failedNodes, n.NodeID)
 		}
 	}
-	return fmt.Sprintf("prelaunch validation failed for %d node(s): %s",
-		e.Report.Summary.Fail, strings.Join(failedNodes, ", "))
+	failedSecrets := []string{}
+	for _, s := range e.Report.Secrets {
+		if s.Status == "fail" {
+			failedSecrets = append(failedSecrets, s.Name)
+		}
+	}
+	parts := []string{}
+	if len(failedNodes) > 0 {
+		parts = append(parts, fmt.Sprintf("%d node(s): %s", len(failedNodes), strings.Join(failedNodes, ", ")))
+	}
+	if len(failedSecrets) > 0 {
+		parts = append(parts, fmt.Sprintf("missing secret(s): %s", strings.Join(failedSecrets, ", ")))
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("prelaunch validation failed (%d failure(s))", e.Report.Summary.Fail)
+	}
+	return "prelaunch validation failed for " + strings.Join(parts, "; ")
 }
 
 func writePreLaunchReport(logsRoot string, report *PreLaunchReport) error {

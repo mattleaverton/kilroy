@@ -241,6 +241,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	opts.GraphDir = overrides.GraphDir
 	opts.GitOps = overrides.GitOps
 	opts.PackageDir = overrides.PackageDir
+	opts.RequiredSecrets = append([]string(nil), overrides.RequiredSecrets...)
 	if overrides.Workspace != "" {
 		opts.Workspace = overrides.Workspace
 		if opts.RepoPath == "" {

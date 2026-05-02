@@ -460,8 +460,15 @@ func workflowsValidate(args []string) {
 		})
 	}
 
-	// Package + class + auth + binary check (no LLM cost).
-	report, _ := engine.ValidatePreLaunch(g, engine.RunOptions{PackageDir: d.Dir}, engine.PolicyDeps{})
+	// Package + class + auth + binary + secrets check (no LLM cost).
+	var requiredSecrets []string
+	if m != nil {
+		requiredSecrets = append(requiredSecrets, m.Secrets...)
+	}
+	report, _ := engine.ValidatePreLaunch(g, engine.RunOptions{
+		PackageDir:      d.Dir,
+		RequiredSecrets: requiredSecrets,
+	}, engine.PolicyDeps{})
 	out.PreLaunch = report
 
 	failed := false
@@ -524,6 +531,19 @@ func workflowsValidate(args []string) {
 					}
 					fmt.Println()
 					for _, e := range n.Errors {
+						fmt.Printf("    %s\n", e)
+					}
+				}
+			}
+			if len(out.PreLaunch.Secrets) > 0 {
+				fmt.Println("\nsecrets:")
+				for _, s := range out.PreLaunch.Secrets {
+					marker := "✓"
+					if s.Status == "fail" {
+						marker = "✗"
+					}
+					fmt.Printf("  %s %s\n", marker, s.Name)
+					for _, e := range s.Errors {
 						fmt.Printf("    %s\n", e)
 					}
 				}

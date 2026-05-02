@@ -123,6 +123,12 @@ type RunOptions struct {
 	// at .kilroy/package/ after workspace creation.
 	PackageDir string
 
+	// RequiredSecrets are abstract credential names (provider names like
+	// "github", "anthropic") that the workflow's [secrets].needs entry
+	// declares as required. ValidatePreLaunch fails fast if any of these
+	// is not satisfied by a healthy auth entry on this machine.
+	RequiredSecrets []string
+
 	// When true, skip provider preflight probes (CLI prompt probes,
 	// API key validation). Useful when using tmux-managed sessions
 	// with isolated auth that differs from the host environment.

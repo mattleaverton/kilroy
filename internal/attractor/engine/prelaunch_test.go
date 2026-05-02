@@ -393,6 +393,174 @@ func anyError(errs []string, substr string) bool {
 	return false
 }
 
+func TestValidateSecrets_EmptyNeeds_NoChecks(t *testing.T) {
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{{
+			Provider: "github", State: auth.StateOK,
+		}}},
+	}
+	checks := validateSecrets(nil, state)
+	if checks != nil {
+		t.Errorf("expected nil checks for empty needs, got %+v", checks)
+	}
+	checks = validateSecrets([]string{}, state)
+	if checks != nil {
+		t.Errorf("expected nil checks for empty needs slice, got %+v", checks)
+	}
+}
+
+func TestValidateSecrets_OneSatisfied(t *testing.T) {
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{{
+			Provider: "github", State: auth.StateOK,
+			Source: auth.Source{EnvVar: "GITHUB_TOKEN"},
+		}}},
+	}
+	checks := validateSecrets([]string{"github"}, state)
+	if len(checks) != 1 {
+		t.Fatalf("checks = %d, want 1", len(checks))
+	}
+	if checks[0].Status != "ok" {
+		t.Errorf("status = %q, want ok", checks[0].Status)
+	}
+	if checks[0].Name != "github" {
+		t.Errorf("name = %q, want github", checks[0].Name)
+	}
+	if len(checks[0].Errors) != 0 {
+		t.Errorf("expected no errors, got %v", checks[0].Errors)
+	}
+}
+
+func TestValidateSecrets_OneMissing(t *testing.T) {
+	// State has anthropic OK but not github.
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{{
+			Provider: "anthropic", State: auth.StateOK,
+		}}},
+	}
+	checks := validateSecrets([]string{"github"}, state)
+	if len(checks) != 1 {
+		t.Fatalf("checks = %d, want 1", len(checks))
+	}
+	if checks[0].Status != "fail" {
+		t.Errorf("status = %q, want fail", checks[0].Status)
+	}
+	if len(checks[0].Errors) == 0 {
+		t.Error("expected at least one error explaining the missing secret")
+	}
+	// Sanity: error message should mention the secret name and a hint.
+	joined := strings.Join(checks[0].Errors, " ")
+	if !strings.Contains(joined, "github") {
+		t.Errorf("error message %q should mention 'github'", joined)
+	}
+}
+
+func TestValidateSecrets_NotOKStateFails(t *testing.T) {
+	// Provider entry exists, but its state is not "ok" (e.g. expired).
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{{
+			Provider: "github", State: auth.StateExpired,
+		}}},
+	}
+	checks := validateSecrets([]string{"github"}, state)
+	if len(checks) != 1 {
+		t.Fatalf("checks = %d, want 1", len(checks))
+	}
+	if checks[0].Status != "fail" {
+		t.Errorf("expected fail when only entry is expired, got %q", checks[0].Status)
+	}
+}
+
+func TestValidateSecrets_Mixed(t *testing.T) {
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{
+			{Provider: "anthropic", State: auth.StateOK},
+			{Provider: "github", State: auth.StateMissing},
+			{Provider: "openrouter", State: auth.StateOK},
+		}},
+	}
+	needs := []string{"anthropic", "github", "openai"}
+	checks := validateSecrets(needs, state)
+	if len(checks) != 3 {
+		t.Fatalf("checks = %d, want 3", len(checks))
+	}
+	// anthropic: present + ok
+	if checks[0].Name != "anthropic" || checks[0].Status != "ok" {
+		t.Errorf("anthropic check = %+v, want ok", checks[0])
+	}
+	// github: present but missing state -> fail
+	if checks[1].Name != "github" || checks[1].Status != "fail" {
+		t.Errorf("github check = %+v, want fail", checks[1])
+	}
+	// openai: not present at all -> fail
+	if checks[2].Name != "openai" || checks[2].Status != "fail" {
+		t.Errorf("openai check = %+v, want fail", checks[2])
+	}
+}
+
+func TestValidatePreLaunch_RequiredSecrets_FailsWhenMissing(t *testing.T) {
+	// No class= attribute → no nodes need policy resolution. The only
+	// failure path here is the missing-secret check.
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-6",
+	})
+	logsRoot := t.TempDir()
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{
+			{Provider: "anthropic", State: auth.StateOK},
+		}},
+	}
+	report, err := ValidatePreLaunch(g,
+		RunOptions{LogsRoot: logsRoot, RequiredSecrets: []string{"github"}},
+		PolicyDeps{
+			Load:    func() (*policy.Data, error) { t.Fatal("policy load should not be called"); return nil, nil },
+			Collect: func() policy.MachineState { return state },
+		})
+	if err == nil {
+		t.Fatal("expected error for missing required secret")
+	}
+	if _, ok := err.(*PreLaunchError); !ok {
+		t.Errorf("error type = %T, want *PreLaunchError", err)
+	}
+	if report.Summary.Fail != 1 {
+		t.Errorf("summary.fail = %d, want 1: %+v", report.Summary.Fail, report)
+	}
+	if len(report.Secrets) != 1 || report.Secrets[0].Status != "fail" {
+		t.Errorf("expected one failed secret check, got %+v", report.Secrets)
+	}
+	if !strings.Contains(err.Error(), "github") {
+		t.Errorf("error %q should mention 'github'", err.Error())
+	}
+}
+
+func TestValidatePreLaunch_RequiredSecrets_PassesWhenSatisfied(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-6",
+	})
+	logsRoot := t.TempDir()
+	state := policy.MachineState{
+		Auth: auth.ListOutput{Entries: []auth.Entry{
+			{Provider: "github", State: auth.StateOK},
+		}},
+	}
+	report, err := ValidatePreLaunch(g,
+		RunOptions{LogsRoot: logsRoot, RequiredSecrets: []string{"github"}},
+		PolicyDeps{
+			Collect: func() policy.MachineState { return state },
+		})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if report.Summary.Fail != 0 {
+		t.Errorf("summary.fail = %d, want 0", report.Summary.Fail)
+	}
+	if len(report.Secrets) != 1 || report.Secrets[0].Status != "ok" {
+		t.Errorf("expected one ok secret check, got %+v", report.Secrets)
+	}
+}
+
 func TestPreLaunchError_MessageMentionsFailedNodes(t *testing.T) {
 	r := &PreLaunchReport{
 		Nodes: []PreLaunchNodeCheck{

@@ -676,6 +676,12 @@ func attractorRun(args []string) {
 		GitOps:        gitOps,
 		Invocation:    os.Args,
 		PackageDir:    func() string { if pkg != nil { return pkg.Dir }; return "" }(),
+		RequiredSecrets: func() []string {
+			if pkg != nil && pkg.ManifestV2 != nil {
+				return append([]string(nil), pkg.ManifestV2.Secrets...)
+			}
+			return nil
+		}(),
 		OnCXDBStartup: func(info *engine.CXDBStartupInfo) {
 			if info == nil {
 				return
