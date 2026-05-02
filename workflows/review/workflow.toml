@@ -1,0 +1,68 @@
+# Review workflow: stage context (gather the diff to review), run agent
+# (class=hard_coding) over the diff plus an optional checklist, write a
+# human-readable result.md and a structured review.json. Sibling of
+# `fix` — same shape, different intent: evaluation rather than
+# transformation. No git mutation, no network egress (PR posting is out
+# of scope for v0).
+#
+# v2 workflow.toml schema (plan §5.2 / §10.1).
+
+[workflow]
+name              = "review"
+version           = "1"
+description       = """
+Review a change. The stage_context step gathers the diff to review
+(from a .patch file, a branch ref, or — TODO — a PR URL), the agent
+reads it alongside an optional checklist, and produces a
+human-readable review (result.md) plus a structured findings list
+(review.json). Idempotent and read-only — no code is changed and
+nothing is posted upstream.
+"""
+agent_description = "Review a change and emit result.md plus review.json findings."
+default_class     = "hard_coding"
+graph             = "graph.dot"
+
+[inputs.target]
+type        = "string"
+required    = true
+description = "What to review. One of: a path to a .patch file, a branch ref (e.g. attractor/run/X), or a PR URL. PR URL handling is a TODO for v0 — pass a .patch or branch ref for now."
+
+[inputs.checklist]
+type        = "path"
+required    = false
+description = "Optional path to a review checklist file the agent should apply (e.g. project conventions, security checklist)."
+
+[inputs.context_files]
+type        = "string"
+required    = false
+description = "Newline-separated paths the agent should read for context (design docs, related modules)."
+
+[inputs.scope_directive]
+type        = "string"
+required    = false
+description = "Hard scope guardrail rendered into the agent's prompt."
+
+[outputs.result]
+type        = "path"
+description = "Human-readable review: Summary, Findings (with severity), Verdict, Open questions."
+path        = "result.md"
+
+[outputs."review.json"]
+type        = "path"
+description = "Structured list of findings: severity, file, line, message."
+path        = "review.json"
+
+[side_effects]
+# Read-only review. No git mutation; no network egress (PR posting is
+# out of scope for v0). writes_files stays true because the agent
+# writes result.md and review.json into the worktree.
+mutates_git    = false
+writes_files   = true
+network_egress = false
+idempotent     = true
+
+[nodes.agent]
+class = "hard_coding"
+
+[defaults]
+labels = { workflow = "review" }
