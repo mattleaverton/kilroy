@@ -773,11 +773,12 @@ This is the largest block. Order from Inv5 §7 / §9.4:
 - [x] **`review` v0 (v2 manifest, authored by parallel kilroy worker)** at `workflows/review/{workflow.toml, graph.dot, prompts/review.md, scripts/{stage-context.sh, summary.sh}}`. Inputs: `target` (req — .patch path, branch ref, or PR URL), `checklist`, `context_files`, `scope_directive`. Outputs: `result.md`, `review.json`. Class=`hard_coding`. The stage_context script handles three target shapes (.patch verbatim copy, git ref via `git diff`, PR URL → TODO). Read-only review with structured severity scale (blocker/major/minor/info) and verdict scale (MERGE/MERGE-FIX/FIX-MERGE/REJECT). Authored end-to-end by `kilroy run implement` worker `01KQMEEWBR3WB6TEXFMVVVKHKD` (4m44s, success); cherry-picked into the branch.
 - [x] CI-validate workflow-package DOTs. `internal/attractor/validate/shipped_graphs_test.go` walks `workflows/` and runs the same validator the runtime uses; new packages are picked up automatically.
 - [x] **Package-level integrity test** — `internal/attractor/validate/shipped_packages_test.go` walks every `workflows/<name>/workflow.toml` and asserts: manifest parses with required fields (`name`/`description`/`version`); each `[[inputs]]` entry has name+description; the graph parses; every `tool_command bash <path>` references an existing regular file in the package; every agent `class=` attribute resolves to a real policy class. Pre-Step-4b graphs that use `class=` as stylesheet selectors only (`workflows/coding-loop` today) are on a documented bypass list to be migrated separately. Closes the regression-bar gap above DOT-only validation.
-- [ ] When built-ins move to `internal/workflows/<name>/`, extend the test (or add a sibling) to walk that directory too. Both should be validated until `workflows/` is fully retired.
-- [ ] **Re-author all workflow packages in the v2 manifest schema** (depends on Block 2's loader).
-- [ ] **Embed the trio via `go:embed`** at `internal/workflows/<name>/`.
-- [ ] **Bare-form CLI elevation** (depends on Block 1's cobra migration).
-- [ ] Author `scripts/` for the script-node helpers (`kilroy-stage-context`, `kilroy-fetch-diff`, `kilroy-write-result`, `kilroy-write-fix-result`, `kilroy-apply-patch`, `kilroy-post-review`).
+- [x] **Re-author the trio in the v2 manifest schema** — landed alongside the schema parser (commit `f2b8a9b`).
+- [ ] **Upgrade legacy workflow packages** (`build-test`, `coding-loop`, `multi-tool-exercise`) to the v2 manifest shape and verify each runs against the current engine. Replaces the earlier "move them out" plan.
+- ~~Embed the trio via `go:embed` at `internal/workflows/<name>/`~~ — **retired** with the §10 reframe; workflows stay filesystem-discovered.
+- ~~Bare-form CLI elevation~~ — **retired** with the §10 reframe; reach is `kilroy run <name>` only.
+- ~~When built-ins move to `internal/workflows/<name>/`, extend the test~~ — **retired** with the embedding decision; the existing `shipped_packages_test.go` walks `workflows/` and is sufficient.
+- [ ] Author shared `scripts/` helpers (`kilroy-stage-context`, `kilroy-fetch-diff`, `kilroy-write-result`, `kilroy-write-fix-result`, `kilroy-apply-patch`, `kilroy-post-review`) so workflow scripts stop duplicating boilerplate. Lower priority — duplication is small.
 
 ### Block 10: Documentation
 

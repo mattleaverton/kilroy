@@ -172,8 +172,9 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy --version")
 	fmt.Fprintln(os.Stderr, "  kilroy run <workflow-name> [flags]   (resolves <name> via filesystem discovery)")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--pretty] [--all]    (JSON by default; v2 only unless --all)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--pretty] (JSON by default)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows validate <name> [--pretty] (JSON by default)")
 	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run (--graph <file.dot> | --package <dir>) [--tmux] [--detach] [--validate|--preflight|--test-run] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--input <path|json>] [--prompt-file <file>] [--workspace <dir>] [--label KEY=VALUE ...]")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --logs-root <dir>")
 	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --cxdb <http_base_url> --context-id <id>")
@@ -455,7 +456,7 @@ func attractorRun(args []string) {
 	}
 
 	if detach {
-		cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir)
+		cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, false)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -582,7 +583,9 @@ func attractorRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir)
+	// --validate paths run quietly: the deterministic prelaunch report is
+	// the canonical output, no chatty provider auto-detection lines.
+	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, preflightOnly)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -761,7 +764,10 @@ func isSupportedForceModelProvider(provider string) bool {
 // loadOrBuildConfig loads a config from file, or builds a zero-config default
 // when configPath is empty. In both cases, providers are auto-detected from
 // the environment to fill gaps. Config-file values always take precedence.
-func loadOrBuildConfig(configPath string, gitOps engine.GitOps, repoPath string) (*engine.RunConfigFile, error) {
+// When quiet is true (--validate path), suppresses the chatty
+// "auto-detected provider …" status lines so the deterministic
+// validate-only output stays clean.
+func loadOrBuildConfig(configPath string, gitOps engine.GitOps, repoPath string, quiet bool) (*engine.RunConfigFile, error) {
 	var cfg *engine.RunConfigFile
 	if configPath != "" {
 		loaded, err := engine.LoadRunConfigFile(configPath)
@@ -778,6 +784,9 @@ func loadOrBuildConfig(configPath string, gitOps engine.GitOps, repoPath string)
 	}
 	detected := engine.DetectProviders()
 	engine.ApplyDetectedProviders(cfg, detected)
+	if quiet {
+		return cfg, nil
+	}
 	if len(detected) > 0 {
 		for _, dp := range detected {
 			fmt.Fprintf(os.Stderr, "auto-detected provider %s (backend=%s)\n", dp.Key, dp.Backend)

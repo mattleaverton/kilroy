@@ -213,7 +213,7 @@ func workflowsDescribe(args []string) {
 	}
 	if name == "" {
 		fmt.Fprintln(os.Stderr, "workflow name required")
-		fmt.Fprintln(os.Stderr, "usage: kilroy workflows describe <name> [--json]")
+		fmt.Fprintln(os.Stderr, "usage: kilroy workflows describe <name> [--pretty]")
 		os.Exit(1)
 	}
 
