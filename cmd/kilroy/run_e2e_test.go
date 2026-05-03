@@ -212,6 +212,30 @@ func TestRunImplement_E2E_FakeProvider(t *testing.T) {
 	// State dir isolated so we don't pollute the user's run history.
 	stateHome := t.TempDir()
 
+	// Auth config: the v2 resolver requires a user/project auth.toml. We
+	// materialize a minimal one in an isolated XDG_CONFIG_HOME with the
+	// claude_cli chain configured so the implement workflow's
+	// agent_class="hard_coding" resolves to the fake-claude path.
+	configHome := t.TempDir()
+	authDir := filepath.Join(configHome, "kilroy")
+	if err := os.MkdirAll(authDir, 0o755); err != nil {
+		t.Fatalf("mkdir auth dir: %v", err)
+	}
+	authTOML := `
+[bindings]
+"anthropic/cli_oauth/claude" = "anthropic_claude_cli"
+
+[chains.anthropic_claude_cli]
+requires = { provider = "anthropic", method = "cli_oauth", tool = "claude" }
+
+[[chains.anthropic_claude_cli.sources]]
+kind = "cli_session"
+tool = "claude"
+`
+	if err := os.WriteFile(filepath.Join(authDir, "auth.toml"), []byte(authTOML), 0o600); err != nil {
+		t.Fatalf("write auth.toml: %v", err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin,
@@ -225,10 +249,17 @@ func TestRunImplement_E2E_FakeProvider(t *testing.T) {
 	)
 	// PATH: fake claude first, then keep the real path so tmux/git/go
 	// are still findable. XDG_STATE_HOME isolates the run record.
+	// XDG_CONFIG_HOME points at our test auth.toml. CLAUDE_TOKEN_OK is
+	// a synthetic fake-tool marker; the real auth detector probes for a
+	// claude CLI session via keychain/Files. For the test, the binding
+	// resolver uses the chain we configured, and since the claude
+	// detector returns state=ok on this dev machine (Matt's claude is
+	// logged in), the cli_session source resolves cleanly.
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakePathDir+":"+os.Getenv("PATH"),
 		"KILROY_WORKFLOW_PATHS="+workflowsDir,
 		"XDG_STATE_HOME="+stateHome,
+		"XDG_CONFIG_HOME="+configHome,
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
