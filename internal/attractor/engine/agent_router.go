@@ -28,9 +28,9 @@ import (
 	"github.com/danshapiro/kilroy/internal/llm/providers/openai"
 	"github.com/danshapiro/kilroy/internal/llm/providers/openaicompat"
 	"github.com/danshapiro/kilroy/internal/llmclient"
-	"github.com/danshapiro/kilroy/internal/providerspec"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
 	"github.com/danshapiro/kilroy/internal/policy"
+	"github.com/danshapiro/kilroy/internal/providerspec"
 )
 
 type AgentRouter struct {

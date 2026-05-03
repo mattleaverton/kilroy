@@ -365,7 +365,7 @@ func printAuthListPrettyAnnotated(out auth.ListOutput, entries []annotatedEntry,
 				fmt.Printf("    profiles: %s  (* = active)\n", strings.Join(names, ", "))
 			}
 			if len(e.Shadows) > 0 {
-				fmt.Printf("    shadows: %s (env var wins at runtime)\n", strings.Join(e.Shadows, ", "))
+				fmt.Printf("    shadows: %s (env var wins for default invocations; class-routed CLI runs scrub env vars per binder)\n", strings.Join(e.Shadows, ", "))
 			}
 			if len(e.ShadowedBy) > 0 {
 				fmt.Printf("    shadowed by: %s\n", strings.Join(e.ShadowedBy, ", "))

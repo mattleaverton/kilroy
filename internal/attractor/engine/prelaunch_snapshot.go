@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
@@ -47,6 +48,7 @@ type preLaunchNodeSnap struct {
 	HistorySink   string `json:"history_sink"`
 	FallbackRank  int    `json:"fallback_rank"`
 	PolicyVersion string `json:"policy_version"`
+	ResolvedAt    string `json:"resolved_at,omitempty"`
 
 	// Auth carries the binding.Snapshot that the resolver picked.
 	Auth snapAuth `json:"auth"`
@@ -99,6 +101,27 @@ func writePreLaunchSnapshots(logsRoot string, snaps map[string]preLaunchNodeSnap
 	return os.WriteFile(filepath.Join(logsRoot, preLaunchSnapshotsFile), append(b, '\n'), 0o644)
 }
 
+// preLaunchSnapshotsFileExists reports whether the snapshot file is
+// present at the expected path inside logsRoot. Used by execution-side
+// callers to decide between "prelaunch ran (snapshot is authoritative)"
+// and "no prelaunch (legacy/test path; live resolve is fine)".
+//
+// Returns (false, nil) when logsRoot is empty.
+func preLaunchSnapshotsFileExists(logsRoot string) (bool, error) {
+	logsRoot = strings.TrimSpace(logsRoot)
+	if logsRoot == "" {
+		return false, nil
+	}
+	_, err := os.Stat(filepath.Join(logsRoot, preLaunchSnapshotsFile))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
 // LoadPreLaunchSnapshot returns the frozen snapshot for one node, or
 // (nil, false, nil) when the snapshot file or this node's entry is
 // absent. Errors are reserved for genuine parse failures.
@@ -145,6 +168,10 @@ func resolveResultToSnap(className string, res policy.ResolveResult) preLaunchNo
 			Reason: s.Reason,
 		})
 	}
+	resolvedAt := ""
+	if !res.ResolvedAt.IsZero() {
+		resolvedAt = res.ResolvedAt.UTC().Format(time.RFC3339Nano)
+	}
 	return preLaunchNodeSnap{
 		ClassName:     className,
 		ModelID:       res.ModelID,
@@ -153,6 +180,7 @@ func resolveResultToSnap(className string, res policy.ResolveResult) preLaunchNo
 		HistorySink:   res.HistorySink,
 		FallbackRank:  res.FallbackRank,
 		PolicyVersion: res.PolicyVersion,
+		ResolvedAt:    resolvedAt,
 		Auth: snapAuth{
 			ChainName: res.AuthSnapshot.ChainName,
 			Method:    string(res.AuthSnapshot.Method),
@@ -173,6 +201,12 @@ func resolveResultToSnap(className string, res policy.ResolveResult) preLaunchNo
 // policy.ResolveResult from a frozen snapshot. Used by execution-side
 // callers to skip live resolution.
 func snapToResolveResult(snap preLaunchNodeSnap) *policy.ResolveResult {
+	resolvedAt := time.Time{}
+	if snap.ResolvedAt != "" {
+		if t, err := time.Parse(time.RFC3339Nano, snap.ResolvedAt); err == nil {
+			resolvedAt = t
+		}
+	}
 	skipped := make([]binding.SkippedSource, 0, len(snap.Auth.Skipped))
 	for _, s := range snap.Auth.Skipped {
 		skipped = append(skipped, binding.SkippedSource{
@@ -206,5 +240,6 @@ func snapToResolveResult(snap preLaunchNodeSnap) *policy.ResolveResult {
 		FallbackRank:  snap.FallbackRank,
 		Skipped:       snap.Skipped,
 		PolicyVersion: snap.PolicyVersion,
+		ResolvedAt:    resolvedAt,
 	}
 }

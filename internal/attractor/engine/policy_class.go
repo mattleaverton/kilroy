@@ -69,10 +69,17 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		return ClassResolution{}, false, nil
 	}
 
-	// Plan §5: prefer the frozen prelaunch snapshot when available so
-	// env/config drift between prelaunch and execution can't silently
-	// change the route. When no snapshot exists (e.g. tests, ad-hoc
-	// calls without a logs_root), fall back to live resolution.
+	// Plan §5: when prelaunch ran for this run, snapshots are
+	// AUTHORITATIVE — execution reads from the frozen snapshot and
+	// must not re-resolve. Drift between prelaunch and execution
+	// (env, config, filesystem) cannot silently change the route.
+	//
+	// Detection: the existence of <logs_root>/prelaunch_snapshots.json
+	// signals "prelaunch ran". When that file exists:
+	//   - this node's snapshot present  → use it
+	//   - this node's snapshot absent   → hard error (snapshot integrity broken)
+	// When the file is absent, fall back to live resolution — that's
+	// the legitimate test / ad-hoc path that didn't run prelaunch.
 	logsRoot := ""
 	if exec != nil {
 		logsRoot = strings.TrimSpace(exec.LogsRoot)
@@ -81,9 +88,22 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		}
 	}
 	if logsRoot != "" {
-		if frozen, ok, snapErr := LoadPreLaunchSnapshot(logsRoot, node.ID); snapErr != nil {
-			return ClassResolution{}, false, fmt.Errorf("read prelaunch snapshot: %w", snapErr)
-		} else if ok {
+		fileExists, err := preLaunchSnapshotsFileExists(logsRoot)
+		if err != nil {
+			return ClassResolution{}, false, fmt.Errorf("stat prelaunch snapshots: %w", err)
+		}
+		if fileExists {
+			frozen, ok, snapErr := LoadPreLaunchSnapshot(logsRoot, node.ID)
+			if snapErr != nil {
+				return ClassResolution{}, false, fmt.Errorf("read prelaunch snapshot: %w", snapErr)
+			}
+			if !ok {
+				return ClassResolution{}, false, fmt.Errorf(
+					"prelaunch_snapshots.json exists but has no entry for node %q — "+
+						"snapshot integrity broken; do not silently re-resolve",
+					node.ID,
+				)
+			}
 			prov, be := providerAndBackendForDriver(frozen.Driver)
 			if prov == "" {
 				return ClassResolution{}, false, fmt.Errorf("prelaunch snapshot has unknown driver %q", frozen.Driver)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
@@ -166,6 +167,53 @@ func TestResolveAgentClass_PrefersFrozenSnapshot(t *testing.T) {
 	}
 	if resolveCalled {
 		t.Error("auth resolver should NOT be called when snapshot is present")
+	}
+}
+
+// TestResolveAgentClass_SnapshotFileExistsButNodeMissing_HardError verifies
+// the integrity guarantee: if prelaunch_snapshots.json exists (signaling
+// "prelaunch ran") but this specific node has no entry, ResolveAgentClass
+// must fail hard rather than silently re-resolve. R6.
+func TestResolveAgentClass_SnapshotFileExistsButNodeMissing_HardError(t *testing.T) {
+	logsRoot := t.TempDir()
+
+	// Snapshot file with ONLY a different node's entry.
+	other := preLaunchNodeSnap{
+		ClassName: "hard_coding",
+		ModelID:   "claude-opus-4-7",
+		Driver:    "claude_cli",
+		Auth:      snapAuth{ChainName: "anthropic_claude_cli", Method: "cli_oauth", Provider: "anthropic", Source: snapAuthSource{Kind: "cli_session", Tool: "claude"}},
+	}
+	if err := writePreLaunchSnapshots(logsRoot, map[string]preLaunchNodeSnap{"other_node": other}); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	// Deps must NEVER be called — execution must hard-fail.
+	deps := PolicyDeps{
+		Load:     func() (*policy.Data, error) { t.Fatal("policy.Load should NOT be called"); return nil, nil },
+		Resolver: func(string) (*binding.Resolver, error) { t.Fatal("resolver should NOT be called"); return nil, nil },
+	}
+
+	exec := &Execution{
+		Graph:    model.NewGraph("test"),
+		LogsRoot: logsRoot,
+		Engine: &Engine{
+			LogsRoot: logsRoot,
+			Options:  RunOptions{RunID: "test-snap-integrity"},
+		},
+	}
+	node := model.NewNode("agent")
+	node.Attrs["agent_class"] = "hard_coding"
+
+	_, ok, err := ResolveAgentClass(node, exec, deps)
+	if err == nil {
+		t.Fatal("expected hard error when snapshot file exists but node entry missing")
+	}
+	if ok {
+		t.Error("expected ok=false on integrity error")
+	}
+	if !strings.Contains(err.Error(), "snapshot integrity broken") {
+		t.Errorf("error = %v, want it to mention 'snapshot integrity broken'", err)
 	}
 }
 

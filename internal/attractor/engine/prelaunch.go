@@ -285,10 +285,14 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		_ = err
 	}
 
-	// Write the frozen snapshots that execution will read. Best-effort —
-	// if it fails, execution falls back to live resolution (logged as a
-	// drift signal, but not a hard error).
-	_ = writePreLaunchSnapshots(opts.LogsRoot, frozenSnapshots)
+	// Write the frozen snapshots that execution will read. Plan §5
+	// authoritativeness depends on this file existing — if the write
+	// fails after a successful prelaunch, fail the run rather than let
+	// execution silently re-resolve. Tests/legacy paths with no logs_root
+	// are no-ops in writePreLaunchSnapshots and won't reach here.
+	if err := writePreLaunchSnapshots(opts.LogsRoot, frozenSnapshots); err != nil {
+		return report, fmt.Errorf("prelaunch: write snapshots: %w", err)
+	}
 
 	if report.Summary.Fail > 0 {
 		return report, &PreLaunchError{Report: report}
