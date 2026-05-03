@@ -357,6 +357,8 @@ From Inv3 §4:
 
 From Investigation 2 — the auth layer's surface is `discover, report, route`. Never `store, rotate, own`.
 
+> **Integrated shape (2026-05-02 update).** Auth resolution is integrated into the policy/class resolver — not parallel to it. Per `docs/plans/2026-05-02-auth-class-resolver-integration.md`, every credential decision flows through one `AuthBindingResolver`. Policy candidates declare `requires = { provider, method, tool? }` only — never env var names. User/project `~/.config/kilroy/auth.toml` and `<root>/.kilroy/auth.toml` declare named chains and bindings. `kilroy auth init` materializes the user file from detection × built-in templates; runtime reads only the user/project files (no compiled-in active defaults). The detection layer documented in §8.1–§8.5 below is unchanged; what changed is how policy consumes it.
+
 ### 8.1 What `kilroy auth list` scans
 
 Files and env vars across major LLM CLIs (full table in Inv2 §1):
