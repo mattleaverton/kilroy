@@ -466,10 +466,10 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 			tomlPath := filepath.Join(pkgDir, "workflow.toml")
 			if data, err := os.ReadFile(tomlPath); err == nil {
 				var manifest struct {
-					Name        string `toml:"name"`
-					Description string `toml:"description"`
-					Version     string `toml:"version"`
-					Inputs      []any  `toml:"inputs"`
+					Name        string   `toml:"name"`
+					Description string   `toml:"description"`
+					Version     string   `toml:"version"`
+					Inputs      []any    `toml:"inputs"`
 					Outputs     []string `toml:"outputs"`
 				}
 				if err := toml.Unmarshal(data, &manifest); err == nil {

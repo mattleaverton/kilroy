@@ -164,13 +164,13 @@ type rawV2Manifest struct {
 // rawLegacyManifest is the v1 shape: top-level metadata + [[inputs]]
 // array of tables + outputs string array.
 type rawLegacyManifest struct {
-	Name        string              `toml:"name"`
-	Description string              `toml:"description"`
-	Version     string              `toml:"version"`
-	Inputs      []rawLegacyInput    `toml:"inputs"`
-	Outputs     []string            `toml:"outputs"`
-	Defaults    rawLegacyDefaults   `toml:"defaults"`
-	Metadata    map[string]string   `toml:"metadata"`
+	Name        string            `toml:"name"`
+	Description string            `toml:"description"`
+	Version     string            `toml:"version"`
+	Inputs      []rawLegacyInput  `toml:"inputs"`
+	Outputs     []string          `toml:"outputs"`
+	Defaults    rawLegacyDefaults `toml:"defaults"`
+	Metadata    map[string]string `toml:"metadata"`
 }
 
 type rawLegacyInput struct {

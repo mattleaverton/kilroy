@@ -263,8 +263,10 @@ func findPackageDirs(root string) ([]string, error) {
 
 // scriptRelPath extracts the script path from a tool_command attribute.
 // Recognized shapes:
-//   bash .kilroy/package/scripts/foo.sh
-//   sh   .kilroy/package/scripts/foo.sh
+//
+//	bash .kilroy/package/scripts/foo.sh
+//	sh   .kilroy/package/scripts/foo.sh
+//
 // returns the path relative to the package root, e.g. "scripts/foo.sh".
 // Anything else returns "" — callers skip the existence check (other
 // tool_command shapes are legal but not script-file references).
