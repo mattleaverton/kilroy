@@ -21,6 +21,8 @@ func authCmd(args []string) {
 	switch args[0] {
 	case "list":
 		authList(args[1:])
+	case "check":
+		authCheck(args[1:])
 	case "suggest-fix":
 		authSuggestFix(args[1:])
 	case "defaults":
@@ -41,22 +43,28 @@ func authUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy auth defaults")
 	fmt.Fprintln(os.Stderr, "  kilroy auth init [--force] [--path <dir>] [--json|--pretty]")
-	fmt.Fprintln(os.Stderr, "  kilroy auth list [--pretty]")
+	fmt.Fprintln(os.Stderr, "  kilroy auth list [--pretty] [--json] [--chains]")
+	fmt.Fprintln(os.Stderr, "  kilroy auth check [--pretty] [--json] [--project <dir>]")
 	fmt.Fprintln(os.Stderr, "  kilroy auth suggest-fix [<provider>]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  defaults prints the default_chains.toml template verbatim.")
 	fmt.Fprintln(os.Stderr, "  init     generates ~/.config/kilroy/auth.toml from the template.")
 	fmt.Fprintln(os.Stderr, "  list     outputs JSON by default; pass --pretty for human-readable.")
+	fmt.Fprintln(os.Stderr, "  list --chains pivots to a chain-centric view (one row per configured binding).")
+	fmt.Fprintln(os.Stderr, "  check    runs the auth resolver for every configured binding and reports status.")
 }
 
 func authList(args []string) {
 	var pretty bool
+	var chains bool
 	for _, a := range args {
 		switch a {
 		case "--pretty":
 			pretty = true
 		case "--json":
 			// JSON is the default; flag is accepted for explicitness.
+		case "--chains":
+			chains = true
 		case "-h", "--help":
 			authUsage()
 			os.Exit(0)
@@ -68,14 +76,38 @@ func authList(args []string) {
 
 	out := auth.ListAll(version.Version, auth.DefaultDetectors())
 
-	if pretty {
-		printAuthListPretty(out)
+	// Load auth config for annotation / chains view. Graceful: no crash on
+	// absent or invalid config — annotation simply degrades.
+	cfg, cfgErr := loadAuthConfig("")
+	configState := ""
+	if cfgErr != nil {
+		configState = "uninitialized"
+		cfg = nil
+	}
+
+	if chains {
+		printAuthListChainsView(cfg, configState, out, pretty)
 		return
 	}
 
+	annotated := annotateListEntries(out.Entries, cfg)
+
+	if pretty {
+		printAuthListPrettyAnnotated(out, annotated, configState)
+		return
+	}
+
+	annotatedOut := annotatedListOutput{
+		KilroyVersion: out.KilroyVersion,
+		ScannedAt:     out.ScannedAt,
+		Platform:      out.Platform,
+		Entries:       annotated,
+		Summary:       out.Summary,
+		ConfigState:   configState,
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(out); err != nil {
+	if err := enc.Encode(annotatedOut); err != nil {
 		fmt.Fprintf(os.Stderr, "encode: %v\n", err)
 		os.Exit(1)
 	}
