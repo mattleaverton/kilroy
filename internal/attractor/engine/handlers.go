@@ -1309,15 +1309,22 @@ func parseDuration(s string, def time.Duration) time.Duration {
 		return def
 	}
 	// DOT durations are like "900s", "15m", "250ms", "2h", "1d".
-	// Support 'd' as 24h.
+	// Support 'd' as 24h. The trimmed remainder must be PURELY digits —
+	// otherwise "1d2h" would shadow time.ParseDuration's parse.
 	if strings.HasSuffix(s, "d") {
-		base, ok := parseIntPrefix(strings.TrimSuffix(s, "d"))
-		if ok {
+		rest := strings.TrimSuffix(s, "d")
+		if base, ok := parseAllDigits(rest); ok {
 			return time.Duration(base) * 24 * time.Hour
 		}
 	}
-	// Common shorthand in DOT specs: bare integers mean seconds.
-	if base, ok := parseIntPrefix(s); ok {
+	// Common shorthand in DOT specs: bare integers mean seconds. Must
+	// be PURELY digits — without this guard, parseIntPrefix would parse
+	// "1ms" as 1 (via fmt.Sscanf("%d") consuming leading digits) and
+	// return 1 SECOND instead of 1 millisecond, swallowing the unit.
+	// (Real bug: this caused TestManagerLoop_* tests to take seconds
+	// instead of milliseconds, sometimes hanging the suite when total
+	// cycle time exceeded the test timeout.)
+	if base, ok := parseAllDigits(s); ok {
 		return time.Duration(base) * time.Second
 	}
 	d, err := time.ParseDuration(s)
@@ -1325,6 +1332,26 @@ func parseDuration(s string, def time.Duration) time.Duration {
 		return def
 	}
 	return d
+}
+
+// parseAllDigits returns (n, true) only when s is non-empty and every
+// rune is a decimal digit. Distinct from parseIntPrefix (which uses
+// fmt.Sscanf and accepts leading digits + non-digit suffix) — see the
+// parseDuration commentary for why that distinction matters.
+func parseAllDigits(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	var n int
+	if _, err := fmt.Sscanf(s, "%d", &n); err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func parseIntPrefix(s string) (int, bool) {
