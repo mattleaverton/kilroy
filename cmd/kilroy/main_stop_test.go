@@ -35,7 +35,7 @@ func TestAttractorStop_KillsVerifiedAttractorProcessFromRunPID(t *testing.T) {
 
 	runCmd := exec.Command(
 		bin,
-		"attractor", "run",
+		"run",
 		"--detach",
 		"--graph", graph,
 		"--config", cfg,
@@ -51,7 +51,7 @@ func TestAttractorStop_KillsVerifiedAttractorProcessFromRunPID(t *testing.T) {
 	waitForFile(t, pidPath, 5*time.Second)
 	pid := readPIDFile(t, pidPath)
 
-	out, err := exec.Command(bin, "attractor", "stop", "--logs-root", logs, "--grace-ms", "500", "--force").CombinedOutput()
+	out, err := exec.Command(bin, "stop", "--logs-root", logs, "--grace-ms", "500", "--force").CombinedOutput()
 	if err != nil {
 		t.Fatalf("stop failed: %v\n%s", err, out)
 	}
@@ -123,7 +123,7 @@ func TestAttractorStop_PrefersRunIDOverRelativeLogsRootMismatch(t *testing.T) {
 
 	runCmd := exec.Command(
 		bin,
-		"attractor", "run",
+		"run",
 		"--detach",
 		"--graph", graph,
 		"--config", cfg,
@@ -139,7 +139,7 @@ func TestAttractorStop_PrefersRunIDOverRelativeLogsRootMismatch(t *testing.T) {
 	waitForFile(t, filepath.Join(realLogs, "manifest.json"), 5*time.Second)
 	pid := readPIDFile(t, filepath.Join(realLogs, "run.pid"))
 
-	out, err := exec.Command(bin, "attractor", "stop", "--logs-root", realLogs, "--grace-ms", "500", "--force").CombinedOutput()
+	out, err := exec.Command(bin, "stop", "--logs-root", realLogs, "--grace-ms", "500", "--force").CombinedOutput()
 	if err != nil {
 		t.Fatalf("stop failed: %v\n%s", err, out)
 	}
@@ -162,7 +162,7 @@ func TestAttractorStop_RefusesAttractorProcessWithoutIdentityFlags(t *testing.T)
 	cfg := writeRunConfig(t, repo, cxdb.URL(), cxdb.BinaryAddr(), catalog)
 	graph := writeStopGraph(t)
 
-	proc := exec.Command(bin, "attractor", "run", "--graph", graph, "--config", cfg)
+	proc := exec.Command(bin, "run", "--graph", graph, "--config", cfg)
 	if err := proc.Start(); err != nil {
 		t.Fatalf("start attractor run process: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestAttractorStop_RefusesAttractorProcessWithoutIdentityFlags(t *testing.T)
 	}
 	_ = os.WriteFile(filepath.Join(logs, "run.pid"), []byte(strconv.Itoa(pid)), 0o644)
 
-	out, err := exec.Command(bin, "attractor", "stop", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "stop", "--logs-root", logs).CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected stop to fail when identity flags are missing; output=%s", out)
 	}
@@ -205,7 +205,7 @@ func TestAttractorStop_RefusesPIDWithoutAttractorIdentity(t *testing.T) {
 	})
 	_ = os.WriteFile(filepath.Join(logs, "run.pid"), []byte(strconv.Itoa(proc.Process.Pid)), 0o644)
 
-	out, err := exec.Command(bin, "attractor", "stop", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "stop", "--logs-root", logs).CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected stop to fail for non-attractor pid; output=%s", out)
 	}
@@ -234,7 +234,7 @@ func TestAttractorStop_RefusesWhenRunIsTerminal(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(logs, "run.pid"), []byte(strconv.Itoa(proc.Process.Pid)), 0o644)
 	_ = os.WriteFile(filepath.Join(logs, "final.json"), []byte(`{"status":"success","run_id":"r1"}`), 0o644)
 
-	out, err := exec.Command(bin, "attractor", "stop", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "stop", "--logs-root", logs).CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected stop to fail for terminal run; output=%s", out)
 	}
@@ -246,7 +246,7 @@ func TestAttractorStop_RefusesWhenRunIsTerminal(t *testing.T) {
 func TestAttractorStop_ErrorsWhenNoPID(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	logs := t.TempDir()
-	out, err := exec.Command(bin, "attractor", "stop", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "stop", "--logs-root", logs).CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected non-zero exit; output=%s", out)
 	}

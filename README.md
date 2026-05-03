@@ -84,7 +84,7 @@ go build -o kilroy ./cmd/kilroy
 ### 2) Generate a pipeline from English
 
 ```bash
-./kilroy attractor ingest -o pipeline.dot "Solitaire plz"
+./kilroy ingest -o pipeline.dot "Solitaire plz"
 ```
 
 Notes:
@@ -95,7 +95,7 @@ Notes:
 ### 3) Validate the pipeline
 
 ```bash
-./kilroy attractor validate --graph pipeline.dot
+./kilroy validate --graph pipeline.dot
 ```
 
 If you want to author a graph manually instead of using `ingest`, this minimal example is valid:
@@ -206,7 +206,7 @@ Real run (recommended/default profile):
 
 ```bash
 unset KILROY_CODEX_PATH KILROY_CLAUDE_PATH KILROY_GEMINI_PATH
-./kilroy attractor run --graph pipeline.dot --config run.yaml
+./kilroy run --graph pipeline.dot --config run.yaml
 ```
 
 Explicit test-shim run (for local fake-provider testing only):
@@ -221,14 +221,14 @@ llm:
 ```
 
 ```bash
-./kilroy attractor run --graph pipeline.dot --config run.yaml --allow-test-shim
+./kilroy run --graph pipeline.dot --config run.yaml --allow-test-shim
 ```
 
 Preflight-only run (validate everything, do not start execution):
 
 ```bash
-./kilroy attractor run --graph pipeline.dot --config run.yaml --preflight
-./kilroy attractor run --graph pipeline.dot --config run.yaml --test-run
+./kilroy run --graph pipeline.dot --config run.yaml --preflight
+./kilroy run --graph pipeline.dot --config run.yaml --test-run
 ```
 
 Preflight-only mode contract:
@@ -256,8 +256,8 @@ If autostart is used, startup logs are written under `{logs_root}`:
 Observe and intervene during long runs:
 
 ```bash
-./kilroy attractor status --logs-root <logs_root>
-./kilroy attractor stop --logs-root <logs_root> --grace-ms 30000 --force
+./kilroy status --logs-root <logs_root>
+./kilroy stop --logs-root <logs_root> --grace-ms 30000 --force
 ```
 
 ## CXDB Autostart Notes
@@ -409,15 +409,15 @@ Typical stage-level artifacts under `{logs_root}/{node_id}`:
 ## Commands
 
 ```text
-kilroy attractor run [--preflight|--test-run] [--allow-test-shim] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]
-kilroy attractor resume --logs-root <dir>
-kilroy attractor resume --cxdb <http_base_url> --context-id <id>
-kilroy attractor resume --run-branch <attractor/run/...> [--repo <path>]
-kilroy attractor status --logs-root <dir> [--json]
-kilroy attractor stop --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy attractor validate --graph <file.dot>
-kilroy attractor ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] <requirements>
-kilroy attractor serve [--addr <host:port>]
+kilroy run [--preflight|--test-run] [--allow-test-shim] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]
+kilroy resume --logs-root <dir>
+kilroy resume --cxdb <http_base_url> --context-id <id>
+kilroy resume --run-branch <attractor/run/...> [--repo <path>]
+kilroy status --logs-root <dir> [--json]
+kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
+kilroy validate --graph <file.dot>
+kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] <requirements>
+kilroy serve [--addr <host:port>]
 ```
 
 `--force-model` can be passed multiple times (for example, `--force-model openai=gpt-5.4 --force-model google=gemini-3-pro-preview`) to override node model selection by provider.
@@ -437,11 +437,11 @@ Exit codes:
 
 **This feature is experimental and subject to breaking changes.**
 
-`kilroy attractor serve` starts an HTTP server that exposes pipeline management via a REST API with Server-Sent Events (SSE) for real-time progress streaming. This enables remote pipeline submission, live observability dashboards, and web-based human-in-the-loop gates.
+`kilroy serve` starts an HTTP server that exposes pipeline management via a REST API with Server-Sent Events (SSE) for real-time progress streaming. This enables remote pipeline submission, live observability dashboards, and web-based human-in-the-loop gates.
 
 ```bash
-kilroy attractor serve                    # listens on 127.0.0.1:8080
-kilroy attractor serve --addr :9090       # custom address
+kilroy serve                    # listens on 127.0.0.1:8080
+kilroy serve --addr :9090       # custom address
 ```
 
 Endpoints:

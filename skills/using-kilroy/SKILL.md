@@ -19,19 +19,19 @@ Kilroy is a local-first Attractor runner:
 Use these exact command forms:
 
 ```text
-kilroy attractor run [--preflight|--test-run] [--detach] [--tmux] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--force-model <provider=model>] [--graph <file.dot>] [--package <dir>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>] [--input <json-or-path>] [--prompt-file <path>] [--label KEY=VALUE]
-kilroy attractor resume --logs-root <dir>
-kilroy attractor resume --cxdb <http_base_url> --context-id <id>
-kilroy attractor resume --run-branch <attractor/run/...> [--repo <path>]
-kilroy attractor status [--logs-root <dir> | --latest] [--json] [--follow|-f] [--cxdb] [--raw] [--watch] [--interval <sec>]
-kilroy attractor stop --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy attractor runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
-kilroy attractor runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]
-kilroy attractor runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]
-kilroy attractor runs prune [--before YYYY-MM-DD] [--older-than DURATION] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]
-kilroy attractor validate --graph <file.dot>
-kilroy attractor ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] [--repo <path>] [--max-turns <n>] [--no-validate] <requirements>
-kilroy attractor serve [--addr <host:port>]
+kilroy run [--preflight|--test-run] [--detach] [--tmux] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--force-model <provider=model>] [--graph <file.dot>] [--package <dir>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>] [--input <json-or-path>] [--prompt-file <path>] [--label KEY=VALUE]
+kilroy resume --logs-root <dir>
+kilroy resume --cxdb <http_base_url> --context-id <id>
+kilroy resume --run-branch <attractor/run/...> [--repo <path>]
+kilroy status [--logs-root <dir> | --latest] [--json] [--follow|-f] [--cxdb] [--raw] [--watch] [--interval <sec>]
+kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
+kilroy runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
+kilroy runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]
+kilroy runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]
+kilroy runs prune [--before YYYY-MM-DD] [--older-than DURATION] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]
+kilroy validate --graph <file.dot>
+kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] [--repo <path>] [--max-turns <n>] [--no-validate] <requirements>
+kilroy serve [--addr <host:port>]
 ```
 
 ### Run flags you may not have seen before
@@ -50,13 +50,13 @@ kilroy attractor serve [--addr <host:port>]
 1. Run ingest:
 
 ```bash
-kilroy attractor ingest -o pipeline.dot "Build a Go CLI link checker"
+kilroy ingest -o pipeline.dot "Build a Go CLI link checker"
 ```
 
 2. Validate:
 
 ```bash
-kilroy attractor validate --graph pipeline.dot
+kilroy validate --graph pipeline.dot
 ```
 
 3. Create run config (`run.yaml` or `run.json`).
@@ -64,31 +64,31 @@ kilroy attractor validate --graph pipeline.dot
 4. Run:
 
 ```bash
-kilroy attractor run --graph pipeline.dot --config run.yaml
+kilroy run --graph pipeline.dot --config run.yaml
 ```
 
 Optional preflight-only check (validates all preflights, no stage execution):
 
 ```bash
-kilroy attractor run --graph pipeline.dot --config run.yaml --preflight
+kilroy run --graph pipeline.dot --config run.yaml --preflight
 ```
 
 5. If interrupted, resume from the most convenient source:
 
 ```bash
-kilroy attractor resume --logs-root <path>
+kilroy resume --logs-root <path>
 ```
 
 6. For long runs, launch detached so work continues after shell/session exits:
 
 ```bash
-./kilroy attractor run --detach --graph pipeline.dot --config run.yaml --run-id <run_id> --logs-root <logs_root>
+./kilroy run --detach --graph pipeline.dot --config run.yaml --run-id <run_id> --logs-root <logs_root>
 ```
 
 7. Observe run health and preflight behavior:
 
 ```bash
-./kilroy attractor status --logs-root <logs_root>
+./kilroy status --logs-root <logs_root>
 cat <logs_root>/preflight_report.json
 tail -f <logs_root>/progress.ndjson
 ```
@@ -96,44 +96,44 @@ tail -f <logs_root>/progress.ndjson
 8. Intervene when a run is stuck or needs termination:
 
 ```bash
-./kilroy attractor stop --logs-root <logs_root> --grace-ms 30000 --force
+./kilroy stop --logs-root <logs_root> --grace-ms 30000 --force
 ```
 
 ## Runs: listing, inspecting, cleaning up
 
-Every run (detached or foreground) is recorded in a local SQLite run database. Query it via `kilroy attractor runs`:
+Every run (detached or foreground) is recorded in a local SQLite run database. Query it via `kilroy runs`:
 
 ```bash
 # All runs, newest first
-kilroy attractor runs list
+kilroy runs list
 
 # Filter by label (repeatable tags on launch come back here)
-kilroy attractor runs list --label task=investigate-gadfly
+kilroy runs list --label task=investigate-gadfly
 
 # Machine-readable
-kilroy attractor runs list --json --status running --limit 10
+kilroy runs list --json --status running --limit 10
 
 # Full detail for one run (accepts unique prefix)
-kilroy attractor runs show 01KP646Y
-kilroy attractor runs show 01KP646Y --json
+kilroy runs show 01KP646Y
+kilroy runs show 01KP646Y --json
 
 # Latest run matching a label (no id needed)
-kilroy attractor runs show --latest --label task=investigate-gadfly
+kilroy runs show --latest --label task=investigate-gadfly
 
 # List just the declared output files
-kilroy attractor runs show 01KP646Y --outputs
+kilroy runs show 01KP646Y --outputs
 
 # Stream a specific output file to stdout
-kilroy attractor runs show 01KP646Y --print result.md
-kilroy attractor runs show --latest --label task=investigate-gadfly --print result.md
+kilroy runs show 01KP646Y --print result.md
+kilroy runs show --latest --label task=investigate-gadfly --print result.md
 
 # Block until a run reaches a terminal state
-kilroy attractor runs wait 01KP646Y --timeout 10m
-kilroy attractor runs wait --latest --label task=investigate-gadfly --timeout 10m
+kilroy runs wait 01KP646Y --timeout 10m
+kilroy runs wait --latest --label task=investigate-gadfly --timeout 10m
 
 # Clean up old runs (dry-run by default; add --yes to actually delete)
-kilroy attractor runs prune --older-than 7d
-kilroy attractor runs prune --label experiment=true --yes
+kilroy runs prune --older-than 7d
+kilroy runs prune --label experiment=true --yes
 ```
 
 `runs show` output includes `worktree_dir`, `repo_path`, `run_branch`, and `logs_root` — use these to `cd` back into a finished run's workspace or feed them to other commands.
@@ -342,7 +342,7 @@ Once a user asks you to run or launch a Kilroy pipeline, the following files are
 
 If preflight or launch fails, **diagnose and present options** — never silently fix the inputs. See "Preflight Failure Playbook" below.
 
-This guard applies from the moment you begin building or executing a `kilroy attractor run` command until the user explicitly asks for changes. It does NOT apply during graph authoring/editing phases before a run is requested.
+This guard applies from the moment you begin building or executing a `kilroy run` command until the user explicitly asks for changes. It does NOT apply during graph authoring/editing phases before a run is requested.
 
 ## Launch Intent Priority
 

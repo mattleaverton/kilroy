@@ -37,11 +37,11 @@ func attractorRuns(args []string) {
 
 func runsUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]")
+	fmt.Fprintln(os.Stderr, "  kilroy runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]")
+	fmt.Fprintln(os.Stderr, "  kilroy runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]")
 	fmt.Fprintln(os.Stderr, "    exit codes: 0=success, 1=fail/canceled/error, 2=timeout")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--zombies] [--dry-run | --yes] [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--zombies] [--dry-run | --yes] [--json]")
 }
 
 // runManifest is the subset of manifest.json fields we care about for list/prune.

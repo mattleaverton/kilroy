@@ -15,7 +15,12 @@ var internalFlags = map[string]bool{
 }
 
 // extractFuncBody returns the source text of the named function by tracking
-// brace depth from the opening "func funcName(" declaration.
+// brace depth from the opening "func funcName(" declaration. Tracks Go
+// lexical state (line comments, block comments, string literals,
+// rune literals, raw strings) so that braces inside those constructs
+// don't confuse the depth counter — `if strings.HasPrefix(s, "{")` was
+// silently counted as an extra open and made the body overshoot into
+// adjacent functions.
 func extractFuncBody(src, funcName string) (string, bool) {
 	needle := "func " + funcName + "("
 	idx := strings.Index(src, needle)
@@ -24,20 +29,83 @@ func extractFuncBody(src, funcName string) (string, bool) {
 	}
 	depth := 0
 	started := false
+	state := codeState
 	for i := idx; i < len(src); i++ {
-		switch src[i] {
-		case '{':
-			depth++
-			started = true
-		case '}':
-			depth--
-			if started && depth == 0 {
-				return src[idx : i+1], true
+		c := src[i]
+		switch state {
+		case codeState:
+			switch c {
+			case '/':
+				if i+1 < len(src) {
+					switch src[i+1] {
+					case '/':
+						state = lineCommentState
+						i++
+						continue
+					case '*':
+						state = blockCommentState
+						i++
+						continue
+					}
+				}
+			case '"':
+				state = stringState
+			case '\'':
+				state = runeState
+			case '`':
+				state = rawStringState
+			case '{':
+				depth++
+				started = true
+			case '}':
+				depth--
+				if started && depth == 0 {
+					return src[idx : i+1], true
+				}
+			}
+		case lineCommentState:
+			if c == '\n' {
+				state = codeState
+			}
+		case blockCommentState:
+			if c == '*' && i+1 < len(src) && src[i+1] == '/' {
+				state = codeState
+				i++
+			}
+		case stringState:
+			if c == '\\' && i+1 < len(src) {
+				i++ // skip escape
+				continue
+			}
+			if c == '"' {
+				state = codeState
+			}
+		case runeState:
+			if c == '\\' && i+1 < len(src) {
+				i++
+				continue
+			}
+			if c == '\'' {
+				state = codeState
+			}
+		case rawStringState:
+			if c == '`' {
+				state = codeState
 			}
 		}
 	}
 	return src[idx:], true
 }
+
+// Lexical states for extractFuncBody.
+const (
+	codeState = iota
+	lineCommentState
+	blockCommentState
+	stringState
+	runeState
+	rawStringState
+)
 
 // caseFlagLineRe matches a `case "--foo"[, "--bar"]*:` arm.
 // It deliberately does NOT match `case someVariable:` so internal flags
@@ -64,8 +132,11 @@ func parseCaseFlags(body string) []string {
 	return out
 }
 
-// usageLineRe matches fmt.Fprintln lines that emit "  kilroy ..." usage text.
-var usageLineRe = regexp.MustCompile(`(?m)fmt\.Fprintln\(os\.Stderr,\s+"  kilroy[^"]*"\)`)
+// usageLineRe matches fmt.Fprintln lines that emit indented usage text —
+// either `"  kilroy ..."` command shapes or `"  --flag ..."` flag-detail
+// shapes. The two-space indent is the convention; that's how we
+// distinguish help/usage prose from incidental Fprintln calls.
+var usageLineRe = regexp.MustCompile(`(?m)fmt\.Fprintln\(os\.Stderr,\s+"  (?:kilroy|--)[^"]*"\)`)
 
 // dashFlagRe extracts --flag-name tokens (including hyphens in the name).
 var dashFlagRe = regexp.MustCompile(`--([\w-]+)`)
@@ -83,9 +154,10 @@ func parseUsageFlags(body string) map[string]bool {
 }
 
 // checkDrift asserts that every --flag handled by parserFunc is also mentioned
-// in the usage text emitted by usageFunc, within the given source file.
-// Both functions must reside in the same file.
-func checkDrift(t *testing.T, file, parserFunc, usageFunc string) {
+// in the usage text emitted by usageFunc. Parser and usage may live in
+// different files (parser in main.go's attractorRun, usage in run.go's
+// runUsage, etc.) — pass usageFile="" to fall back to file.
+func checkDrift(t *testing.T, file, parserFunc, usageFunc string, usageFile ...string) {
 	t.Helper()
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -97,9 +169,20 @@ func checkDrift(t *testing.T, file, parserFunc, usageFunc string) {
 	if !ok {
 		t.Fatalf("func %s not found in %s", parserFunc, file)
 	}
-	usageBody, ok := extractFuncBody(src, usageFunc)
+
+	usageSrc := src
+	usagePath := file
+	if len(usageFile) > 0 && usageFile[0] != "" && usageFile[0] != file {
+		usagePath = usageFile[0]
+		ud, err := os.ReadFile(usagePath)
+		if err != nil {
+			t.Fatalf("read %s: %v", usagePath, err)
+		}
+		usageSrc = string(ud)
+	}
+	usageBody, ok := extractFuncBody(usageSrc, usageFunc)
 	if !ok {
-		t.Fatalf("func %s not found in %s", usageFunc, file)
+		t.Fatalf("func %s not found in %s", usageFunc, usagePath)
 	}
 
 	parserFlags := parseCaseFlags(parserBody)
@@ -110,8 +193,8 @@ func checkDrift(t *testing.T, file, parserFunc, usageFunc string) {
 			continue
 		}
 		if !usageFlags[flag] {
-			t.Errorf("%s: %s handles %q but %s does not mention it — add it to the help text",
-				file, parserFunc, flag, usageFunc)
+			t.Errorf("%s: %s handles %q but %s in %s does not mention it — add it to the help text",
+				file, parserFunc, flag, usageFunc, usagePath)
 		}
 	}
 }
@@ -123,7 +206,10 @@ func checkDrift(t *testing.T, file, parserFunc, usageFunc string) {
 // the usage function — otherwise this test will fail and remind you.
 func TestHelpUsageDrift(t *testing.T) {
 	t.Run("attractorRun", func(t *testing.T) {
-		checkDrift(t, "main.go", "attractorRun", "usage")
+		// Parser lives in main.go (attractorRun); user-facing flag
+		// documentation now lives in run.go's runUsage (the new v2
+		// surface), not the top-level usage().
+		checkDrift(t, "main.go", "attractorRun", "runUsage", "run.go")
 	})
 	t.Run("attractorRunsList", func(t *testing.T) {
 		checkDrift(t, "attractor_runs.go", "attractorRunsList", "runsUsage")

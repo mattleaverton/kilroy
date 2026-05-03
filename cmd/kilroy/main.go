@@ -87,8 +87,6 @@ func main() {
 	case "--version", "-v", "version":
 		fmt.Printf("kilroy %s\n", version.Version)
 		os.Exit(0)
-	case "attractor":
-		attractor(args[1:])
 	case "auth":
 		authCmd(args[1:])
 	case "policy":
@@ -97,6 +95,34 @@ func main() {
 		runCmd(args[1:])
 	case "workflows":
 		workflowsCmd(args[1:])
+	// v2 top-level commands. Plan §4 / Block 1 — the `attractor`
+	// namespace is gone (the case below catches stale invocations
+	// with a redirect).
+	case "runs":
+		attractorRuns(args[1:])
+	case "validate":
+		attractorValidate(args[1:])
+	case "resume":
+		attractorResume(args[1:])
+	case "status":
+		attractorStatus(args[1:])
+	case "stop":
+		attractorStop(args[1:])
+	case "ingest":
+		attractorIngest(args[1:])
+	case "serve":
+		attractorServe(args[1:])
+	case "review":
+		attractorReview(args[1:])
+	case "modeldb":
+		attractorModelDB(args[1:])
+	case "attractor":
+		fmt.Fprintln(os.Stderr, "kilroy attractor: removed.")
+		fmt.Fprintln(os.Stderr, "  Use the top-level commands instead — `kilroy run`, `kilroy runs`,")
+		fmt.Fprintln(os.Stderr, "  `kilroy validate`, `kilroy status`, `kilroy resume`, `kilroy stop`,")
+		fmt.Fprintln(os.Stderr, "  `kilroy ingest`, `kilroy serve`, `kilroy review`, `kilroy modeldb`.")
+		fmt.Fprintln(os.Stderr, "  Run `kilroy --help` for the full surface.")
+		os.Exit(2)
 	default:
 		usage()
 		os.Exit(1)
@@ -169,60 +195,32 @@ func graphDeclaredInputs(dotSource []byte) bool {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  kilroy --version")
-	fmt.Fprintln(os.Stderr, "  kilroy run <workflow-name> [flags]   (resolves <name> via filesystem discovery)")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows list [--pretty] [--all]    (JSON by default; v2 only unless --all)")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows describe <name> [--pretty] (JSON by default)")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows validate <name> [--pretty] (JSON by default)")
-	fmt.Fprintln(os.Stderr, "  kilroy [--env-file <path>] attractor run (--graph <file.dot> | --package <dir>) [--tmux] [--detach] [--validate|--preflight|--test-run] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--force-model <provider=model>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--input <path|json>] [--prompt-file <file>] [--workspace <dir>] [--label KEY=VALUE ...]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --logs-root <dir>")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --cxdb <http_base_url> --context-id <id>")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor resume --run-branch <attractor/run/...> [--repo <path>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor status [--logs-root <dir> | --latest] [--json] [-v|--verbose] [--follow|-f] [--cxdb] [--raw] [--watch] [--interval <sec>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor stop --logs-root <dir> [--grace-ms <ms>] [--force]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor validate --graph <file.dot>")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor validate --batch <file.dot> [<file.dot> ...] [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] [--repo <path>] [--max-turns <n>] <requirements>")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor serve [--addr <host:port>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor modeldb suggest [--refresh] [--ttl <duration>] [--provider <name>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor review --graph <file.dot> [--output <file>] [--json] [--max-turns <n>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy attractor runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]")
-}
-
-func attractor(args []string) {
-	if len(args) < 1 {
-		usage()
-		os.Exit(1)
-	}
-	switch args[0] {
-	case "run":
-		attractorRun(args[1:])
-	case "resume":
-		attractorResume(args[1:])
-	case "status":
-		attractorStatus(args[1:])
-	case "stop":
-		attractorStop(args[1:])
-	case "validate":
-		attractorValidate(args[1:])
-	case "ingest":
-		attractorIngest(args[1:])
-	case "serve":
-		attractorServe(args[1:])
-	case "modeldb":
-		attractorModelDB(args[1:])
-	case "review":
-		attractorReview(args[1:])
-	case "runs":
-		attractorRuns(args[1:])
-	default:
-		usage()
-		os.Exit(1)
-	}
+	fmt.Fprintln(os.Stderr, "kilroy — local-first software-factory pipelines.")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Workflow execution:")
+	fmt.Fprintln(os.Stderr, "  kilroy run <workflow-name> [flags]                     (resolves <name> via filesystem discovery)")
+	fmt.Fprintln(os.Stderr, "  kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Run inspection:")
+	fmt.Fprintln(os.Stderr, "  kilroy runs list | show | wait | prune                 (JSON default; --pretty for humans)")
+	fmt.Fprintln(os.Stderr, "  kilroy status [--logs-root <dir> | --latest]           [--json] [--follow]")
+	fmt.Fprintln(os.Stderr, "  kilroy resume --logs-root <dir>")
+	fmt.Fprintln(os.Stderr, "  kilroy stop --logs-root <dir>                          [--grace-ms <ms>] [--force]")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Authoring:")
+	fmt.Fprintln(os.Stderr, "  kilroy validate --graph <file.dot>                     (or --batch <file.dot> ...)")
+	fmt.Fprintln(os.Stderr, "  kilroy ingest [--output <file.dot>] <requirements>")
+	fmt.Fprintln(os.Stderr, "  kilroy review --graph <file.dot>                       [--output <file>] [--json]")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Auth & policy:")
+	fmt.Fprintln(os.Stderr, "  kilroy auth defaults | init | list | check | suggest-fix")
+	fmt.Fprintln(os.Stderr, "  kilroy policy list | show <class> | resolve <class> | explain <run-id>")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "Server / model metadata:")
+	fmt.Fprintln(os.Stderr, "  kilroy serve [--addr <host:port>]")
+	fmt.Fprintln(os.Stderr, "  kilroy modeldb suggest [--refresh] [--ttl <duration>] [--provider <name>]")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  kilroy --version    |    kilroy <command> --help    (per-command flags)")
 }
 
 func attractorRun(args []string) {
@@ -231,7 +229,7 @@ func attractorRun(args []string) {
 	var runID string
 	var logsRoot string
 	var detach bool
-	var preflightOnly bool
+	var validateOnly bool
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
@@ -248,10 +246,8 @@ func attractorRun(args []string) {
 		switch args[i] {
 		case "--detach":
 			detach = true
-		case "--preflight", "--validate":
-			preflightOnly = true
-		case "--test-run":
-			preflightOnly = true
+		case "--validate":
+			validateOnly = true
 		case "--allow-test-shim":
 			allowTestShim = true
 		case "--confirm-stale-build":
@@ -342,8 +338,8 @@ func attractorRun(args []string) {
 		usage()
 		os.Exit(1)
 	}
-	if preflightOnly && detach {
-		fmt.Fprintln(os.Stderr, "--validate/--preflight/--test-run cannot be combined with --detach")
+	if validateOnly && detach {
+		fmt.Fprintln(os.Stderr, "--validate cannot be combined with --detach")
 		os.Exit(1)
 	}
 	if err := ensureFreshKilroyBuild(confirmStaleBuild); err != nil {
@@ -463,7 +459,7 @@ func attractorRun(args []string) {
 		}
 		if !skipCLIHeadlessWarning && runConfigUsesCLIProviders(cfg) {
 			if !confirmCLIHeadlessWarning(os.Stdin, os.Stderr) {
-				fmt.Fprintln(os.Stderr, "preflight aborted: declined provider CLI headless-risk warning")
+				fmt.Fprintln(os.Stderr, "validation aborted: declined provider CLI headless-risk warning")
 				os.Exit(1)
 			}
 		}
@@ -493,7 +489,7 @@ func attractorRun(args []string) {
 		configPath = absConfigPath
 		logsRoot = absLogsRoot
 
-		childArgs := []string{"attractor", "run", "--graph", graphPath}
+		childArgs := []string{"run", "--graph", graphPath}
 		if configPath != "" {
 			childArgs = append(childArgs, "--config", configPath)
 		}
@@ -585,18 +581,18 @@ func attractorRun(args []string) {
 	}
 	// --validate paths run quietly: the deterministic prelaunch report is
 	// the canonical output, no chatty provider auto-detection lines.
-	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, preflightOnly)
+	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, validateOnly)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	if !skipCLIHeadlessWarning && runConfigUsesCLIProviders(cfg) {
 		if !confirmCLIHeadlessWarning(os.Stdin, os.Stderr) {
-			fmt.Fprintln(os.Stderr, "preflight aborted: declined provider CLI headless-risk warning")
+			fmt.Fprintln(os.Stderr, "validation aborted: declined provider CLI headless-risk warning")
 			os.Exit(1)
 		}
 	}
-	if preflightOnly {
+	if validateOnly {
 		ctx, cleanupSignalCtx := signalCancelContext()
 		pf, err := engine.PreflightWithConfig(ctx, dotSource, cfg, engine.RunOptions{
 			RunID:         runID,

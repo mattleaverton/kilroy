@@ -22,7 +22,7 @@ func TestLaunchDetached_SetsCmdDirToLogsRoot(t *testing.T) {
 		return exec.Command("bash", "-c", fmt.Sprintf("pwd > %q", cwdPath))
 	}
 
-	if err := launchDetached([]string{"attractor", "run"}, logsRoot); err != nil {
+	if err := launchDetached([]string{"run"}, logsRoot); err != nil {
 		t.Fatalf("launchDetached: %v", err)
 	}
 
@@ -42,7 +42,7 @@ func TestLaunchDetached_UsesAbsoluteExecutablePath(t *testing.T) {
 
 	oldArgs := os.Args
 	t.Cleanup(func() { os.Args = oldArgs })
-	os.Args = []string{"./kilroy", "attractor", "run", "--detach"}
+	os.Args = []string{"./kilroy", "run", "--detach"}
 
 	var gotName string
 	oldExec := detachedExecCommand
@@ -52,7 +52,7 @@ func TestLaunchDetached_UsesAbsoluteExecutablePath(t *testing.T) {
 		return exec.Command("bash", "-c", "sleep 0.1")
 	}
 
-	if err := launchDetached([]string{"attractor", "run"}, logsRoot); err != nil {
+	if err := launchDetached([]string{"run"}, logsRoot); err != nil {
 		t.Fatalf("launchDetached: %v", err)
 	}
 

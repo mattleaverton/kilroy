@@ -23,7 +23,7 @@ echo "$RUN_ID"
 For a quick check of the newest run without manually resolving `RUN_ROOT`, use:
 
 ```bash
-./kilroy attractor status --latest --json
+./kilroy status --latest --json
 ```
 
 ## CXDB: Launch, UI, and Query
@@ -65,8 +65,8 @@ KILROY_CXDB_OPEN_UI=1 ./scripts/start-cxdb-ui.sh
 To follow run events directly from CXDB:
 
 ```bash
-./kilroy attractor status --logs-root "$RUN_ROOT" --follow --cxdb
-./kilroy attractor status --logs-root "$RUN_ROOT" --follow --cxdb --raw
+./kilroy status --logs-root "$RUN_ROOT" --follow --cxdb
+./kilroy status --logs-root "$RUN_ROOT" --follow --cxdb --raw
 ```
 
 To run direct HTTP queries for ad-hoc debugging, use:
@@ -219,10 +219,10 @@ tail -n 5 "$RUN_ROOT/progress.ndjson"
 To determine whether the run is truly active at the OS level:
 
 ```bash
-pgrep -af 'kilroy attractor (run|resume)'
+pgrep -af 'kilroy (run|resume)'
 [ -f "$RUN_ROOT/run.pid" ] && cat "$RUN_ROOT/run.pid"
 [ -f "$RUN_ROOT/run.pid" ] && ps -fp "$(cat "$RUN_ROOT/run.pid")"
-ps -ef | rg -i 'kilroy attractor (run|resume)' | rg -v rg
+ps -ef | rg -i 'kilroy (run|resume)' | rg -v rg
 ```
 
 If a `resume` process is already active for the same `--logs-root`, launching another `resume` is a possible source of mixed terminal/live state.
@@ -241,9 +241,9 @@ E2="$(tail -n 1 "$RUN_ROOT/progress.ndjson")"
 When relaunching, quiescing duplicate `resume` processes first and launching one detached `resume` reduces the chance of `stopped by signal terminated` outcomes.
 
 ```bash
-ps -ef | rg -i "kilroy attractor resume --logs-root $RUN_ROOT" | rg -v rg
+ps -ef | rg -i "kilroy resume --logs-root $RUN_ROOT" | rg -v rg
 # If duplicates exist, stop extras before launching a single detached resume.
-setsid -f bash -lc "cd /path/to/repo && ./kilroy attractor resume --logs-root '$RUN_ROOT' >> '$RUN_ROOT/resume.out' 2>&1"
+setsid -f bash -lc "cd /path/to/repo && ./kilroy resume --logs-root '$RUN_ROOT' >> '$RUN_ROOT/resume.out' 2>&1"
 ```
 
 ## Debug Parallel Fan-In Stalls
@@ -315,7 +315,7 @@ Capture `final.json` timestamp, latest `progress.ndjson` timestamp, active `resu
 
 ```bash
 stat -c '%y %n' "$RUN_ROOT/final.json" "$RUN_ROOT/live.json" "$RUN_ROOT/progress.ndjson" 2>/dev/null
-ps -ef | rg -i "kilroy attractor resume --logs-root $RUN_ROOT" | rg -v rg
+ps -ef | rg -i "kilroy resume --logs-root $RUN_ROOT" | rg -v rg
 rg -n 'stopped by signal terminated|subgraph_canceled_exit|stage_attempt_end' "$RUN_ROOT/progress.ndjson" | tail -n 80
 ```
 

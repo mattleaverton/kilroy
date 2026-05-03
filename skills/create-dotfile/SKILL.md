@@ -35,7 +35,7 @@ Model defaults source:
 0. Fetch the current model list (required before writing any model_stylesheet).
 
 Run:
-    kilroy attractor modeldb suggest
+    kilroy modeldb suggest
 
 Capture the output. Use ONLY the model IDs listed in the output. Do not use
 model IDs from memory — they go stale. If the command is unavailable, default
@@ -219,7 +219,7 @@ The default is 3. For pipelines with a multi-pass repair loop (implement → ver
 - Run syntax + semantic validation loops, applying minimal fixes until clean.
 - A PostToolUse hook (`skills/create-dotfile/hooks/validate-dot.sh`) runs automatically
   after every Write, Edit, or MultiEdit to a `.dot` file. It calls
-  `kilroy attractor validate --graph` and, if issues are found, signals Claude Code
+  `kilroy validate --graph` and, if issues are found, signals Claude Code
   via exit 2 + stderr so the feedback is injected into your context. If feedback
   appears, repair the reported issues immediately and re-write the file. No manual
   validate invocation is needed during ingest sessions.

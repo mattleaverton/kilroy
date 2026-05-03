@@ -5,7 +5,7 @@ description: Use when bootstrapping a new project repository for Kilroy Attracto
 
 # Starting A Project
 
-Use this skill to prepare a clean repo for `kilroy attractor validate/run`. This skill does not create requirements artifacts; it only wires and verifies them.
+Use this skill to prepare a clean repo for `kilroy validate/run`. This skill does not create requirements artifacts; it only wires and verifies them.
 
 ## Required Inputs
 
@@ -26,7 +26,7 @@ Use this skill to prepare a clean repo for `kilroy attractor validate/run`. This
 - Ensure absolute helper paths (for example `modeldb` path or `scripts/start-cxdb.sh`) still resolve on this machine.
 5. Create a base commit so Attractor can create run branches/worktrees.
 6. Verify readiness:
-- `kilroy attractor validate --graph <graph.dot>`
+- `kilroy validate --graph <graph.dot>`
 - Confirm required executables and env vars expected by config/setup exist.
 
 ## Guardrails

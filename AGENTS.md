@@ -3,7 +3,7 @@
 ## What Kilroy Is
 Kilroy is a local-first Go CLI for running software-factory pipelines in a Git repository. There is a skill to convert English requirements into DOT graphs. Then it validates graph semantics and executes stages with checkpoint commits and a run history backed by `cxdb`. Foundational specs that are in docs/strongdm/attractor.
 
-Use Kilroy in this order: build the binary, generate or write a graph, validate it, then run it with a config file. Typical flow: `go build -o ./kilroy ./cmd/kilroy`, `./kilroy attractor ingest -o pipeline.dot "<requirements>"`, `./kilroy attractor validate --graph pipeline.dot`, then `./kilroy attractor run --graph pipeline.dot --config run.yaml`.
+Use Kilroy in this order: build the binary, generate or write a graph, validate it, then run it with a config file. Typical flow: `go build -o ./kilroy ./cmd/kilroy`, `./kilroy ingest -o pipeline.dot "<requirements>"`, `./kilroy validate --graph pipeline.dot`, then `./kilroy run --graph pipeline.dot --config run.yaml`.
 
 ## What you're doing here - **the Prime Directive**.
 If you can see this message, then you are not here to use Kilroy - **YOU ARE HERE TO IMPROVE KILROY**. If Kilroy fails to build a project:
@@ -44,7 +44,7 @@ These three specs are the true north for system design. If you are making a chan
 - `go test ./...`: run the full Go test suite.
 - `./scripts/e2e.sh`: smoke check (tests, build, and graph validation).
 - `./scripts/e2e-guardrail-matrix.sh`: run targeted engine guardrail regression tests.
-- `./kilroy attractor validate --graph <file.dot>`: validate graph structure/semantics before execution.
+- `./kilroy validate --graph <file.dot>`: validate graph structure/semantics before execution.
 
 ## Pre-Commit CI Checklist
 
@@ -65,7 +65,7 @@ go build ./cmd/kilroy/
 go test ./...
 
 # 5. Validate demo graphs
-for f in demo/**/*.dot; do echo "Validating $f"; ./kilroy attractor validate --graph "$f"; done
+for f in demo/**/*.dot; do echo "Validating $f"; ./kilroy validate --graph "$f"; done
 ```
 
 Common pitfall: `gofmt -w ./cmd ./internal` misses files in other packages. Always run `gofmt -l .` (excluding `.claude/` worktrees) to match CI exactly.
@@ -93,7 +93,7 @@ Use explicit run configs and flags so the mode is unambiguous:
   - Example:
 
 ```bash
-./kilroy attractor run --detach --graph <graph.dot> --config <run_config_real.json> --run-id <run_id> --logs-root <logs_root>
+./kilroy run --detach --graph <graph.dot> --config <run_config_real.json> --run-id <run_id> --logs-root <logs_root>
 ```
 
 - **Test run (fake/shim providers):**
@@ -103,12 +103,12 @@ Use explicit run configs and flags so the mode is unambiguous:
   - Example:
 
 ```bash
-./kilroy attractor run --detach --graph <graph.dot> --config <run_config_test_shim.json> --allow-test-shim --run-id <run_id> --logs-root <logs_root>
+./kilroy run --detach --graph <graph.dot> --config <run_config_test_shim.json> --allow-test-shim --run-id <run_id> --logs-root <logs_root>
 ```
 
 #### Binary Freshness
 
-- Before running `./kilroy attractor run`, ensure `./kilroy` is built from current repo `HEAD`.
+- Before running `./kilroy run`, ensure `./kilroy` is built from current repo `HEAD`.
 - If stale-build detection triggers, rebuild with `go build -o ./kilroy ./cmd/kilroy` and rerun.
 - Use `--confirm-stale-build` only when intentionally running a stale binary.
 
@@ -118,7 +118,7 @@ For long `attractor run`/`resume` jobs, launch detached so the parent shell/sess
 
 ```bash
 RUN_ROOT=/path/to/run_root
-setsid -f bash -lc 'cd /home/user/code/kilroy-wt-state-isolation-watchdog && ./kilroy attractor resume --logs-root "$RUN_ROOT/logs" >> "$RUN_ROOT/resume.out" 2>&1'
+setsid -f bash -lc 'cd /home/user/code/kilroy-wt-state-isolation-watchdog && ./kilroy resume --logs-root "$RUN_ROOT/logs" >> "$RUN_ROOT/resume.out" 2>&1'
 ```
 
 ### Checking Run Status
@@ -142,7 +142,7 @@ Agent nodes (`shape=box`, `agent_tool="claude"`) require specific backend and ha
 
 Example production PR review launch:
 ```bash
-./kilroy attractor run --detach --tmux \
+./kilroy run --detach --tmux \
   --package workflows/pr-review \
   --config run.yaml \
   --no-cxdb --skip-cli-headless-warning \
@@ -183,7 +183,7 @@ Snapshot semantics: prelaunch resolves each agentic node's class once and writes
 
 Failure modes (all decisive — no silent fallback): `ErrNoConfig`, `ErrNoChainForRequirement`, `ErrAmbiguousAuthChain`, `ErrChainExhausted`, `ErrSourceVanished`, `ErrUnknownChain`. Full walkthrough at `docs/auth.md`; design at `docs/plans/2026-05-02-auth-class-resolver-integration.md`.
 
-What's NOT covered: `opencode` (multi-provider tool with its own DB; outside the binder model), bare `kilroy attractor run` without `agent_class=` on agent nodes (legacy stylesheet routing skips the resolver).
+What's NOT covered: `opencode` (multi-provider tool with its own DB; outside the binder model), bare `kilroy run` without `agent_class=` on agent nodes (legacy stylesheet routing skips the resolver).
 
 ### PR Review Process
 

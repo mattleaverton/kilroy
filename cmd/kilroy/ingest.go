@@ -106,7 +106,7 @@ func attractorIngest(args []string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "usage: kilroy attractor ingest [flags] <requirements>")
+		fmt.Fprintln(os.Stderr, "usage: kilroy ingest [flags] <requirements>")
 		fmt.Fprintln(os.Stderr, "  --output, -o    Output .dot file path (default: stdout)")
 		fmt.Fprintf(os.Stderr, "  --model         LLM model (default: %s)\n", modelmeta.DefaultAnthropicModel)
 		fmt.Fprintln(os.Stderr, "  --skill         Path to skill .md file (default: repo/binary auto-detect)")

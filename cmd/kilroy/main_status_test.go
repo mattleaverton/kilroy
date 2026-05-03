@@ -29,7 +29,7 @@ func TestAttractorStatus_PrintsRunningState_WhenPIDAlive(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(logs, "run.pid"), []byte(strconv.Itoa(proc.Process.Pid)), 0o644)
 	_ = os.WriteFile(filepath.Join(logs, "live.json"), []byte(`{"event":"stage_attempt_start","node_id":"impl"}`), 0o644)
 
-	out, err := exec.Command(bin, "attractor", "status", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "status", "--logs-root", logs).CombinedOutput()
 	if err != nil {
 		t.Fatalf("status failed: %v\n%s", err, out)
 	}
@@ -43,7 +43,7 @@ func TestAttractorStatus_PrintsUnknownWithoutFinalOrLivePID(t *testing.T) {
 	logs := t.TempDir()
 	_ = os.WriteFile(filepath.Join(logs, "live.json"), []byte(`{"event":"stage_attempt_start","node_id":"impl"}`), 0o644)
 
-	out, err := exec.Command(bin, "attractor", "status", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "status", "--logs-root", logs).CombinedOutput()
 	if err != nil {
 		t.Fatalf("status failed: %v\n%s", err, out)
 	}
@@ -58,7 +58,7 @@ func TestAttractorStatus_TerminalFinalIgnoresMalformedPID(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(logs, "final.json"), []byte(`{"status":"success","run_id":"r1"}`), 0o644)
 	_ = os.WriteFile(filepath.Join(logs, "run.pid"), []byte("bad-pid"), 0o644)
 
-	out, err := exec.Command(bin, "attractor", "status", "--logs-root", logs).CombinedOutput()
+	out, err := exec.Command(bin, "status", "--logs-root", logs).CombinedOutput()
 	if err != nil {
 		t.Fatalf("status failed: %v\n%s", err, out)
 	}

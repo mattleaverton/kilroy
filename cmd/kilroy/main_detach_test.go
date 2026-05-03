@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func TestAttractorRun_DetachedModeSurvivesLauncherExit(t *testing.T) {
+func TestRun_DetachedModeSurvivesLauncherExit(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	cxdb := newCXDBTestServer(t)
 	repo := initTestRepo(t)
@@ -23,7 +23,7 @@ func TestAttractorRun_DetachedModeSurvivesLauncherExit(t *testing.T) {
 
 	cmd := exec.Command(
 		bin,
-		"attractor", "run",
+		"run",
 		"--detach",
 		"--graph", graph,
 		"--config", cfg,
@@ -42,7 +42,7 @@ func TestAttractorRun_DetachedModeSurvivesLauncherExit(t *testing.T) {
 	waitForProcessExit(t, pid, 10*time.Second)
 }
 
-func TestAttractorRun_DetachedWritesPIDFile(t *testing.T) {
+func TestRun_DetachedWritesPIDFile(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	cxdb := newCXDBTestServer(t)
 	repo := initTestRepo(t)
@@ -53,7 +53,7 @@ func TestAttractorRun_DetachedWritesPIDFile(t *testing.T) {
 
 	cmd := exec.Command(
 		bin,
-		"attractor", "run",
+		"run",
 		"--detach",
 		"--graph", graph,
 		"--config", cfg,
@@ -73,7 +73,7 @@ func TestAttractorRun_DetachedWritesPIDFile(t *testing.T) {
 	waitForProcessExit(t, pid, 10*time.Second)
 }
 
-func TestAttractorRun_DetachedMode_DeletedLauncherCWDDoesNotAbortRun(t *testing.T) {
+func TestRun_DetachedMode_DeletedLauncherCWDDoesNotAbortRun(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	cxdb := newCXDBTestServer(t)
 	repo := initTestRepo(t)
@@ -127,7 +127,7 @@ func TestAttractorRun_DetachedMode_DeletedLauncherCWDDoesNotAbortRun(t *testing.
 
 	cmd := exec.Command(
 		bin,
-		"attractor", "run",
+		"run",
 		"--detach",
 		"--graph", relGraphPath,
 		"--config", relConfigPath,

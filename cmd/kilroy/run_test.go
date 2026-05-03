@@ -69,17 +69,25 @@ func TestRunCmd_NoArgs_Exit1WithUsage(t *testing.T) {
 	}
 }
 
-func TestRunCmd_FlagAsFirstArg_RejectsAndShowsUsage(t *testing.T) {
+// `kilroy run --flag` now routes to direct mode (ad-hoc graph/package
+// invocation) instead of erroring. This test exercises the direct-mode
+// dispatch with no graph: the engine surfaces a missing-input error,
+// which proves we entered direct mode rather than the workflow-name
+// path. The pre-v2 behavior (rejecting flag-as-first-arg) is retired.
+func TestRunCmd_FlagAsFirstArg_DispatchesToDirectMode(t *testing.T) {
 	bin := buildTestBinary(t)
 	cmd := exec.Command(bin, "run", "--detach")
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err == nil {
-		t.Fatal("expected exit 1, got exit 0")
+		t.Fatal("expected non-zero exit (no graph specified), got exit 0")
 	}
-	if !strings.Contains(stderr.String(), `first argument must be a workflow name, got flag "--detach"`) {
-		t.Errorf("stderr missing flag-as-first-arg message; got:\n%s", stderr.String())
+	// Direct mode reaches attractorRun, which errors on missing
+	// --graph/--package. The pre-v2 "first argument must be a workflow
+	// name" rejection is gone.
+	if strings.Contains(stderr.String(), "first argument must be a workflow name") {
+		t.Errorf("stderr still has the pre-v2 reject message; should route to direct mode now:\n%s", stderr.String())
 	}
 }
 

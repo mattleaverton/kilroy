@@ -34,7 +34,7 @@ func TestRegisterDetachedRunInDB_AppearsBefore_TerminalState(t *testing.T) {
 	const runID = "detach-register-test-001"
 	logsRoot := t.TempDir()
 	labels := map[string]string{"env": "test", "task": "detach-db-test"}
-	invocation := []string{"kilroy", "attractor", "run", "--detach", "--graph", graphFile, "--label", "env=test"}
+	invocation := []string{"kilroy", "run", "--detach", "--graph", graphFile, "--label", "env=test"}
 
 	// This is the call the parent makes before forking the child.
 	registerDetachedRunInDB(runID, graphFile, logsRoot, "/tmp/repo", labels, nil, invocation)

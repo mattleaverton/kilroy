@@ -16,7 +16,7 @@ When Done Gate writes `COMPLETE` (or `loop_max=8` is reached), the loop exits an
 ## How to launch
 
 ```bash
-kilroy attractor run \
+kilroy run \
   --package workflows/coding-loop/ \
   --workspace /abs/path/to/target-repo \
   --input '{"spec":"/abs/path/to/spec.md"}'

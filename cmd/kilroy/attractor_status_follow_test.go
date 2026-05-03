@@ -230,6 +230,8 @@ func TestFormatProgressEvent_BranchHeartbeatSuppressed(t *testing.T) {
 
 func TestLatestRunLogsRoot_FindsMostRecent(t *testing.T) {
 	tmp := t.TempDir()
+	// latestRunLogsRoot scans $XDG_STATE_HOME/kilroy/attractor/runs/ —
+	// path matches the on-disk run-state convention.
 	runsDir := filepath.Join(tmp, "kilroy", "attractor", "runs")
 	_ = os.MkdirAll(filepath.Join(runsDir, "run-old"), 0o755)
 	time.Sleep(50 * time.Millisecond)

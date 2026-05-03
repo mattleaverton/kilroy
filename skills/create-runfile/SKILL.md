@@ -7,7 +7,7 @@ description: Use when authoring or repairing Kilroy run config YAML/JSON files, 
 
 ## Scope
 
-This skill owns run config authoring (`run.yaml` / `run.json`) for `kilroy attractor run` and `resume`.
+This skill owns run config authoring (`run.yaml` / `run.json`) for `kilroy run` and `resume`.
 
 In scope:
 - Building config structure (`version: 1` schema).

@@ -86,7 +86,7 @@ func TestRunsWait_TimeoutExitsWithCode2_ExplicitID(t *testing.T) {
 	insertStuckRun(t, runID, nil)
 
 	code, out := runKilroyWait(t, bin, stateDir,
-		"attractor", "runs", "wait", runID,
+		"runs", "wait", runID,
 		"--timeout", "600ms", "--interval", "100ms",
 	)
 
@@ -110,7 +110,7 @@ func TestRunsWait_TimeoutExitsWithCode2_LatestLabel(t *testing.T) {
 	insertStuckRun(t, runID, map[string]string{"task": "timeout-contract"})
 
 	code, out := runKilroyWait(t, bin, stateDir,
-		"attractor", "runs", "wait",
+		"runs", "wait",
 		"--latest", "--label", "task=timeout-contract",
 		"--timeout", "600ms", "--interval", "100ms",
 	)
@@ -148,7 +148,7 @@ func TestRunsWait_SuccessExitsZero(t *testing.T) {
 	db.Close()
 
 	code, out := runKilroyWait(t, bin, stateDir,
-		"attractor", "runs", "wait", runID,
+		"runs", "wait", runID,
 	)
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0 (success); output:\n%s", code, out)
@@ -179,7 +179,7 @@ func TestRunsWait_FailExitsOne(t *testing.T) {
 	db.Close()
 
 	code, out := runKilroyWait(t, bin, stateDir,
-		"attractor", "runs", "wait", runID,
+		"runs", "wait", runID,
 	)
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1 (fail); output:\n%s", code, out)

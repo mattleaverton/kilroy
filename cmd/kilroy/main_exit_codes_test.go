@@ -515,7 +515,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot1 := filepath.Join(t.TempDir(), "logs-success")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", successGraph, "--config", cfg, "--run-id", "cli-success", "--logs-root", logsRoot1)
+	code, out := runKilroy(t, bin, "run", "--graph", successGraph, "--config", cfg, "--run-id", "cli-success", "--logs-root", logsRoot1)
 	if code != 0 {
 		t.Fatalf("success exit code: got %d want 0\n%s", code, out)
 	}
@@ -531,13 +531,13 @@ digraph G {
 }
 `), 0o644)
 	logsRoot2 := filepath.Join(t.TempDir(), "logs-fail")
-	code, out = runKilroy(t, bin, "attractor", "run", "--graph", failGraph, "--config", cfg, "--run-id", "cli-fail", "--logs-root", logsRoot2)
+	code, out = runKilroy(t, bin, "run", "--graph", failGraph, "--config", cfg, "--run-id", "cli-fail", "--logs-root", logsRoot2)
 	if code != 1 {
 		t.Fatalf("fail exit code: got %d want 1\n%s", code, out)
 	}
 }
 
-func TestAttractorRun_AllowsTestShimFlag(t *testing.T) {
+func TestRun_AllowsTestShimFlag(t *testing.T) {
 	cxdbSrv := newCXDBTestServer(t)
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
@@ -554,83 +554,36 @@ digraph G {
 `), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "allow-test-shim", "--logs-root", logsRoot, "--allow-test-shim")
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "allow-test-shim", "--logs-root", logsRoot, "--allow-test-shim")
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
 }
 
-func TestUsage_IncludesAllowTestShimFlag(t *testing.T) {
+// TestRunHelp_IncludesPerRunFlags asserts that `kilroy run --help`
+// (where the per-run flag documentation now lives) advertises the
+// expected flags. The top-level `kilroy --help` is a category summary
+// and intentionally doesn't list every flag.
+func TestRunHelp_IncludesPerRunFlags(t *testing.T) {
 	bin := buildKilroyBinary(t)
-	code, out := runKilroy(t, bin)
-	if code != 1 {
-		t.Fatalf("exit code: got %d want 1\n%s", code, out)
+	code, out := runKilroy(t, bin, "run", "--help")
+	if code != 0 {
+		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
 	if !strings.Contains(out, "--allow-test-shim") {
-		t.Fatalf("usage should include --allow-test-shim; output:\n%s", out)
+		t.Fatalf("`kilroy run --help` should include --allow-test-shim; output:\n%s", out)
 	}
 	if !strings.Contains(out, "--confirm-stale-build") {
-		t.Fatalf("usage should include --confirm-stale-build; output:\n%s", out)
+		t.Fatalf("`kilroy run --help` should include --confirm-stale-build; output:\n%s", out)
 	}
 	if !strings.Contains(out, "--force-model") {
-		t.Fatalf("usage should include --force-model; output:\n%s", out)
+		t.Fatalf("`kilroy run --help` should include --force-model; output:\n%s", out)
 	}
 }
 
-func TestAttractorRun_PreflightFlag_Accepted(t *testing.T) {
-	bin := buildKilroyBinary(t)
-	repo := initTestRepo(t)
-	catalog := writePinnedCatalog(t)
-	cfg := writeRunConfig(t, repo, "http://127.0.0.1:9", "127.0.0.1:9", catalog)
-
-	graph := filepath.Join(t.TempDir(), "preflight.dot")
-	_ = os.WriteFile(graph, []byte(`
-digraph G {
-  start [shape=Mdiamond]
-  exit [shape=Msquare]
-  start -> exit
-}
-`), 0o644)
-
-	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "preflight-flag", "--logs-root", logsRoot, "--no-cxdb", "--preflight")
-	if code != 0 {
-		t.Fatalf("exit code: got %d want 0\n%s", code, out)
-	}
-	if !strings.Contains(out, "validate=true") {
-		t.Fatalf("expected preflight marker, got:\n%s", out)
-	}
-	if !strings.Contains(out, "prelaunch_validation=") {
-		t.Fatalf("expected preflight report output, got:\n%s", out)
-	}
-}
-
-func TestAttractorRun_TestRunAlias_Accepted(t *testing.T) {
-	bin := buildKilroyBinary(t)
-	repo := initTestRepo(t)
-	catalog := writePinnedCatalog(t)
-	cfg := writeRunConfig(t, repo, "http://127.0.0.1:9", "127.0.0.1:9", catalog)
-
-	graph := filepath.Join(t.TempDir(), "test-run.dot")
-	_ = os.WriteFile(graph, []byte(`
-digraph G {
-  start [shape=Mdiamond]
-  exit [shape=Msquare]
-  start -> exit
-}
-`), 0o644)
-
-	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "test-run-flag", "--logs-root", logsRoot, "--no-cxdb", "--test-run")
-	if code != 0 {
-		t.Fatalf("exit code: got %d want 0\n%s", code, out)
-	}
-	if !strings.Contains(out, "validate=true") {
-		t.Fatalf("expected preflight marker, got:\n%s", out)
-	}
-}
-
-func TestAttractorRun_ValidateAlias_Accepted(t *testing.T) {
+// TestRun_ValidateFlag_Accepted asserts `kilroy run --graph X --validate`
+// produces the prelaunch-only exit (no execution, metadata only).
+func TestRun_ValidateFlag_Accepted(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
 	catalog := writePinnedCatalog(t)
@@ -646,22 +599,22 @@ digraph G {
 `), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "validate-flag", "--logs-root", logsRoot, "--no-cxdb", "--validate")
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "validate-flag", "--logs-root", logsRoot, "--no-cxdb", "--validate")
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
 	if !strings.Contains(out, "validate=true") {
-		t.Fatalf("expected preflight marker, got:\n%s", out)
+		t.Fatalf("expected validate marker, got:\n%s", out)
 	}
 }
 
-func TestAttractorRun_PreflightRejectsDetach(t *testing.T) {
+func TestRun_ValidateRejectsDetach(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
 	catalog := writePinnedCatalog(t)
 	cfg := writeRunConfig(t, repo, "http://127.0.0.1:9", "127.0.0.1:9", catalog)
 
-	graph := filepath.Join(t.TempDir(), "detach-preflight.dot")
+	graph := filepath.Join(t.TempDir(), "detach-validate.dot")
 	_ = os.WriteFile(graph, []byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -671,22 +624,22 @@ digraph G {
 `), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--detach", "--preflight", "--graph", graph, "--config", cfg, "--run-id", "preflight-detach", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--detach", "--validate", "--graph", graph, "--config", cfg, "--run-id", "validate-detach", "--logs-root", logsRoot)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
-	if !strings.Contains(out, "--validate/--preflight/--test-run cannot be combined with --detach") {
+	if !strings.Contains(out, "--validate cannot be combined with --detach") {
 		t.Fatalf("expected incompatible flag error, got:\n%s", out)
 	}
 }
 
-func TestAttractorRun_PreflightOutput_IsPreflightOnlyMetadata(t *testing.T) {
+func TestRun_ValidateOutput_IsValidateOnlyMetadata(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
 	catalog := writePinnedCatalog(t)
 	cfg := writeRunConfig(t, repo, "http://127.0.0.1:9", "127.0.0.1:9", catalog)
 
-	graph := filepath.Join(t.TempDir(), "preflight-output.dot")
+	graph := filepath.Join(t.TempDir(), "validate-output.dot")
 	_ = os.WriteFile(graph, []byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -696,25 +649,25 @@ digraph G {
 `), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "preflight-output", "--logs-root", logsRoot, "--no-cxdb", "--preflight")
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "validate-output", "--logs-root", logsRoot, "--no-cxdb", "--validate")
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
 	if !strings.Contains(out, "validate=true") {
-		t.Fatalf("expected preflight marker, got:\n%s", out)
+		t.Fatalf("expected validate marker, got:\n%s", out)
 	}
 	if strings.Contains(out, "worktree=") {
-		t.Fatalf("worktree should be absent for preflight-only mode:\n%s", out)
+		t.Fatalf("worktree should be absent for validate-only mode:\n%s", out)
 	}
 	if strings.Contains(out, "run_branch=") {
-		t.Fatalf("run_branch should be absent for preflight-only mode:\n%s", out)
+		t.Fatalf("run_branch should be absent for validate-only mode:\n%s", out)
 	}
 	if strings.Contains(out, "final_commit=") {
-		t.Fatalf("final_commit should be absent for preflight-only mode:\n%s", out)
+		t.Fatalf("final_commit should be absent for validate-only mode:\n%s", out)
 	}
 }
 
-func TestAttractorRun_PreflightStillEnforcesTestShimGate(t *testing.T) {
+func TestRun_ValidateStillEnforcesTestShimGate(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
 	catalog := writePinnedCatalog(t)
@@ -753,9 +706,8 @@ modeldb:
 		t,
 		bin,
 		"\n",
-		"attractor",
-		"run",
-		"--preflight",
+				"run",
+		"--validate",
 		"--graph",
 		graph,
 		"--config",
@@ -773,7 +725,7 @@ modeldb:
 	}
 }
 
-func TestAttractorRun_PreflightStillEnforcesStaleBuildGate(t *testing.T) {
+func TestRun_ValidateStillEnforcesStaleBuildGate(t *testing.T) {
 	bin := buildKilroyBinaryWithRevision(t, "deadbeef")
 	repo := initTestRepo(t)
 	repoBin := filepath.Join(repo, "kilroy")
@@ -787,7 +739,7 @@ func TestAttractorRun_PreflightStillEnforcesStaleBuildGate(t *testing.T) {
 
 	missingGraph := filepath.Join(repo, "missing.dot")
 	missingConfig := filepath.Join(repo, "missing.yaml")
-	code, out := runKilroyInDir(t, repo, repoBin, "attractor", "run", "--preflight", "--graph", missingGraph, "--config", missingConfig)
+	code, out := runKilroyInDir(t, repo, repoBin, "run", "--validate", "--graph", missingGraph, "--config", missingConfig)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -802,24 +754,20 @@ func TestAttractorRun_PreflightStillEnforcesStaleBuildGate(t *testing.T) {
 	}
 }
 
-func TestUsage_IncludesPreflightFlags(t *testing.T) {
+// TestRunHelp_IncludesValidateFlag asserts the --validate flag is
+// documented in `kilroy run --help`.
+func TestRunHelp_IncludesValidateFlag(t *testing.T) {
 	bin := buildKilroyBinary(t)
-	code, out := runKilroy(t, bin)
-	if code != 1 {
-		t.Fatalf("exit code: got %d want 1\n%s", code, out)
+	code, out := runKilroy(t, bin, "run", "--help")
+	if code != 0 {
+		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
 	if !strings.Contains(out, "--validate") {
-		t.Fatalf("usage should include --validate; output:\n%s", out)
-	}
-	if !strings.Contains(out, "--preflight") {
-		t.Fatalf("usage should include --preflight; output:\n%s", out)
-	}
-	if !strings.Contains(out, "--test-run") {
-		t.Fatalf("usage should include --test-run; output:\n%s", out)
+		t.Fatalf("`kilroy run --help` should include --validate; output:\n%s", out)
 	}
 }
 
-func TestAttractorRun_StaleBuildRequiresConfirm(t *testing.T) {
+func TestRun_StaleBuildRequiresConfirm(t *testing.T) {
 	bin := buildKilroyBinaryWithRevision(t, "deadbeef")
 	repo := initTestRepo(t)
 	repoBin := filepath.Join(repo, "kilroy")
@@ -833,7 +781,7 @@ func TestAttractorRun_StaleBuildRequiresConfirm(t *testing.T) {
 
 	missingGraph := filepath.Join(repo, "missing.dot")
 	missingConfig := filepath.Join(repo, "missing.yaml")
-	code, out := runKilroyInDir(t, repo, repoBin, "attractor", "run", "--graph", missingGraph, "--config", missingConfig)
+	code, out := runKilroyInDir(t, repo, repoBin, "run", "--graph", missingGraph, "--config", missingConfig)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -848,7 +796,7 @@ func TestAttractorRun_StaleBuildRequiresConfirm(t *testing.T) {
 	}
 }
 
-func TestAttractorRun_StaleBuildConfirmAllowsProceeding(t *testing.T) {
+func TestRun_StaleBuildConfirmAllowsProceeding(t *testing.T) {
 	bin := buildKilroyBinaryWithRevision(t, "deadbeef")
 	repo := initTestRepo(t)
 	repoBin := filepath.Join(repo, "kilroy")
@@ -862,7 +810,7 @@ func TestAttractorRun_StaleBuildConfirmAllowsProceeding(t *testing.T) {
 
 	missingGraph := filepath.Join(repo, "missing.dot")
 	missingConfig := filepath.Join(repo, "missing.yaml")
-	code, out := runKilroyInDir(t, repo, repoBin, "attractor", "run", "--confirm-stale-build", "--graph", missingGraph, "--config", missingConfig)
+	code, out := runKilroyInDir(t, repo, repoBin, "run", "--confirm-stale-build", "--graph", missingGraph, "--config", missingConfig)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -952,7 +900,7 @@ func TestParseForceModelFlags_RejectsDuplicateProvider(t *testing.T) {
 	}
 }
 
-func TestAttractorRun_RealProfileRejectsShimOverride(t *testing.T) {
+func TestRun_RealProfileRejectsShimOverride(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
 	catalog := writePinnedCatalog(t)
@@ -988,7 +936,7 @@ modeldb:
 `, repo, catalog)), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "real-reject-shim", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "real-reject-shim", "--logs-root", logsRoot)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -997,13 +945,13 @@ modeldb:
 	}
 }
 
-// TestAttractorRun_CLIProviderWarningAutoSkippedOnNonTTY verifies that when
+// TestRun_CLIProviderWarningAutoSkippedOnNonTTY verifies that when
 // stdin is not a terminal (pipe, /dev/null, agent subprocess), the
 // interactive CLI-backend warning is silently bypassed: the prompt text is
 // not printed, the "declined" exit path is unreachable, and the run proceeds
-// directly to downstream preflight checks. Subprocess invocations from CI,
+// directly to downstream validation checks. Subprocess invocations from CI,
 // pipes, and detached child processes always hit this path.
-func TestAttractorRun_CLIProviderWarningAutoSkippedOnNonTTY(t *testing.T) {
+func TestRun_CLIProviderWarningAutoSkippedOnNonTTY(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
 	catalog := writePinnedCatalog(t)
@@ -1041,22 +989,22 @@ modeldb:
 	logsRoot := filepath.Join(t.TempDir(), "logs")
 	// Even with "n\n" piped on stdin, the auto-skip ignores it: stdin isn't
 	// a TTY so confirmCLIHeadlessWarning is never called.
-	code, out := runKilroyWithInput(t, bin, "n\n", "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "cli-warning-autoskip", "--logs-root", logsRoot)
+	code, out := runKilroyWithInput(t, bin, "n\n", "run", "--graph", graph, "--config", cfg, "--run-id", "cli-warning-autoskip", "--logs-root", logsRoot)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
 	if strings.Contains(out, cliHeadlessWarningPrompt) {
 		t.Fatalf("warning prompt should be auto-skipped on non-TTY stdin, but was printed:\n%s", out)
 	}
-	if strings.Contains(out, "preflight aborted: declined provider CLI headless-risk warning") {
-		t.Fatalf("warning auto-skip must not abort preflight, got:\n%s", out)
+	if strings.Contains(out, "validation aborted: declined provider CLI headless-risk warning") {
+		t.Fatalf("warning auto-skip must not abort validation, got:\n%s", out)
 	}
 	if !strings.Contains(out, "llm.cli_profile=real forbids provider path overrides") {
-		t.Fatalf("expected run to proceed past warning into downstream preflight checks, got:\n%s", out)
+		t.Fatalf("expected run to proceed past warning into downstream validation checks, got:\n%s", out)
 	}
 }
 
-func TestKilroyAttractorRun_PrintsCXDBUILink(t *testing.T) {
+func TestRun_PrintsCXDBUILink(t *testing.T) {
 	cxdbSrv := newCXDBTestServer(t)
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
@@ -1079,7 +1027,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-link", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-link", "--logs-root", logsRoot)
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
@@ -1091,7 +1039,7 @@ digraph G {
 	}
 }
 
-func TestKilroyAttractorRun_PrintsCXDBUIStartingWhenLaunchCommandConfigured(t *testing.T) {
+func TestRun_PrintsCXDBUIStartingWhenLaunchCommandConfigured(t *testing.T) {
 	cxdbSrv := newCXDBTestServer(t)
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
@@ -1114,7 +1062,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-starting", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-starting", "--logs-root", logsRoot)
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
@@ -1123,7 +1071,7 @@ digraph G {
 	}
 }
 
-func TestKilroyAttractorRun_AutoDiscoversCXDBUIFromHTTPBaseURL(t *testing.T) {
+func TestRun_AutoDiscoversCXDBUIFromHTTPBaseURL(t *testing.T) {
 	cxdbSrv := newCXDBTestServer(t)
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
@@ -1139,7 +1087,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "attractor", "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-autodiscover", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-autodiscover", "--logs-root", logsRoot)
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}

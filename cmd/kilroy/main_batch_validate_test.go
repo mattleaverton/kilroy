@@ -14,7 +14,7 @@ func TestAttractorValidateBatch_AllClean(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	clean := testdataBatchFile(t, "clean.dot")
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch", clean)
+	code, out := runKilroy(t, bin, "validate", "--batch", clean)
 	if code != 0 {
 		t.Fatalf("expected exit code 0 (clean), got %d\n%s", code, out)
 	}
@@ -30,7 +30,7 @@ func TestAttractorValidateBatch_StatusContractInPromptWarns(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	f := testdataBatchFile(t, "no_status_contract.dot")
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch", f)
+	code, out := runKilroy(t, bin, "validate", "--batch", f)
 	if code != 2 {
 		t.Fatalf("expected exit code 2 (warnings-only), got %d\n%s", code, out)
 	}
@@ -45,7 +45,7 @@ func TestAttractorValidateBatch_WarningsOnly(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	warnFile := testdataBatchFile(t, "warnings_only.dot")
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch", warnFile)
+	code, out := runKilroy(t, bin, "validate", "--batch", warnFile)
 	if code != 2 {
 		t.Fatalf("expected exit code 2 (warnings-only), got %d\n%s", code, out)
 	}
@@ -60,7 +60,7 @@ func TestAttractorValidateBatch_WithErrors(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	errFile := testdataBatchFile(t, "has_errors.dot")
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch", errFile)
+	code, out := runKilroy(t, bin, "validate", "--batch", errFile)
 	if code != 1 {
 		t.Fatalf("expected exit code 1 (errors), got %d\n%s", code, out)
 	}
@@ -76,7 +76,7 @@ func TestAttractorValidateBatch_MixedFiles(t *testing.T) {
 	clean := testdataBatchFile(t, "clean.dot")
 	errFile := testdataBatchFile(t, "has_errors.dot")
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch", clean, errFile)
+	code, out := runKilroy(t, bin, "validate", "--batch", clean, errFile)
 	if code != 1 {
 		t.Fatalf("expected exit code 1 (any error wins), got %d\n%s", code, out)
 	}
@@ -96,7 +96,7 @@ func TestAttractorValidateBatch_JSONOutput(t *testing.T) {
 	clean := testdataBatchFile(t, "clean.dot")
 	errFile := testdataBatchFile(t, "has_errors.dot")
 
-	_, out := runKilroy(t, bin, "attractor", "validate", "--batch", clean, errFile, "--json")
+	_, out := runKilroy(t, bin, "validate", "--batch", clean, errFile, "--json")
 
 	var results []struct {
 		File     string `json:"file"`
@@ -125,7 +125,7 @@ func TestAttractorValidateBatch_MissingFile(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	missing := filepath.Join(t.TempDir(), "nonexistent.dot")
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch", missing)
+	code, out := runKilroy(t, bin, "validate", "--batch", missing)
 	if code != 1 {
 		t.Fatalf("expected exit code 1 for missing file, got %d\n%s", code, out)
 	}
@@ -137,7 +137,7 @@ func TestAttractorValidateBatch_MissingFile(t *testing.T) {
 func TestAttractorValidateBatch_NoFilesExitsWithUsage(t *testing.T) {
 	bin := buildKilroyBinary(t)
 
-	code, out := runKilroy(t, bin, "attractor", "validate", "--batch")
+	code, out := runKilroy(t, bin, "validate", "--batch")
 	if code == 0 {
 		t.Fatalf("expected non-zero exit when no files given, got 0\n%s", out)
 	}
@@ -152,7 +152,7 @@ func TestAttractorValidateBatch_ThreeFiles(t *testing.T) {
 	warnFile := testdataBatchFile(t, "warnings_only.dot")
 	errFile := testdataBatchFile(t, "has_errors.dot")
 
-	_, out := runKilroy(t, bin, "attractor", "validate", "--batch", clean, warnFile, errFile)
+	_, out := runKilroy(t, bin, "validate", "--batch", clean, warnFile, errFile)
 
 	if !strings.Contains(out, "Total files: 3") {
 		t.Fatalf("expected 'Total files: 3' in output, got:\n%s", out)

@@ -13,7 +13,7 @@ import (
 
 // registerDetachedRunInDB writes a status=running row to the run database
 // before the detached child process starts. This ensures that
-// `kilroy attractor runs list`, `runs show`, and `runs wait` can find the run
+// `kilroy runs list`, `runs show`, and `runs wait` can find the run
 // immediately after the parent exits — they no longer have to wait for the child
 // to reach its own RecordRunStart call inside the engine.
 //

@@ -132,7 +132,7 @@ go build -o ./kilroy ./cmd/kilroy
 # Validate all demo pipelines still parse and pass validation
 shopt -s globstar
 for f in demo/**/*.dot; do
-  ./kilroy attractor validate --graph "$f" || exit 1
+  ./kilroy validate --graph "$f" || exit 1
 done
 ```
 

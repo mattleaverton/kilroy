@@ -10,7 +10,7 @@ import (
 //
 //  1. It stamps Labels{"source":"test","test_name":t.Name()} onto the run's
 //     manifest.json so the run can be identified and pruned by
-//     `kilroy attractor runs prune --label source=test`.
+//     `kilroy runs prune --label source=test`.
 //
 //  2. It registers a t.Cleanup that removes LogsRoot only when the test
 //     *passes*. On test failure the artifacts are left in place for inspection.

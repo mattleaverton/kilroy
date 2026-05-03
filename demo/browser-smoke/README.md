@@ -5,13 +5,13 @@ Minimal end-to-end browser verification smoke test using OpenAI CLI + `gpt-5.4-s
 ## Validate
 
 ```bash
-./kilroy attractor validate --graph demo/browser-smoke/browser-smoke.dot
+./kilroy validate --graph demo/browser-smoke/browser-smoke.dot
 ```
 
 ## Run
 
 ```bash
-./kilroy attractor run --skip-cli-headless-warning --graph demo/browser-smoke/browser-smoke.dot --config demo/browser-smoke/run.yaml
+./kilroy run --skip-cli-headless-warning --graph demo/browser-smoke/browser-smoke.dot --config demo/browser-smoke/run.yaml
 ```
 
 ## Expected Signals

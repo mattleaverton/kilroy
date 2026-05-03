@@ -5,13 +5,13 @@ This demo runs the fast Klondike solitaire pipeline in Attractor.
 ## Validate
 
 ```bash
-./kilroy attractor validate --graph demo/solitaire/solitaire-fast.dot
+./kilroy validate --graph demo/solitaire/solitaire-fast.dot
 ```
 
 ## Run
 
 ```bash
-./kilroy attractor run --skip-cli-headless-warning --graph demo/solitaire/solitaire-fast.dot --config demo/solitaire/run.yaml
+./kilroy run --skip-cli-headless-warning --graph demo/solitaire/solitaire-fast.dot --config demo/solitaire/run.yaml
 ```
 
 ## Notes

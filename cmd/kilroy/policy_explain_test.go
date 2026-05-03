@@ -22,7 +22,7 @@ import (
 func seedRunWithResolutions(t *testing.T, runID string, resolutions map[string]string) string {
 	t.Helper()
 	stateHome := t.TempDir()
-	logsRoot := filepath.Join(stateHome, "kilroy", "attractor", "runs", runID)
+	logsRoot := filepath.Join(stateHome, "kilroy", "runs", runID)
 
 	for node, body := range resolutions {
 		stageDir := filepath.Join(logsRoot, node)

@@ -238,19 +238,25 @@ func verifyAttractorRunPID(pid int, logsRoot string, runID string) (verifiedProc
 		return verifiedProcess{}, fmt.Errorf("refusing to signal pid %d: empty process command line", pid)
 	}
 
-	attractorIdx := -1
+	// Match the subcommand against the first non-binary, non-flag arg
+	// to recognize `kilroy run ...` / `kilroy resume ...`.
+	subIdx := -1
 	for i, arg := range args {
-		if strings.TrimSpace(arg) == "attractor" {
-			attractorIdx = i
-			break
+		if i == 0 {
+			continue // binary path itself
 		}
+		if strings.HasPrefix(arg, "-") {
+			continue // top-level flag (e.g. --env-file)
+		}
+		subIdx = i
+		break
 	}
-	if attractorIdx < 0 || attractorIdx+1 >= len(args) {
-		return verifiedProcess{}, fmt.Errorf("refusing to signal pid %d: process is not an attractor run/resume command", pid)
+	if subIdx < 0 {
+		return verifiedProcess{}, fmt.Errorf("refusing to signal pid %d: process is not a kilroy run/resume command", pid)
 	}
-	sub := strings.TrimSpace(args[attractorIdx+1])
+	sub := strings.TrimSpace(args[subIdx])
 	if sub != "run" && sub != "resume" {
-		return verifiedProcess{}, fmt.Errorf("refusing to signal pid %d: process is attractor %q, not run/resume", pid, sub)
+		return verifiedProcess{}, fmt.Errorf("refusing to signal pid %d: process is kilroy %q, not run/resume", pid, sub)
 	}
 
 	expectedRunID := resolveExpectedRunID(runID, logsRoot)
@@ -270,7 +276,7 @@ func verifyAttractorRunPID(pid int, logsRoot string, runID string) (verifiedProc
 		return captureVerifiedProcess(pid)
 	}
 	if hasRunID {
-		// Fallback: we confirmed this is a local kilroy attractor run/resume process
+		// Fallback: we confirmed this is a local kilroy run/resume process
 		// and it carries --run-id, but we have no expected run-id materialized yet
 		// (early startup before manifest/live events). Preserve operability here.
 		return captureVerifiedProcess(pid)
