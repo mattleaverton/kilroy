@@ -27,15 +27,31 @@ import (
 // imported here because engine imports validate (cycle); instead we replicate the
 // two relevant steps: dot.Parse → style.ApplyStylesheet → validate.Validate.
 func TestShippedWorkflowGraphs(t *testing.T) {
-	repoRoot := findRepoRoot(t)
-	workflowsDir := filepath.Join(repoRoot, "workflows")
+	validateGraphsUnder(t, "workflows")
+}
 
-	if _, err := os.Stat(workflowsDir); os.IsNotExist(err) {
-		t.Skipf("workflows/ directory not found at %s; skipping", workflowsDir)
+// TestShippedDemoGraphs is the demo-tree counterpart of
+// TestShippedWorkflowGraphs. Demo graphs are reference shapes for users
+// authoring their own workflows — if they don't validate, the docs lie.
+// Same gate, different tree.
+func TestShippedDemoGraphs(t *testing.T) {
+	validateGraphsUnder(t, "demo")
+}
+
+// validateGraphsUnder walks dotDir and runs the same parse → apply
+// stylesheet → validate pipeline for every *.dot file. Used by
+// TestShippedWorkflowGraphs and TestShippedDemoGraphs.
+func validateGraphsUnder(t *testing.T, dotDir string) {
+	t.Helper()
+	repoRoot := findRepoRoot(t)
+	rootDir := filepath.Join(repoRoot, dotDir)
+
+	if _, err := os.Stat(rootDir); os.IsNotExist(err) {
+		t.Skipf("%s/ directory not found at %s; skipping", dotDir, rootDir)
 	}
 
 	var dotFiles []string
-	err := filepath.WalkDir(workflowsDir, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -45,11 +61,11 @@ func TestShippedWorkflowGraphs(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walking workflows/: %v", err)
+		t.Fatalf("walking %s/: %v", dotDir, err)
 	}
 
 	if len(dotFiles) == 0 {
-		t.Fatal("no *.dot files found under workflows/; expected at least one shipped graph")
+		t.Fatalf("no *.dot files found under %s/; expected at least one graph", dotDir)
 	}
 
 	for _, absPath := range dotFiles {
