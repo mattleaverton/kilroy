@@ -315,34 +315,81 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 	}
 
 	// Start from the cached multi-provider client so failover candidates
-	// remain reachable (via canonical-env adapters from runtime config).
-	// Then OVERRIDE the selected provider's adapter with the bound-cred
-	// version — Register replaces by adapter.Name(), so this swaps in the
-	// correct credential for the primary call without touching others.
+	// remain reachable. Then for EACH provider, try to resolve a bound
+	// credential via the binding resolver and override that adapter with
+	// the credential-aware version. This means failover providers also
+	// use bound credentials when an auth chain exists for them, not
+	// canonical-env (R3 fix). Providers without a configured chain keep
+	// their canonical-env adapter from the cached client.
 	cached, err := r.ensureAPIClient()
 	if err != nil {
 		return nil, err
 	}
 	c := cloneLLMClient(cached)
-	rt, hasRT := r.providerRuntimes[provider]
+
+	// Override the SELECTED provider with its (already-resolved) credential.
+	overrideProviderAdapter(c, r.providerRuntimes, provider, cred.Value)
+
+	// For each other provider with runtime config, attempt to resolve a
+	// credential via the auth chain. Successful resolves override the
+	// canonical-env adapter that the cached client registered. Failed
+	// resolves leave the cached adapter alone (transitional bridge for
+	// providers without a chain in user/project config).
+	for otherProvider, rt := range r.providerRuntimes {
+		if otherProvider == provider {
+			continue
+		}
+		if rt.Backend != BackendAPI {
+			continue
+		}
+		failoverCred, ferr := resolveFailoverCredential(resolver, otherProvider)
+		if ferr != nil || failoverCred == "" {
+			continue
+		}
+		overrideProviderAdapter(c, r.providerRuntimes, otherProvider, failoverCred)
+	}
+	return c, nil
+}
+
+// overrideProviderAdapter registers a credential-aware adapter for the
+// given provider on c, replacing whatever was there. Falls through to
+// no-op for providers without a hardcoded adapter case (transitional —
+// long-term this should consult provider-spec for adapter construction).
+func overrideProviderAdapter(c *llm.Client, runtimes map[string]ProviderRuntime, provider, value string) {
+	rt, hasRT := runtimes[provider]
 	var baseURL string
 	if hasRT && rt.Backend == BackendAPI {
 		baseURL = resolveBuiltInBaseURLOverride(provider, rt.API.DefaultBaseURL)
 	}
 	switch provider {
 	case "anthropic":
-		c.Register(anthropic.NewWithProvider(provider, cred.Value, baseURL))
+		c.Register(anthropic.NewWithProvider(provider, value, baseURL))
 	case "openai":
-		c.Register(openai.NewWithProvider(provider, cred.Value, baseURL))
+		c.Register(openai.NewWithProvider(provider, value, baseURL))
 	case "google":
-		c.Register(google.NewWithProvider(provider, cred.Value, baseURL))
-	default:
-		// Unknown selected provider — return the cached client unchanged.
-		// Downstream will surface a clear error if the primary call needs
-		// an adapter that doesn't exist; failover candidates remain.
-		return cached, nil
+		c.Register(google.NewWithProvider(provider, value, baseURL))
 	}
-	return c, nil
+}
+
+// resolveFailoverCredential tries the auth chain for (provider, api_key)
+// against the given resolver and returns the resolved env-var value when
+// a bound credential exists, or "" when no chain entry exists / no source
+// is reachable. Errors are returned for I/O / parse problems; chain-walk
+// errors (no chain, ambiguous, exhausted) are treated as "no override
+// available" and yield ("", nil).
+func resolveFailoverCredential(resolver *binding.Resolver, provider string) (string, error) {
+	req := binding.Requirement{Provider: provider, Method: binding.MethodAPIKey}
+	snap, err := resolver.Resolve(req)
+	if err != nil {
+		// Any resolver error here is "use canonical-env adapter as
+		// fallback" — failover candidates without a chain are valid.
+		return "", nil
+	}
+	cred, err := resolver.Bind(snap)
+	if err != nil {
+		return "", nil
+	}
+	return cred.Value, nil
 }
 
 // cloneLLMClient produces a shallow copy of an llm.Client suitable for
