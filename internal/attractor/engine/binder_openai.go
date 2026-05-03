@@ -47,8 +47,11 @@ func BindCodexCLI(snap binding.Snapshot, cred binding.Credential, stageDir strin
 
 	case binding.SourceCLISession:
 		// User is logged in to Codex; rely on the session at ~/.codex/.
-		// No file writes, no env overrides needed.
+		// Scrub OPENAI_API_KEY from the child env so the CLI uses the
+		// logged-in session instead of silently using the env key
+		// (silent wrong-billing prevention — same pattern as claude_cli).
 		return BindResult{
+			EnvScrub:   []string{"OPENAI_API_KEY"},
 			SourceKind: "cli_session",
 			SourceName: cred.CLITool,
 		}, nil

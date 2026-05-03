@@ -2,9 +2,6 @@
 package templates
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agents/agentlog"
@@ -28,31 +25,17 @@ func Codex() Template {
 			return args
 		},
 		BuildEnv: func() map[string]string {
-			env := map[string]string{}
-			if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-				env["OPENAI_API_KEY"] = key
-			}
-			return env
+			// Credential delivery is the binder's job (see
+			// internal/attractor/engine/binder_openai.go BindCodexCLI).
+			// Binder writes the isolated auth.json under <stage>/.codex/
+			// and sets CODEX_HOME. Template must NOT pass through env keys.
+			return map[string]string{}
 		},
-		PrepareSession: func(stageDir string, env map[string]string) error {
-			apiKey := env["OPENAI_API_KEY"]
-			if apiKey == "" {
-				return nil // no key available, codex will use its own auth
-			}
-			// Write an isolated auth.json so codex uses the API key
-			// without touching ~/.codex/.
-			codexHome := filepath.Join(stageDir, ".codex")
-			if err := os.MkdirAll(codexHome, 0o700); err != nil {
-				return err
-			}
-			auth := map[string]string{"auth_mode": "apikey", "OPENAI_API_KEY": apiKey}
-			data, _ := json.Marshal(auth)
-			if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), data, 0o600); err != nil {
-				return err
-			}
-			env["CODEX_HOME"] = codexHome
-			return nil
-		},
+		// PrepareSession is unused after the binder migration. Removed to
+		// avoid confusion — auth.json materialization happens via the
+		// binder's FilesToWrite, applied by tmux_handler before session
+		// creation.
+		PrepareSession: nil,
 		PromptPrefix:     "›",
 		BusyIndicators:   []string{"Working", "esc to interrupt"},
 		ProcessNames:     []string{"codex", "node"},

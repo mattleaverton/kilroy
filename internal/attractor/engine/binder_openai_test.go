@@ -64,7 +64,8 @@ func TestBindCodexCLI_EnvVar(t *testing.T) {
 }
 
 // TestBindCodexCLI_CLISession verifies that a cli_session credential produces
-// no file writes and no env overrides (Codex uses ~/.codex/ session directly).
+// no file writes, no env overrides, AND scrubs OPENAI_API_KEY from the child
+// env so the CLI uses the logged-in session (silent wrong-billing prevention).
 func TestBindCodexCLI_CLISession(t *testing.T) {
 	stageDir := t.TempDir()
 	snap := binding.Snapshot{
@@ -88,6 +89,15 @@ func TestBindCodexCLI_CLISession(t *testing.T) {
 	}
 	if len(result.EnvSet) != 0 {
 		t.Errorf("expected no EnvSet for cli_session, got %d entries", len(result.EnvSet))
+	}
+	scrubFound := false
+	for _, name := range result.EnvScrub {
+		if name == "OPENAI_API_KEY" {
+			scrubFound = true
+		}
+	}
+	if !scrubFound {
+		t.Errorf("expected EnvScrub to include OPENAI_API_KEY (wrong-billing prevention), got %v", result.EnvScrub)
 	}
 	if result.SourceKind != "cli_session" {
 		t.Errorf("SourceKind = %q, want %q", result.SourceKind, "cli_session")

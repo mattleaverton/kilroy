@@ -2,7 +2,6 @@
 package templates
 
 import (
-	"os"
 	"time"
 )
 
@@ -20,14 +19,12 @@ func Gemini() Template {
 			return args
 		},
 		BuildEnv: func() map[string]string {
-			env := map[string]string{}
-			if key := os.Getenv("GOOGLE_API_KEY"); key != "" {
-				env["GOOGLE_API_KEY"] = key
-			}
-			if key := os.Getenv("GEMINI_API_KEY"); key != "" {
-				env["GEMINI_API_KEY"] = key
-			}
-			return env
+			// Credential delivery is the binder's job (see
+			// internal/attractor/engine/binder_google.go). The template
+			// must NOT pass through env keys here; otherwise a CLI session
+			// route can be silently overridden by a stray env var the
+			// binder told us not to use.
+			return map[string]string{}
 		},
 		PromptPrefix:    ">",
 		BusyIndicators:  []string{},
