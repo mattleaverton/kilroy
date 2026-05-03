@@ -8,5 +8,5 @@ digraph tool_only_test {
 
   start -> step1
   step1 -> step2
-  step2 -> done
+  step2 -> done [condition="outcome=success"]
 }

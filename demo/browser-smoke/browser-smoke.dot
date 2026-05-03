@@ -3,7 +3,7 @@ digraph browser_smoke {
         goal="Minimal browser retry/artifact smoke test",
         default_max_retry="1",
         model_stylesheet="
-            * { llm_model: gpt-5.4-spark; llm_provider: openai; }
+            * { llm_model: gpt-5; llm_provider: openai; }
         "
     ]
 
@@ -31,5 +31,5 @@ Write to $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH
 
     start -> prep
     prep -> verify_browser
-    verify_browser -> exit
+    verify_browser -> exit [condition="outcome=success"]
 }
