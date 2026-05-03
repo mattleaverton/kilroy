@@ -33,6 +33,24 @@ func OpenCode() Template {
 			args = append(args, prompt)
 			return args
 		},
+		// KNOWN GAP: opencode is OUTSIDE the binder model.
+		//
+		// opencode is a multi-provider tool with its own internal config DB
+		// (~/.local/share/opencode/opencode.db) and its own credential
+		// management — it doesn't fit the binder pattern (one driver, one
+		// chain) cleanly. For now, BuildEnv passes through provider env vars
+		// (canonical names only) so opencode's existing `{env:NAME}` config
+		// substitution keeps working.
+		//
+		// Concrete consequence: opencode runs do NOT honor the kilroy auth
+		// chain — _KILROY-suffixed keys are not preferred, and the
+		// claude/codex env-scrub patterns don't apply. If you route
+		// opencode through a class, the resolver's auth choice is recorded
+		// in resolution.json but opencode uses whatever canonical env vars
+		// happen to be set in the launcher.
+		//
+		// Tracking: full opencode binder integration is a follow-up; design
+		// is in plan §11 / docs/auth.md "What's NOT covered".
 		BuildEnv: func() map[string]string {
 			env := map[string]string{}
 			if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {

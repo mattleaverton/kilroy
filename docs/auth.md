@@ -131,3 +131,11 @@ Standalone diagnostic: runs the resolver against every binding+chain in your con
 ## Per-class auth differentiation (capability ships, use defers)
 
 Multiple chains can satisfy the same `(provider, method)` requirement. Today, the default config uses one chain per requirement, but the schema supports e.g. `anthropic_kilroy_api` (your daily key) vs `anthropic_org_api` (a shared org key) coexisting. A future feature would let policy candidates declare `auth_ref = "anthropic_org_api"` to override the binding default for specific classes — for example, `class hard_coding` uses a more expensive key, `class quick_easy` uses a cheap one. The schema is in place; the policy.toml side ships single chains for v1.
+
+## What's NOT covered
+
+The auth-chain resolver model fits one-driver-one-chain tools (claude, codex, gemini). It does NOT cover:
+
+- **opencode**: a multi-provider tool with its own `~/.local/share/opencode/opencode.db` config DB. opencode runs through tmux honor whatever canonical env vars are set in the launcher; they do NOT follow the resolver's chain decision (so `_KILROY` precedence isn't honored, and claude/codex-style env-scrubs don't apply). Treat opencode as a separate auth surface for now.
+- **Bare `kilroy attractor run` without `agent_class=`**: legacy stylesheet routing skips the resolver entirely. Class-routed nodes (`agent_class="..."`) flow through the resolver; non-class nodes don't.
+- **Provider-specific env vars beyond the chain**: `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, etc. are still read directly from env by the LLM client constructors. These are operational overrides, not credentials, but they can affect routing in ways the chain doesn't see.

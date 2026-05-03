@@ -169,7 +169,11 @@ func printAuthListPretty(out auth.ListOutput) {
 			fmt.Printf("    profiles: %s  (* = active)\n", strings.Join(names, ", "))
 		}
 		if len(e.Shadows) > 0 {
-			fmt.Printf("    shadows: %s (env var wins at runtime)\n", strings.Join(e.Shadows, ", "))
+			// Shadow note: in default tool invocation, env var wins. For
+			// kilroy class-routed CLI runs, the binder scrubs the env var
+			// so the CLI uses its OAuth session — see `kilroy auth check`
+			// for the resolver-decided source per chain.
+			fmt.Printf("    shadows: %s (env var wins for default invocations; class-routed CLI runs scrub env vars per binder)\n", strings.Join(e.Shadows, ", "))
 		}
 		if len(e.ShadowedBy) > 0 {
 			fmt.Printf("    shadowed by: %s\n", strings.Join(e.ShadowedBy, ", "))
