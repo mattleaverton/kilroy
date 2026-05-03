@@ -8,16 +8,24 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/agents/agentlog"
 )
 
-// Claude returns an invocation template for Claude Code (--bare --print mode).
+// Claude returns an invocation template for Claude Code in --print mode.
+//
+// --bare is auth-method-aware: it's incompatible with OAuth (the flag
+// explicitly disables OAuth and keychain reads — see `claude --help`).
+// For cli_oauth, we omit it so claude can read its OAuth session. For
+// api_key (or unknown), we keep it for the headless-isolation
+// properties (skip hooks, plugins, CLAUDE.md, etc.) — it requires
+// ANTHROPIC_API_KEY to be set, which the api_key binder materializes.
 func Claude() Template {
 	return Template{
 		Name:       "claude",
 		Binary:     "claude",
 		LogLocator: &agentlog.ClaudeLogLocator{},
-		BuildArgs: func(prompt, workDir, model string) []string {
-			args := []string{
-				"--bare", "--dangerously-skip-permissions", "--print",
-				"--output-format", "stream-json", "--verbose",
+		BuildArgs: func(prompt, workDir, model, authMethod string) []string {
+			args := []string{"--dangerously-skip-permissions", "--print",
+				"--output-format", "stream-json", "--verbose"}
+			if authMethod != "cli_oauth" {
+				args = append([]string{"--bare"}, args...)
 			}
 			if model != "" {
 				// Claude CLI uses dashes (claude-sonnet-4-6), not dots (claude-sonnet-4.6).

@@ -237,6 +237,7 @@ func attractorRun(args []string) {
 	var forceModelSpecs []string
 	var inputPath string
 	var promptFile string
+	var inputFileSpecs []string
 	var workspace string
 	var labelSpecs []string
 	var useTmux bool
@@ -305,6 +306,13 @@ func attractorRun(args []string) {
 				os.Exit(1)
 			}
 			promptFile = args[i]
+		case "--input-file":
+			i++
+			if i >= len(args) {
+				fmt.Fprintln(os.Stderr, "--input-file requires KEY=PATH")
+				os.Exit(1)
+			}
+			inputFileSpecs = append(inputFileSpecs, args[i])
 		case "--workspace":
 			i++
 			if i >= len(args) {
@@ -422,6 +430,31 @@ func attractorRun(args []string) {
 		}
 		inputs["prompt"] = string(data)
 	}
+	// --input-file KEY=PATH reads the file verbatim into inputs[KEY].
+	// Generalization of --prompt-file for workflows whose required key
+	// is question/issue/target/spec/topic instead of prompt. Repeatable.
+	for _, spec := range inputFileSpecs {
+		idx := strings.IndexByte(spec, '=')
+		if idx <= 0 {
+			fmt.Fprintf(os.Stderr, "--input-file: expected KEY=PATH, got %q\n", spec)
+			os.Exit(1)
+		}
+		key := strings.TrimSpace(spec[:idx])
+		path := strings.TrimSpace(spec[idx+1:])
+		if key == "" || path == "" {
+			fmt.Fprintf(os.Stderr, "--input-file: KEY and PATH must be non-empty (got %q)\n", spec)
+			os.Exit(1)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error reading --input-file %s=%q: %v\n", key, path, err)
+			os.Exit(1)
+		}
+		if inputs == nil {
+			inputs = map[string]any{}
+		}
+		inputs[key] = string(data)
+	}
 
 	// Git integration: auto-detect based on workspace/cwd.
 	// If the workspace (or cwd) is a git repo, enable git worktrees and commits.
@@ -522,6 +555,19 @@ func attractorRun(args []string) {
 			}
 			childArgs = append(childArgs, "--prompt-file", promptFile)
 		}
+		for _, spec := range inputFileSpecs {
+			// Resolve path component to absolute so the detach child (cwd =
+			// logs_root) can still find the file.
+			idx := strings.IndexByte(spec, '=')
+			if idx > 0 {
+				key := spec[:idx]
+				path := spec[idx+1:]
+				if abs, err := filepath.Abs(path); err == nil {
+					spec = key + "=" + abs
+				}
+			}
+			childArgs = append(childArgs, "--input-file", spec)
+		}
 		// Always forward an explicit --workspace to the child. If the caller
 		// didn't pass one, use the parent's cwd — otherwise the detach child
 		// (which launches with cwd = logs_root) would mistake the logs dir
@@ -593,6 +639,18 @@ func attractorRun(args []string) {
 		}
 	}
 	if validateOnly {
+		// Same required-input check as the normal run path. --validate
+		// gives false confidence if it skips this — the entire point of
+		// prelaunch validation is catching problems before launch.
+		if len(inputs) > 0 || graphDeclaredInputs(dotSource) {
+			g, _, parseErr := engine.Prepare(dotSource)
+			if parseErr == nil && g != nil {
+				if validErr := engine.ValidateRequiredInputs(g, inputs); validErr != nil {
+					fmt.Fprintln(os.Stderr, validErr)
+					os.Exit(1)
+				}
+			}
+		}
 		ctx, cleanupSignalCtx := signalCancelContext()
 		pf, err := engine.PreflightWithConfig(ctx, dotSource, cfg, engine.RunOptions{
 			RunID:         runID,

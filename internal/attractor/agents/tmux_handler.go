@@ -179,8 +179,15 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 		})
 	}
 
-	// Build and write the command.
-	command := tmpl.BuildCommand(prompt, exec.WorktreeDir, modelID)
+	// Build and write the command. Pass auth_method so the template can
+	// adjust args (e.g. claude omits --bare for cli_oauth, which is
+	// incompatible with OAuth). hasClass=false → empty authMethod →
+	// templates fall back to their default args.
+	authMethod := ""
+	if hasClass {
+		authMethod = cls.Result.AuthMethod()
+	}
+	command := tmpl.BuildCommand(prompt, exec.WorktreeDir, modelID, authMethod)
 	// When the template produces structured JSONL output, redirect it to a
 	// known file so the log parser can find it without hunting through
 	// tool-specific directories.

@@ -145,7 +145,7 @@ exit 0
 	reg.Register(templates.Template{
 		Name:   "claude",
 		Binary: script,
-		BuildArgs: func(prompt, workDir, modelID string) []string {
+		BuildArgs: func(prompt, workDir, modelID, _ string) []string {
 			return []string{prompt, modelID}
 		},
 		BuildEnv: func() map[string]string {

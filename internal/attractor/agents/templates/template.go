@@ -7,10 +7,16 @@ import (
 )
 
 // Template defines how to invoke a specific CLI agent tool.
+//
+// authMethod (passed through BuildArgs/BuildCommand) is the resolved
+// auth method for the run — currently "cli_oauth" or "api_key", or
+// "" for legacy stylesheet paths that don't go through the resolver.
+// Most templates can ignore it; claude uses it to decide whether to
+// include the --bare flag, which is incompatible with OAuth.
 type Template struct {
 	Name             string // tool name (e.g. "claude", "codex")
 	Binary           string // executable name
-	BuildArgs        func(prompt, workDir, model string) []string
+	BuildArgs        func(prompt, workDir, model, authMethod string) []string
 	BuildEnv         func() map[string]string
 	PrepareSession   func(stageDir string, env map[string]string) error // optional pre-session setup (e.g. write config files)
 	StructuredOutput bool                                               // when true, command output is JSONL; handler redirects to agent_output.jsonl
@@ -38,8 +44,8 @@ type StartupDialog struct {
 }
 
 // BuildCommand constructs the full command string for the template.
-func (t *Template) BuildCommand(prompt, workDir, model string) string {
-	args := t.BuildArgs(prompt, workDir, model)
+func (t *Template) BuildCommand(prompt, workDir, model, authMethod string) string {
+	args := t.BuildArgs(prompt, workDir, model, authMethod)
 	// Simple shell-safe joining for the tmux respawn-pane command.
 	parts := make([]string, 0, len(args)+1)
 	parts = append(parts, t.Binary)

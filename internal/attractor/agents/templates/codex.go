@@ -13,7 +13,7 @@ func Codex() Template {
 		Name:       "codex",
 		Binary:     "codex",
 		LogLocator: &agentlog.CodexLogLocator{},
-		BuildArgs: func(prompt, workDir, model string) []string {
+		BuildArgs: func(prompt, workDir, model, _ string) []string {
 			args := []string{"exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-c", "web_search=\"disabled\""}
 			if model != "" {
 				args = append(args, "--model", model)

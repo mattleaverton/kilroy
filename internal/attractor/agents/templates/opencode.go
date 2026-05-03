@@ -16,7 +16,7 @@ func OpenCode() Template {
 		Name:       "opencode",
 		Binary:     "opencode",
 		LogLocator: &agentlog.OpenCodeLogLocator{},
-		BuildArgs: func(prompt, workDir, model string) []string {
+		BuildArgs: func(prompt, workDir, model, _ string) []string {
 			args := []string{"run", "--format", "json", "--pure"}
 			if model != "" {
 				// opencode uses provider/model format (e.g. "anthropic/claude-sonnet-4-5").
