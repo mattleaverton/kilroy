@@ -158,6 +158,33 @@ llm:
       backend: cli
 ```
 
+### Auth Resolution (v2)
+
+Kilroy v2 routes credentials via an explicit chain config, NOT via canonical env vars. The picture in one paragraph: user/project `auth.toml` declares named chains (each chain is a list of credential sources for one `(provider, method)` pair); workflow packages declare classes that the policy resolver maps to a `(provider, method, tool?)` requirement; the auth resolver picks one chain's first usable source; that source is what the SDK or CLI actually uses at runtime.
+
+Setup on a new machine:
+
+```bash
+kilroy auth defaults              # see what kilroy supports (TOML template)
+kilroy auth init                  # generate ~/.config/kilroy/auth.toml from detection
+kilroy auth check                 # verify every chain has a usable source
+```
+
+`kilroy auth init` discovers env vars + CLI sessions on the machine, intersects with built-in templates, writes a config that lists detected sources as active TOML and undetected ones as TOML comments. The config is the only runtime source — there are no compiled-in defaults; missing config fails prelaunch with `auth init` as remediation.
+
+Per-driver materialization (the load-bearing part):
+
+- `claude_cli` and `codex_cli` and `gemini_cli` (cli_oauth route): the binder returns `EnvScrub` listing canonical env var names that must be unset in the child process. The tmux command is wrapped in `env -u VAR1 -u VAR2 ...` — without this, a stray `ANTHROPIC_API_KEY` in shell would silently make the CLI use the env key instead of the logged-in subscription session (silent wrong-billing). The scrub is what makes the CLI route trustworthy.
+- `anthropic_sdk`/`openai_sdk`/`google_sdk` (api_key route): the resolved credential value is passed directly to the SDK constructor. The cached client (which reads canonical env vars) is bypassed for class-routed calls; the new credential-aware adapter is registered for the call duration.
+
+The `_KILROY` env var convention: each api_key chain ships with `<PROVIDER>_API_KEY_KILROY` listed before the canonical name in source order. This lets you keep a kilroy-specific budget separate from your daily Claude/Codex/Gemini CLI use without hand-editing any config.
+
+Snapshot semantics: prelaunch resolves each agentic node's class once and writes `<logs_root>/prelaunch_snapshots.json`. Execution reads from that snapshot rather than re-resolving — so env or config drift between prelaunch and node execution can't silently change the route. The source value is re-read from env at execution time (so a vanished env var fails decisively) but the source identity is frozen.
+
+Failure modes (all decisive — no silent fallback): `ErrNoConfig`, `ErrNoChainForRequirement`, `ErrAmbiguousAuthChain`, `ErrChainExhausted`, `ErrSourceVanished`, `ErrUnknownChain`. Full walkthrough at `docs/auth.md`; design at `docs/plans/2026-05-02-auth-class-resolver-integration.md`.
+
+What's NOT covered: `opencode` (multi-provider tool with its own DB; outside the binder model), bare `kilroy attractor run` without `agent_class=` on agent nodes (legacy stylesheet routing skips the resolver).
+
 ### PR Review Process
 
 For PRs we want to accept: check out the PR branch into a worktree, review, add fix-up commits, then non-squash merge — this preserves contributor credit while maintaining code quality.
