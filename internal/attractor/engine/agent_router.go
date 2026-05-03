@@ -26,7 +26,9 @@ import (
 	"github.com/danshapiro/kilroy/internal/llm/providers/anthropic"
 	"github.com/danshapiro/kilroy/internal/llm/providers/google"
 	"github.com/danshapiro/kilroy/internal/llm/providers/openai"
+	"github.com/danshapiro/kilroy/internal/llm/providers/openaicompat"
 	"github.com/danshapiro/kilroy/internal/llmclient"
+	"github.com/danshapiro/kilroy/internal/providerspec"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
@@ -352,22 +354,35 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 }
 
 // overrideProviderAdapter registers a credential-aware adapter for the
-// given provider on c, replacing whatever was there. Falls through to
-// no-op for providers without a hardcoded adapter case (transitional —
-// long-term this should consult provider-spec for adapter construction).
+// given provider on c, replacing whatever was there. Dispatches on the
+// runtime's API protocol — same shape as newAPIClientFromProviderRuntimes
+// (single source of truth for adapter construction). Providers without
+// runtime config or non-API backends are no-ops; unsupported protocols
+// silently leave the cached adapter in place (downstream calls would
+// surface a clearer error than partial-construction here).
 func overrideProviderAdapter(c *llm.Client, runtimes map[string]ProviderRuntime, provider, value string) {
 	rt, hasRT := runtimes[provider]
-	var baseURL string
-	if hasRT && rt.Backend == BackendAPI {
-		baseURL = resolveBuiltInBaseURLOverride(provider, rt.API.DefaultBaseURL)
+	if !hasRT || rt.Backend != BackendAPI {
+		return
 	}
-	switch provider {
-	case "anthropic":
+	baseURL := resolveBuiltInBaseURLOverride(provider, rt.API.DefaultBaseURL)
+	switch rt.API.Protocol {
+	case providerspec.ProtocolAnthropicMessages:
 		c.Register(anthropic.NewWithProvider(provider, value, baseURL))
-	case "openai":
+	case providerspec.ProtocolOpenAIResponses:
 		c.Register(openai.NewWithProvider(provider, value, baseURL))
-	case "google":
+	case providerspec.ProtocolGoogleGenerateContent:
 		c.Register(google.NewWithProvider(provider, value, baseURL))
+	case providerspec.ProtocolOpenAIChatCompletions:
+		c.Register(openaicompat.NewAdapter(openaicompat.Config{
+			Provider:     provider,
+			APIKey:       value,
+			BaseURL:      baseURL,
+			Path:         rt.API.DefaultPath,
+			OptionsKey:   rt.API.ProviderOptionsKey,
+			ExtraHeaders: rt.APIHeaders(),
+		}))
+		// ProtocolCodexAppServer takes no api key (uses session); skip override.
 	}
 }
 
