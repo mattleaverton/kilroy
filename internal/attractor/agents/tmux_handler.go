@@ -16,7 +16,6 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
-	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
 const kilroySocket = "kilroy"
@@ -122,7 +121,7 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	_ = os.MkdirAll(stageDir, 0o755)
 	var envScrub []string
 	if hasClass {
-		bindResult, err := materializeCredential(cls, stageDir)
+		bindResult, err := materializeCredential(cls, exec, stageDir)
 		if err != nil {
 			return runtime.Outcome{
 				Status:        runtime.StatusFail,
@@ -524,32 +523,31 @@ func shellQuoteSimple(s string) string {
 
 // materializeCredential turns a class resolution into per-driver credential
 // artifacts: env vars to set, env vars to scrub from the child env, and
-// any per-stage files to write. The driver-specific dispatch lives in
-// engine/credential_binder.go; here we just bind the snapshot to a fresh
-// Credential and call it.
+// any per-stage files to write.
+//
+// Re-runs binding.Resolver.Bind against a freshly-constructed resolver so
+// that vanished sources (env var unset OR CLI session expired between
+// prelaunch and execution) are caught decisively. Then dispatches to the
+// per-driver materializer (engine/credential_binder.go).
 //
 // Critically, claude_cli's binder returns EnvScrub=["ANTHROPIC_API_KEY"]
-// so the CLI uses the logged-in subscription session rather than silently
-// falling through to the env key.
-func materializeCredential(cls engine.ClassResolution, stageDir string) (engine.BindResult, error) {
+// (and codex_cli scrubs OPENAI_API_KEY) so the CLI uses the logged-in
+// subscription session rather than silently falling through to the env key.
+func materializeCredential(cls engine.ClassResolution, exec *engine.Execution, stageDir string) (engine.BindResult, error) {
 	snap := cls.Result.AuthSnapshot
-	// Construct a fresh Credential from the snapshot at execution time —
-	// per plan §5, source values are re-read fresh, never carried in the
-	// snapshot itself.
-	var cred binding.Credential
-	cred.Snapshot = snap
-	switch snap.Source.Kind {
-	case binding.SourceEnvVar:
-		val := os.Getenv(snap.Source.Name)
-		if val == "" {
-			return engine.BindResult{}, fmt.Errorf(
-				"auth source %s vanished between prelaunch and execution",
-				snap.Source.Name,
-			)
-		}
-		cred.Value = val
-	case binding.SourceCLISession:
-		cred.CLITool = snap.Source.Tool
+	// Construct a resolver so Bind can re-check the source's reachability
+	// (env_var present, or cli_session still ok) at execution time.
+	projectRoot := ""
+	if exec != nil {
+		projectRoot = strings.TrimSpace(exec.WorktreeDir)
+	}
+	resolver, err := engine.DefaultBindingResolver(projectRoot)
+	if err != nil {
+		return engine.BindResult{}, fmt.Errorf("auth resolver at execution: %w", err)
+	}
+	cred, err := resolver.Bind(snap)
+	if err != nil {
+		return engine.BindResult{}, err
 	}
 	return engine.Bind(cls.Driver, snap, cred, stageDir)
 }
