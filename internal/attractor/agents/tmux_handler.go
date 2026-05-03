@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danshapiro/kilroy/internal/attractor/agentbackend"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/agentlog"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/tmux"
@@ -298,10 +299,20 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	exitCode := h.Tmux.PaneExitStatus(sessionName)
 
 	// When structured output was redirected to a file, the pane is empty.
-	// Extract the response text from the JSONL and also save the raw JSONL.
+	// Extract the response text from the JSONL via the unified
+	// agentbackend codec (Block 6 Step 3) — same TurnEvent surface every
+	// codec produces, so response.md generation is no longer keyed on
+	// per-tool extractor logic. Falls through to legacy agentlog
+	// extractor for tools the new codec doesn't yet cover (opencode).
 	if tmpl.StructuredOutput {
 		if jsonlData, err := os.ReadFile(agentOutputPath); err == nil {
-			responseText := agentlog.ExtractResponseText(tmpl.Name, jsonlData)
+			responseText := agentbackend.ParseAndExtractText(tmpl.Name, jsonlData)
+			if responseText == "" {
+				// Codec returned empty (unknown tool, parse hiccup) —
+				// preserve the legacy extractor as a safety net so a
+				// regression here doesn't blank response.md.
+				responseText = agentlog.ExtractResponseText(tmpl.Name, jsonlData)
+			}
 			if responseText != "" {
 				output = responseText
 			}

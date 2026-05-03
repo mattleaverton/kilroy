@@ -458,7 +458,6 @@ func overrideProviderAdapter(c *llm.Client, runtimes map[string]ProviderRuntime,
 	}
 }
 
-
 // cloneLLMClient produces a shallow copy of an llm.Client suitable for
 // per-call adapter overrides. The underlying provider adapters are shared
 // (they're stateless per request); only the registry map is duplicated so
