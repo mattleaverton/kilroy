@@ -19,6 +19,10 @@ func attractorReview(args []string) {
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "-h", "--help", "help":
+			fmt.Fprintln(os.Stderr, "usage:")
+			fmt.Fprintln(os.Stderr, "  kilroy review --graph <file.dot> [--output <file> | -o <file>] [--json] [--max-turns <n>]")
+			os.Exit(0)
 		case "--graph":
 			i++
 			if i >= len(args) {

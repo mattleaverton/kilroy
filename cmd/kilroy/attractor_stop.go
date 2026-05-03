@@ -28,7 +28,24 @@ func attractorStop(args []string) {
 	os.Exit(runAttractorStop(args, os.Stdout, os.Stderr))
 }
 
+func stopUsage(out io.Writer) {
+	fmt.Fprintln(out, "usage:")
+	fmt.Fprintln(out, "  kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  --logs-root <dir>   the run's logs directory (required)")
+	fmt.Fprintln(out, "  --grace-ms <ms>     wait up to <ms> after SIGTERM before giving up (default 5000)")
+	fmt.Fprintln(out, "  --force             after grace expires, escalate to SIGKILL")
+}
+
 func runAttractorStop(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			stopUsage(stderr)
+			return 0
+		}
+	}
+
 	var logsRoot string
 	grace := 5 * time.Second
 	force := false

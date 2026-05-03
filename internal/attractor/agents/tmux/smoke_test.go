@@ -1,6 +1,6 @@
 // Smoke tests that spawn real CLI tools via tmux.
-// Skipped in CI (require API keys and installed CLI tools).
-// Run manually with: go test -run TestSmoke -v -timeout 120s
+// Skipped in CI: require KILROY_TMUX_SMOKE=1, an API key, and the CLI binary.
+// Run manually with: KILROY_TMUX_SMOKE=1 go test -run TestSmoke -v -timeout 120s
 package tmux
 
 import (
@@ -18,6 +18,9 @@ func hasBinary(name string) bool {
 }
 
 func TestSmoke_Claude_PrintMode(t *testing.T) {
+	if os.Getenv("KILROY_TMUX_SMOKE") == "" {
+		t.Skip("KILROY_TMUX_SMOKE not set")
+	}
 	if os.Getenv("ANTHROPIC_API_KEY") == "" {
 		t.Skip("ANTHROPIC_API_KEY not set")
 	}
@@ -50,6 +53,9 @@ func TestSmoke_Claude_PrintMode(t *testing.T) {
 }
 
 func TestSmoke_Codex_PrintMode(t *testing.T) {
+	if os.Getenv("KILROY_TMUX_SMOKE") == "" {
+		t.Skip("KILROY_TMUX_SMOKE not set")
+	}
 	if os.Getenv("OPENAI_API_KEY") == "" {
 		t.Skip("OPENAI_API_KEY not set")
 	}
@@ -62,7 +68,7 @@ func TestSmoke_Codex_PrintMode(t *testing.T) {
 	defer mgr.DestroySession(name)
 
 	s, err := mgr.CreateSession(name, "/tmp",
-		"codex --full-auto 'Say exactly: KILROY_SMOKE_OK'",
+		"codex exec --sandbox workspace-write 'Say exactly: KILROY_SMOKE_OK'",
 		map[string]string{"OPENAI_API_KEY": os.Getenv("OPENAI_API_KEY")})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)

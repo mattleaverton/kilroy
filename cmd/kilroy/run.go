@@ -15,14 +15,14 @@ import (
 
 // runCmd implements `kilroy run` with two argument shapes:
 //
-//   1. Workflow mode: `kilroy run <workflow-name> [flags]` — resolves
-//      <workflow-name> via filesystem discovery and forwards with
-//      --package <dir>.
+//  1. Workflow mode: `kilroy run <workflow-name> [flags]` — resolves
+//     <workflow-name> via filesystem discovery and forwards with
+//     --package <dir>.
 //
-//   2. Direct mode: `kilroy run --graph <file.dot>` or
-//      `kilroy run --package <dir>` — flags pass straight through to
-//      the engine. Used by automation that targets ad-hoc graphs
-//      without packaging them as workflows.
+//  2. Direct mode: `kilroy run --graph <file.dot>` or
+//     `kilroy run --package <dir>` — flags pass straight through to
+//     the engine. Used by automation that targets ad-hoc graphs
+//     without packaging them as workflows.
 //
 // A leading flag (starts with "-") routes to direct mode; otherwise the
 // first positional is treated as a workflow name. Direct mode exposes

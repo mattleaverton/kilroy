@@ -14,7 +14,7 @@ Use the knowledge you've gained from the failure to make the system more robust 
 Of course, **specific user instructions may override this**, or any other section.
 
 # Think like a user
-Think about a blank slate agent that is trying to properly create a dotfile using the dotfile skill and then run it with the attractor. What mistakes would it make? What ergonomics would steer it away? How can you make that robust for every possible project the attractor could work on, not just this one? **How can you do that without asking it to know the impossible, like how hard a problem is or how long something might take?**
+Think about a blank slate agent that is trying to properly create a dotfile using the dotfile skill and then run it with kilroy. What mistakes would it make? What ergonomics would steer it away? How can you make that robust for every possible project kilroy could work on, not just this one? **How can you do that without asking it to know the impossible, like how hard a problem is or how long something might take?**
 
 ## Canonical Specs
 
@@ -27,7 +27,7 @@ These three specs are the true north for system design. If you are making a chan
 - **Coding Agent Loop Spec** (`docs/strongdm/attractor/coding-agent-loop-spec.md`): Turn-based agentic loop — pairs an LLM with developer tools (file edit, shell, search, glob, grep) through repeated LLM-call → tool-execution cycles with context truncation, subagent spawning, and event-driven observation. Key implementation: `internal/agent/` (session.go for the loop, tool_registry.go for tool dispatch, profile.go for provider-specific toolsets, env_local.go for filesystem/shell execution, events.go for the event bus).
 
 ## Project Structure & Module Organization
-- `cmd/kilroy/`: CLI entrypoint and subcommands for `attractor` commands (`run`, `resume`, `status`, `stop`, `validate`, `ingest`).
+- `cmd/kilroy/`: CLI entrypoint and subcommands (`run`, `runs`, `resume`, `status`, `stop`, `validate`, `ingest`, `workflows`, `auth`, `policy`, `serve`, `review`, `modeldb`).
 - `internal/attractor/`: core engine/runtime, graph validation, config loading, and model metadata handling.
 - `internal/agent/`, `internal/cxdb/`, `internal/llmclient/`: coding-agent loop, CXDB integration, and provider client/env wiring.
 - `scripts/`: operational helpers (`e2e.sh`, `e2e-guardrail-matrix.sh`, `start-cxdb.sh`, `run_benchmarks.sh`).
@@ -114,7 +114,7 @@ Use explicit run configs and flags so the mode is unambiguous:
 
 #### Long Runs (Detached)
 
-For long `attractor run`/`resume` jobs, launch detached so the parent shell/session ending does not kill Kilroy:
+For long `kilroy run`/`kilroy resume` jobs, launch detached so the parent shell/session ending does not kill Kilroy:
 
 ```bash
 RUN_ROOT=/path/to/run_root

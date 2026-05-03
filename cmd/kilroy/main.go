@@ -862,6 +862,9 @@ func attractorValidate(args []string) {
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "-h", "--help", "help":
+			validateUsage()
+			os.Exit(0)
 		case "--graph":
 			i++
 			if i >= len(args) {
@@ -896,7 +899,7 @@ func attractorValidate(args []string) {
 	}
 
 	if graphPath == "" {
-		usage()
+		validateUsage()
 		os.Exit(1)
 	}
 	dotSource, err := os.ReadFile(graphPath)
@@ -1040,6 +1043,9 @@ func attractorResume(args []string) {
 	var repoPath string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "-h", "--help", "help":
+			resumeUsage()
+			os.Exit(0)
 		case "--logs-root":
 			i++
 			if i >= len(args) {
@@ -1119,4 +1125,27 @@ func attractorResume(args []string) {
 		os.Exit(0)
 	}
 	os.Exit(1)
+}
+
+func validateUsage() {
+	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  kilroy validate --graph <file.dot> [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy validate --batch <file.dot> ... [--json]")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  --graph <file.dot>   single-file mode")
+	fmt.Fprintln(os.Stderr, "  --batch <file.dot> … multi-file mode (consume remaining .dot args)")
+	fmt.Fprintln(os.Stderr, "  --json               machine-readable output (batch only)")
+}
+
+func resumeUsage() {
+	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  kilroy resume --logs-root <dir>")
+	fmt.Fprintln(os.Stderr, "  kilroy resume --cxdb <http_base_url> --context-id <id>")
+	fmt.Fprintln(os.Stderr, "  kilroy resume --run-branch <attractor/run/...> [--repo <path>]")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  --logs-root <dir>      resume from on-disk run state")
+	fmt.Fprintln(os.Stderr, "  --cxdb <url>           resume from a CXDB context")
+	fmt.Fprintln(os.Stderr, "  --context-id <id>      CXDB context id (with --cxdb)")
+	fmt.Fprintln(os.Stderr, "  --run-branch <branch>  resume from a run branch in the git repo")
+	fmt.Fprintln(os.Stderr, "  --repo <path>          repo path (with --run-branch; default: cwd)")
 }

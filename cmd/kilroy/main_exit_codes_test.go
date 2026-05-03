@@ -706,7 +706,7 @@ modeldb:
 		t,
 		bin,
 		"\n",
-				"run",
+		"run",
 		"--validate",
 		"--graph",
 		graph,

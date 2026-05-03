@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -102,17 +103,19 @@ func parseIngestArgs(args []string) (*ingestOptions, error) {
 }
 
 func attractorIngest(args []string) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			ingestUsage(os.Stderr)
+			os.Exit(0)
+		}
+	}
+
 	opts, err := parseIngestArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "usage: kilroy ingest [flags] <requirements>")
-		fmt.Fprintln(os.Stderr, "  --output, -o    Output .dot file path (default: stdout)")
-		fmt.Fprintf(os.Stderr, "  --model         LLM model (default: %s)\n", modelmeta.DefaultAnthropicModel)
-		fmt.Fprintln(os.Stderr, "  --skill         Path to skill .md file (default: repo/binary auto-detect)")
-		fmt.Fprintln(os.Stderr, "  --repo          Repository root (default: cwd)")
-		fmt.Fprintln(os.Stderr, "  --max-turns     Max agentic turns for Claude (default: 15)")
-		fmt.Fprintln(os.Stderr, "  --no-validate   Skip .dot validation")
+		ingestUsage(os.Stderr)
 		os.Exit(1)
 	}
 
@@ -131,6 +134,16 @@ func attractorIngest(args []string) {
 	} else {
 		fmt.Print(dotContent)
 	}
+}
+
+func ingestUsage(out io.Writer) {
+	fmt.Fprintln(out, "usage: kilroy ingest [flags] <requirements>")
+	fmt.Fprintln(out, "  --output, -o    Output .dot file path (default: stdout)")
+	fmt.Fprintf(out, "  --model         LLM model (default: %s)\n", modelmeta.DefaultAnthropicModel)
+	fmt.Fprintln(out, "  --skill         Path to skill .md file (default: repo/binary auto-detect)")
+	fmt.Fprintln(out, "  --repo          Repository root (default: cwd)")
+	fmt.Fprintln(out, "  --max-turns     Max agentic turns for Claude (default: 15)")
+	fmt.Fprintln(out, "  --no-validate   Skip .dot validation")
 }
 
 func resolveDefaultIngestSkillPath(repoPath string) string {

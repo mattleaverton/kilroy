@@ -4,10 +4,10 @@ Kilroy is a local-first CLI for running StrongDM-style Attractor pipelines in a 
 
 High-level flow:
 
-1. Convert English requirements to a Graphviz DOT pipeline (`attractor ingest`).
-2. Validate graph structure and semantics (`attractor validate`).
-3. Execute node-by-node with coding agents in an isolated git worktree (`attractor run`).
-4. Resume interrupted runs from logs, CXDB, or run branch (`attractor resume`).
+1. Convert English requirements to a Graphviz DOT pipeline (`kilroy ingest`).
+2. Validate graph structure and semantics (`kilroy validate`).
+3. Execute node-by-node with coding agents in an isolated git worktree (`kilroy run`).
+4. Resume interrupted runs from logs, CXDB, or run branch (`kilroy resume`).
 
 ## Installation
 
@@ -62,16 +62,16 @@ This implementation is based on the Attractor specification by StrongDM at `http
 | Provider support | Conceptual provider abstraction | Provider plug-in runtime with built-ins: OpenAI, Anthropic, Google, Kimi, ZAI, Minimax |
 | Backend selection | Spec allows flexible backend choices | Backend is mandatory per provider (`api`/`cli`), no implicit defaults |
 | Checkpointing + persistence | Attractor/CXDB contracts | Required git branch/worktree/commit-per-node and concrete artifact layout |
-| Ingestion | Ingestor behavior described in spec docs | `attractor ingest` implementation: Claude CLI + `create-dotfile` skill |
+| Ingestion | Ingestor behavior described in spec docs | `kilroy ingest` implementation: Claude CLI + `create-dotfile` skill |
 
 ## Prerequisites
 
 - Go 1.25+
 - Git repo with at least one commit
-- Clean working tree before `attractor run`/`resume`
+- Clean working tree before `kilroy run`/`kilroy resume`
 - CXDB reachable over binary + HTTP endpoints (or configure `cxdb.autostart`)
 - Provider access for any provider used in your graph
-- `claude` CLI for `attractor ingest` (or set `KILROY_CLAUDE_PATH`)
+- `claude` CLI for `kilroy ingest` (or set `KILROY_CLAUDE_PATH`)
 
 ## Quickstart
 
@@ -224,18 +224,16 @@ llm:
 ./kilroy run --graph pipeline.dot --config run.yaml --allow-test-shim
 ```
 
-Preflight-only run (validate everything, do not start execution):
+Validate-only run (validate everything, do not start execution):
 
 ```bash
-./kilroy run --graph pipeline.dot --config run.yaml --preflight
-./kilroy run --graph pipeline.dot --config run.yaml --test-run
+./kilroy run --graph pipeline.dot --config run.yaml --validate
 ```
 
-Preflight-only mode contract:
+Validate-only mode contract:
 
-- `--test-run` is an alias of `--preflight`.
-- It still enforces normal startup safety gates (stale-build confirmation, CLI headless warning, `--allow-test-shim` policy, provider/model preflight, CXDB readiness unless `--no-cxdb`).
-- It writes `{logs_root}/preflight_report.json`.
+- It still enforces normal startup safety gates (stale-build confirmation, CLI headless warning, `--allow-test-shim` policy, provider/model validation, CXDB readiness unless `--no-cxdb`).
+- It writes `{logs_root}/prelaunch_validation.json`.
 - It does not start traversal or stage execution.
 - These are absent by design: `final.json`, `checkpoint.json`, `manifest.json`, `run.pid`, `worktree/`, run branch traversal.
 
@@ -388,7 +386,7 @@ review [shape=box, reasoning_effort=high, prompt="..."]
 Typical run-level artifacts under `{logs_root}`:
 
 - `graph.dot`
-- `preflight_report.json`
+- `prelaunch_validation.json`
 - `manifest.json`
 - `checkpoint.json`
 - `final.json`
@@ -409,7 +407,7 @@ Typical stage-level artifacts under `{logs_root}/{node_id}`:
 ## Commands
 
 ```text
-kilroy run [--preflight|--test-run] [--allow-test-shim] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]
+kilroy run [--validate] [--allow-test-shim] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]
 kilroy resume --logs-root <dir>
 kilroy resume --cxdb <http_base_url> --context-id <id>
 kilroy resume --run-branch <attractor/run/...> [--repo <path>]

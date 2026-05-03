@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# validate-dot.sh — PostToolUse hook for kilroy attractor .dot file validation
+# validate-dot.sh — PostToolUse hook for kilroy .dot file validation
 #
 # Triggered by Claude Code after any Write or Edit tool call.
 # Reads JSON from stdin (Claude Code hook protocol), extracts file_path,
-# and if the file ends in .dot, runs kilroy attractor validate --graph.
+# and if the file ends in .dot, runs `kilroy validate --graph`.
 #
 # Exit codes (PostToolUse semantics):
 #   0 — clean or no-op; Claude continues normally
@@ -69,11 +69,11 @@ fi
 
 # Run validation. Capture stdout and stderr separately to avoid injecting
 # debug/progress stderr into agent feedback when the graph is valid.
-# kilroy attractor validate prints:
+# kilroy validate prints:
 #   stdout: "ok: <file>" on success; "WARNING/ERROR: <msg> (<rule>)" for diagnostics
 #   stderr: error details on fatal failure; exits non-zero
 EXIT_CODE=0
-STDOUT=$("$KILROY_BIN" attractor validate --graph "$FILE_PATH" 2>/tmp/kilroy_validate_err_$$) || EXIT_CODE=$?
+STDOUT=$("$KILROY_BIN" validate --graph "$FILE_PATH" 2>/tmp/kilroy_validate_err_$$) || EXIT_CODE=$?
 STDERR=$(cat /tmp/kilroy_validate_err_$$); rm -f /tmp/kilroy_validate_err_$$
 
 # Strip the "ok: <file>" success line — that is expected and not actionable.
@@ -88,7 +88,7 @@ fi
 # PostToolUse hooks must use exit 2 + stderr; stdout on exit 0 is not injected
 # into the agent context.
 if [ -n "$FEEDBACK" ]; then
-    printf 'kilroy attractor validate found issues in %s — please repair before continuing:\n\n%s\n' \
+    printf 'kilroy validate found issues in %s — please repair before continuing:\n\n%s\n' \
         "$FILE_PATH" "$FEEDBACK" >&2
     exit 2
 fi

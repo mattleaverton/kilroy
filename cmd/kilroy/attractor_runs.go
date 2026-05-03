@@ -21,6 +21,9 @@ func attractorRuns(args []string) {
 		os.Exit(1)
 	}
 	switch args[0] {
+	case "-h", "--help", "help":
+		runsUsage()
+		os.Exit(0)
 	case "list":
 		attractorRunsList(args[1:])
 	case "show":

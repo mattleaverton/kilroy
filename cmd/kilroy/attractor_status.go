@@ -14,12 +14,38 @@ func attractorStatus(args []string) {
 	os.Exit(runAttractorStatus(args, os.Stdout, os.Stderr))
 }
 
+func statusUsage(out io.Writer) {
+	fmt.Fprintln(out, "usage:")
+	fmt.Fprintln(out, "  kilroy status (--logs-root <dir> | --latest | --run <id>)")
+	fmt.Fprintln(out, "                [--json] [--follow|-f] [--watch] [--cxdb] [--raw]")
+	fmt.Fprintln(out, "                [--interval <sec>] [--verbose|-v]")
+	fmt.Fprintln(out, "")
+	fmt.Fprintln(out, "  --logs-root <dir>   inspect a specific run's logs directory")
+	fmt.Fprintln(out, "  --latest            shorthand for the most recent run's logs_root")
+	fmt.Fprintln(out, "  --run <id>          supervisor assessment from the run database")
+	fmt.Fprintln(out, "  --follow,-f         tail progress.ndjson (or CXDB if configured)")
+	fmt.Fprintln(out, "  --watch             repeated snapshot (mutually exclusive with --follow)")
+	fmt.Fprintln(out, "  --interval <sec>    poll interval for --watch (default 2)")
+	fmt.Fprintln(out, "  --cxdb              follow CXDB instead of auto-detect")
+	fmt.Fprintln(out, "  --raw               print raw events when following")
+	fmt.Fprintln(out, "  --json              JSON output for snapshot/watch")
+	fmt.Fprintln(out, "  --verbose,-v        more detail in snapshot")
+}
+
 // loadSnapshot wraps runstate.LoadSnapshot for reuse.
 func loadSnapshot(logsRoot string) (*runstate.Snapshot, error) {
 	return runstate.LoadSnapshot(logsRoot)
 }
 
 func runAttractorStatus(args []string, stdout io.Writer, stderr io.Writer) int {
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			statusUsage(stderr)
+			return 0
+		}
+	}
+
 	var logsRoot string
 	var asJSON bool
 	var follow bool

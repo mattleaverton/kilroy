@@ -19,7 +19,7 @@ Kilroy is a local-first Attractor runner:
 Use these exact command forms:
 
 ```text
-kilroy run [--preflight|--test-run] [--detach] [--tmux] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--force-model <provider=model>] [--graph <file.dot>] [--package <dir>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>] [--input <json-or-path>] [--prompt-file <path>] [--label KEY=VALUE]
+kilroy run [<workflow-name>] [--validate] [--detach] [--tmux] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--force-model <provider=model>] [--graph <file.dot>] [--package <dir>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>] [--input <json-or-path>] [--prompt-file <path>] [--label KEY=VALUE]
 kilroy resume --logs-root <dir>
 kilroy resume --cxdb <http_base_url> --context-id <id>
 kilroy resume --run-branch <attractor/run/...> [--repo <path>]
@@ -67,10 +67,10 @@ kilroy validate --graph pipeline.dot
 kilroy run --graph pipeline.dot --config run.yaml
 ```
 
-Optional preflight-only check (validates all preflights, no stage execution):
+Optional validate-only check (validates everything, no stage execution):
 
 ```bash
-kilroy run --graph pipeline.dot --config run.yaml --preflight
+kilroy run --graph pipeline.dot --config run.yaml --validate
 ```
 
 5. If interrupted, resume from the most convenient source:
@@ -85,11 +85,11 @@ kilroy resume --logs-root <path>
 ./kilroy run --detach --graph pipeline.dot --config run.yaml --run-id <run_id> --logs-root <logs_root>
 ```
 
-7. Observe run health and preflight behavior:
+7. Observe run health and prelaunch validation:
 
 ```bash
 ./kilroy status --logs-root <logs_root>
-cat <logs_root>/preflight_report.json
+cat <logs_root>/prelaunch_validation.json
 tail -f <logs_root>/progress.ndjson
 ```
 
@@ -340,7 +340,7 @@ Once a user asks you to run or launch a Kilroy pipeline, the following files are
 - Any model configuration (catalog files, model IDs in the graph)
 - The preferences file (`preferences.yaml`)
 
-If preflight or launch fails, **diagnose and present options** — never silently fix the inputs. See "Preflight Failure Playbook" below.
+If prelaunch validation or launch fails, **diagnose and present options** — never silently fix the inputs. See "Prelaunch Validation Failure Playbook" below.
 
 This guard applies from the moment you begin building or executing a `kilroy run` command until the user explicitly asks for changes. It does NOT apply during graph authoring/editing phases before a run is requested.
 
@@ -356,11 +356,11 @@ Execution rule:
 - Prefer detached launch for long-running jobs unless the user explicitly requests foreground execution.
 - Only stop to ask questions when required launch inputs are genuinely missing or contradictory (for example no graph path and no run config path).
 
-## Preflight Failure Playbook
+## Prelaunch Validation Failure Playbook
 
-When preflight checks fail, follow this sequence:
+When prelaunch checks fail, follow this sequence:
 
-1. **Read the preflight report**: `cat <logs_root>/preflight_report.json`
+1. **Read the validation report**: `cat <logs_root>/prelaunch_validation.json`
 2. **Diagnose** each failure/warning and identify the root cause.
 3. **Present options to the user** with your recommendation:
 
