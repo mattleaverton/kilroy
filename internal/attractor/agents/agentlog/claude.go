@@ -96,10 +96,10 @@ func claudeProjectDir(workDir string) string {
 
 // AgentEvent represents a parsed event from a CLI agent's conversation log.
 type AgentEvent struct {
-	Type    string         `json:"type"`    // tool_call, tool_result, text, thinking
-	Tool    string         `json:"tool"`    // tool name (for tool_call/tool_result)
-	Message string         `json:"msg"`     // human-readable summary
-	Data    map[string]any `json:"data"`    // structured payload
+	Type    string         `json:"type"` // tool_call, tool_result, text, thinking
+	Tool    string         `json:"tool"` // tool name (for tool_call/tool_result)
+	Message string         `json:"msg"`  // human-readable summary
+	Data    map[string]any `json:"data"` // structured payload
 }
 
 // ParseClaudeLog reads a Claude JSONL conversation file and returns structured events.

@@ -59,11 +59,11 @@ func OpenCode() Template {
 			env["OPENCODE_CONFIG_CONTENT"] = string(data)
 			return nil
 		},
-		PromptPrefix:    ">",
-		BusyIndicators:  []string{},
-		ProcessNames:    []string{"opencode"},
+		PromptPrefix:     ">",
+		BusyIndicators:   []string{},
+		ProcessNames:     []string{"opencode"},
 		StructuredOutput: true,
 		ExitsOnComplete:  true,
-		StartupTimeout:  15 * time.Second,
+		StartupTimeout:   15 * time.Second,
 	}
 }

@@ -103,7 +103,6 @@ func (e *Engine) CollectAndRecordOutputs() {
 	}
 }
 
-
 // parseOutputContract returns the list of declared output files from the node's
 // outputs attribute. Returns nil if the attribute is not set (no contract).
 func parseOutputContract(node *model.Node) []string {

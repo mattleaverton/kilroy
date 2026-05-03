@@ -53,11 +53,11 @@ func Codex() Template {
 			env["CODEX_HOME"] = codexHome
 			return nil
 		},
-		PromptPrefix:    "›",
-		BusyIndicators:  []string{"Working", "esc to interrupt"},
-		ProcessNames:    []string{"codex", "node"},
+		PromptPrefix:     "›",
+		BusyIndicators:   []string{"Working", "esc to interrupt"},
+		ProcessNames:     []string{"codex", "node"},
 		StructuredOutput: true,
 		ExitsOnComplete:  true, // exec mode exits on completion
-		StartupTimeout:  30 * time.Second,
+		StartupTimeout:   30 * time.Second,
 	}
 }

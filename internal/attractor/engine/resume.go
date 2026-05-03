@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/cxdb"

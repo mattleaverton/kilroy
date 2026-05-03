@@ -113,11 +113,11 @@ func minInt(a, b int) int {
 
 // LineWriter wraps a file and emits each complete line to the RunLog.
 type LineWriter struct {
-	file   *os.File
-	log    *RunLog
-	node   string
-	event  string // "stdout" or "stderr"
-	buf    []byte
+	file  *os.File
+	log   *RunLog
+	node  string
+	event string // "stdout" or "stderr"
+	buf   []byte
 }
 
 // NewLineWriter creates a writer that tees to file and emits lines to RunLog.
