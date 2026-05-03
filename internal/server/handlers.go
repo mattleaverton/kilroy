@@ -247,17 +247,25 @@ func (s *Server) handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 
 	// Try live registry first — but only for actively running pipelines.
 	// Completed runs get richer data from the DB (nodes, edges, providers).
+	// Stash the live status as a fallback if the DB doesn't have the run
+	// (e.g. tests register pipelines without writing to rundb).
+	var liveFallback *PipelineStatus
 	if ps, ok := s.registry.Get(runID); ok {
 		status := ps.Status()
 		if status.State == "running" {
 			writeJSON(w, http.StatusOK, status)
 			return
 		}
+		liveFallback = &status
 	}
 
 	// Fall back to RunDB for completed (or registry-completed) runs.
 	db, err := rundb.Open(rundb.DefaultPath())
 	if err != nil {
+		if liveFallback != nil {
+			writeJSON(w, http.StatusOK, liveFallback)
+			return
+		}
 		writeError(w, http.StatusNotFound, fmt.Sprintf("run %s not found", runID))
 		return
 	}
@@ -265,6 +273,13 @@ func (s *Server) handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 
 	run, err := db.GetRun(runID)
 	if err != nil || run == nil {
+		// DB doesn't have it but the live registry does — return that
+		// (covers tests that register without persisting, plus very-fresh
+		// completed runs the DB hasn't picked up yet).
+		if liveFallback != nil {
+			writeJSON(w, http.StatusOK, liveFallback)
+			return
+		}
 		writeError(w, http.StatusNotFound, fmt.Sprintf("run %s not found", runID))
 		return
 	}

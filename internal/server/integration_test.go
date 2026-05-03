@@ -387,11 +387,10 @@ func TestIntegration_SubmitValidation(t *testing.T) {
 			body:   `{}`,
 			expect: http.StatusBadRequest,
 		},
-		{
-			name:   "missing config_path",
-			body:   `{"dot_source":"digraph{}"}`,
-			expect: http.StatusBadRequest,
-		},
+		// "missing_config_path" subtest removed: config_path is now
+		// optional. When omitted, the server builds a DefaultRunConfig
+		// (same as the CLI zero-config path). Accepting the request
+		// with a 202 is the correct behavior.
 		{
 			name:   "invalid json",
 			body:   `{not json`,
