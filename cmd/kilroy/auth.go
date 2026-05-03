@@ -23,6 +23,10 @@ func authCmd(args []string) {
 		authList(args[1:])
 	case "suggest-fix":
 		authSuggestFix(args[1:])
+	case "defaults":
+		authDefaults(args[1:])
+	case "init":
+		authInitCmd(args[1:])
 	case "-h", "--help", "help":
 		authUsage()
 		os.Exit(0)
@@ -35,10 +39,14 @@ func authCmd(args []string) {
 
 func authUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
+	fmt.Fprintln(os.Stderr, "  kilroy auth defaults")
+	fmt.Fprintln(os.Stderr, "  kilroy auth init [--force] [--path <dir>] [--json|--pretty]")
 	fmt.Fprintln(os.Stderr, "  kilroy auth list [--pretty]")
 	fmt.Fprintln(os.Stderr, "  kilroy auth suggest-fix [<provider>]")
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "  list outputs JSON by default; pass --pretty for human-readable.")
+	fmt.Fprintln(os.Stderr, "  defaults prints the default_chains.toml template verbatim.")
+	fmt.Fprintln(os.Stderr, "  init     generates ~/.config/kilroy/auth.toml from the template.")
+	fmt.Fprintln(os.Stderr, "  list     outputs JSON by default; pass --pretty for human-readable.")
 }
 
 func authList(args []string) {
