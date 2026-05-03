@@ -152,6 +152,8 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 		return "openai", BackendCLI
 	case "openai_sdk":
 		return "openai", BackendAPI
+	case "gemini_cli":
+		return "google", BackendCLI
 	case "google_sdk":
 		return "google", BackendAPI
 	default:

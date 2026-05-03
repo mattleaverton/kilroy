@@ -241,6 +241,17 @@ description = "UI/UX design critique and frontend component generation."
 
   [[classes.frontend_aesthetic.chain]]
   model_id     = "gemini-2.5-pro"
+  driver       = "gemini_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:elite", "cross_provider"]
+    [classes.frontend_aesthetic.chain.requires]
+    provider = "google"
+    method   = "cli_oauth"
+    tool     = "gemini"
+
+  [[classes.frontend_aesthetic.chain]]
+  model_id     = "gemini-2.5-pro"
   driver       = "google_sdk"
   transport    = "http"
   history_sink = "jsonl_local"

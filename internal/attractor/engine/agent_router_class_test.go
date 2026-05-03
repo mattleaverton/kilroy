@@ -152,7 +152,7 @@ func TestAgentRouter_NoClass_FallsBackToStylesheet(t *testing.T) {
 }
 
 // TestProviderAndBackendForDriver_Table is a table-driven test of the
-// driver→(provider, BackendKind) mapping covering all 5 known drivers plus
+// driver→(provider, BackendKind) mapping covering all 6 known drivers plus
 // one unknown driver.
 func TestProviderAndBackendForDriver_Table(t *testing.T) {
 	tests := []struct {
@@ -164,6 +164,7 @@ func TestProviderAndBackendForDriver_Table(t *testing.T) {
 		{"anthropic_sdk", "anthropic", BackendAPI},
 		{"codex_cli", "openai", BackendCLI},
 		{"openai_sdk", "openai", BackendAPI},
+		{"gemini_cli", "google", BackendCLI},
 		{"google_sdk", "google", BackendAPI},
 		{"unknown_driver", "", ""},
 	}
