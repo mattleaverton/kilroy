@@ -114,8 +114,13 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	// binder. This applies env scrubs (claude_cli MUST scrub
 	// ANTHROPIC_API_KEY so the CLI uses the logged-in session, not the
 	// env key) and any required isolated config files (codex auth.json).
+	//
+	// EnvScrub is collected here and later used to wrap the tmux command
+	// in `env -u VAR1 -u VAR2 ...` — deleting from kilroy's env map is
+	// not enough because tmux new-session inherits the launcher env.
 	stageDir := filepath.Join(exec.LogsRoot, node.ID)
 	_ = os.MkdirAll(stageDir, 0o755)
+	var envScrub []string
 	if hasClass {
 		bindResult, err := materializeCredential(cls, stageDir)
 		if err != nil {
@@ -130,6 +135,7 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 		for _, name := range bindResult.EnvScrub {
 			delete(env, name)
 		}
+		envScrub = append(envScrub, bindResult.EnvScrub...)
 		for path, content := range bindResult.FilesToWrite {
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				return runtime.Outcome{
@@ -181,6 +187,24 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	agentOutputPath := filepath.Join(stageDir, "agent_output.jsonl")
 	if tmpl.StructuredOutput {
 		command = command + " > " + shellQuoteSimple(agentOutputPath) + " 2>&1"
+	}
+
+	// Wrap the command in `env -u VAR -u VAR2 ...` so the child process
+	// literally does not see scrubbed env vars. tmux new-session inherits
+	// the launcher's env, so deleting from our env map (above) is not
+	// enough — `env -u` is what actually unsets them in the child. This is
+	// the load-bearing wrong-billing prevention: claude_cli's binder
+	// scrubs ANTHROPIC_API_KEY here so the CLI uses the logged-in
+	// subscription session rather than silently using the env key.
+	if len(envScrub) > 0 {
+		var prefix strings.Builder
+		prefix.WriteString("env")
+		for _, name := range envScrub {
+			prefix.WriteString(" -u ")
+			prefix.WriteString(name)
+		}
+		prefix.WriteString(" ")
+		command = prefix.String() + command
 	}
 
 	// Run per-tool session preparation (e.g. write isolated config files).
