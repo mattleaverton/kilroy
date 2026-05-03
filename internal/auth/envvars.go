@@ -17,11 +17,26 @@ type envVarSpec struct {
 
 // envVarTable is ordered; aliases (GEMINI_API_KEY, GITHUB_TOKEN) follow their
 // primary counterparts so the emitted slice is naturally ordered.
+//
+// _KILROY-suffixed variants come first per provider so they're scanned and
+// emitted before the canonical names — this matches the resolver's chain
+// precedence (default templates list _KILROY first). Without these, `auth
+// list` would say no _KILROY var is present even when `auth check` resolves
+// to one — the inconsistency the reviewer flagged.
+//
+// GOOGLE_GENERATIVE_AI_API_KEY is included because Google SDKs accept it as
+// equivalent to GOOGLE_API_KEY/GEMINI_API_KEY, and the default template chain
+// lists it as a fallback source.
 var envVarTable = []envVarSpec{
+	{name: "ANTHROPIC_API_KEY_KILROY", provider: "anthropic", prefixes: []string{"sk-ant-"}},
 	{name: "ANTHROPIC_API_KEY", provider: "anthropic", prefixes: []string{"sk-ant-"}},
+	{name: "OPENAI_API_KEY_KILROY", provider: "openai", prefixes: []string{"sk-proj-", "sk-"}},
 	{name: "OPENAI_API_KEY", provider: "openai", prefixes: []string{"sk-proj-", "sk-"}},
+	{name: "GOOGLE_API_KEY_KILROY", provider: "google", prefixes: []string{"AIza"}},
+	{name: "GEMINI_API_KEY_KILROY", provider: "google", prefixes: []string{"AIza"}},
 	{name: "GOOGLE_API_KEY", provider: "google", prefixes: []string{"AIza"}},
 	{name: "GEMINI_API_KEY", provider: "google", prefixes: []string{"AIza"}},
+	{name: "GOOGLE_GENERATIVE_AI_API_KEY", provider: "google", prefixes: []string{"AIza"}},
 	{name: "OPENROUTER_API_KEY", provider: "openrouter", prefixes: []string{"sk-or-"}},
 	{name: "GH_TOKEN", provider: "github", prefixes: []string{"ghp_", "github_pat_"}},
 	{name: "GITHUB_TOKEN", provider: "github", prefixes: []string{"ghp_", "github_pat_"}},
