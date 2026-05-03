@@ -136,6 +136,11 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 	var authResolver *binding.Resolver
 	var authLoaded bool
 
+	// Per-node frozen snapshots. Plan §5: prelaunch is the authoritative
+	// snapshot; execution reads from it via LoadPreLaunchSnapshot rather
+	// than re-running policy.Resolve.
+	frozenSnapshots := map[string]preLaunchNodeSnap{}
+
 	// Stable iteration so the report is deterministic.
 	nodeIDs := sortedNodeIDs(g)
 	for _, id := range nodeIDs {
@@ -220,6 +225,11 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		check.AuthMethod = res.AuthMethod()
 		check.AuthSource = res.AuthSource()
 
+		// Freeze the per-node resolution. Execution will read this rather
+		// than re-running policy.Resolve, so config/env drift between
+		// prelaunch and node execution cannot silently change the route.
+		frozenSnapshots[id] = resolveResultToSnap(className, res)
+
 		// CLI drivers need their binary on PATH AND need to be executable
 		// (not a corrupt download, wrong arch, etc.). SDK drivers don't —
 		// the HTTP client handles the request, no binary involved.
@@ -274,6 +284,11 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		// via the sentinel logsRoot field rather than as an error.
 		_ = err
 	}
+
+	// Write the frozen snapshots that execution will read. Best-effort —
+	// if it fails, execution falls back to live resolution (logged as a
+	// drift signal, but not a hard error).
+	_ = writePreLaunchSnapshots(opts.LogsRoot, frozenSnapshots)
 
 	if report.Summary.Fail > 0 {
 		return report, &PreLaunchError{Report: report}

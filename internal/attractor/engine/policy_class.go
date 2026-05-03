@@ -69,6 +69,38 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		return ClassResolution{}, false, nil
 	}
 
+	// Plan §5: prefer the frozen prelaunch snapshot when available so
+	// env/config drift between prelaunch and execution can't silently
+	// change the route. When no snapshot exists (e.g. tests, ad-hoc
+	// calls without a logs_root), fall back to live resolution.
+	logsRoot := ""
+	if exec != nil {
+		logsRoot = strings.TrimSpace(exec.LogsRoot)
+		if logsRoot == "" && exec.Engine != nil {
+			logsRoot = strings.TrimSpace(exec.Engine.LogsRoot)
+		}
+	}
+	if logsRoot != "" {
+		if frozen, ok, snapErr := LoadPreLaunchSnapshot(logsRoot, node.ID); snapErr != nil {
+			return ClassResolution{}, false, fmt.Errorf("read prelaunch snapshot: %w", snapErr)
+		} else if ok {
+			prov, be := providerAndBackendForDriver(frozen.Driver)
+			if prov == "" {
+				return ClassResolution{}, false, fmt.Errorf("prelaunch snapshot has unknown driver %q", frozen.Driver)
+			}
+			emitResolutionEvents(exec, node.ID, className, *frozen)
+			persistResolution(exec, node.ID, className, *frozen)
+			return ClassResolution{
+				Class:    className,
+				Provider: prov,
+				Model:    frozen.ModelID,
+				Driver:   frozen.Driver,
+				Backend:  be,
+				Result:   *frozen,
+			}, true, nil
+		}
+	}
+
 	load := deps.Load
 	if load == nil {
 		load = policy.Load
@@ -101,30 +133,7 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		return ClassResolution{}, false, fmt.Errorf("policy resolve %q: unknown driver %q", className, res.Driver)
 	}
 
-	if exec != nil && exec.Engine != nil {
-		exec.Engine.appendProgress(map[string]any{
-			"event":         "policy_class_resolved",
-			"node_id":       node.ID,
-			"class":         className,
-			"model":         res.ModelID,
-			"driver":        res.Driver,
-			"fallback_rank": res.FallbackRank,
-		})
-		// Plan §7 (auth integration): emit auth credential identity so
-		// progress.ndjson records which chain + source backed the
-		// resolution. Source kind/name are snapshot fields — never the
-		// secret value.
-		exec.Engine.appendProgress(map[string]any{
-			"event":       "auth_credential_selected",
-			"node_id":     node.ID,
-			"provider":    res.AuthSnapshot.Provider,
-			"method":      string(res.AuthSnapshot.Method),
-			"chain_name":  res.AuthSnapshot.ChainName,
-			"source_kind": string(res.AuthSnapshot.Source.Kind),
-			"source_name": authSourceIdentifier(res.AuthSnapshot.Source),
-		})
-	}
-
+	emitResolutionEvents(exec, node.ID, className, res)
 	persistResolution(exec, node.ID, className, res)
 
 	return ClassResolution{
@@ -368,4 +377,31 @@ func authSourceIdentifier(s binding.Source) string {
 		return s.Tool
 	}
 	return ""
+}
+
+// emitResolutionEvents fires policy_class_resolved + auth_credential_selected
+// on progress.ndjson. Used by both the fresh-resolve path and the
+// frozen-snapshot path so observers see identical events regardless of
+// whether the route was just resolved or read from prelaunch.
+func emitResolutionEvents(exec *Execution, nodeID, className string, res policy.ResolveResult) {
+	if exec == nil || exec.Engine == nil {
+		return
+	}
+	exec.Engine.appendProgress(map[string]any{
+		"event":         "policy_class_resolved",
+		"node_id":       nodeID,
+		"class":         className,
+		"model":         res.ModelID,
+		"driver":        res.Driver,
+		"fallback_rank": res.FallbackRank,
+	})
+	exec.Engine.appendProgress(map[string]any{
+		"event":       "auth_credential_selected",
+		"node_id":     nodeID,
+		"provider":    res.AuthSnapshot.Provider,
+		"method":      string(res.AuthSnapshot.Method),
+		"chain_name":  res.AuthSnapshot.ChainName,
+		"source_kind": string(res.AuthSnapshot.Source.Kind),
+		"source_name": authSourceIdentifier(res.AuthSnapshot.Source),
+	})
 }
