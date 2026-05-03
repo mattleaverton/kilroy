@@ -333,10 +333,11 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 	overrideProviderAdapter(c, r.providerRuntimes, provider, cred.Value)
 
 	// For each other provider with runtime config, attempt to resolve a
-	// credential via the auth chain. Successful resolves override the
-	// canonical-env adapter that the cached client registered. Failed
-	// resolves leave the cached adapter alone (transitional bridge for
-	// providers without a chain in user/project config).
+	// credential via the auth chain. Each decision is recorded as a
+	// progress event so observability isn't lost (R7) — this also
+	// distinguishes "no chain configured" (legitimate fallback to
+	// canonical-env) from "chain configured but failed to resolve"
+	// (loud signal: failover for this provider would wrong-bill).
 	for otherProvider, rt := range r.providerRuntimes {
 		if otherProvider == provider {
 			continue
@@ -344,13 +345,84 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 		if rt.Backend != BackendAPI {
 			continue
 		}
-		failoverCred, ferr := resolveFailoverCredential(resolver, otherProvider)
-		if ferr != nil || failoverCred == "" {
-			continue
+		decision := resolveFailoverDecision(resolver, otherProvider)
+		emitFailoverEvent(execCtx, otherProvider, decision)
+		if decision.bound {
+			overrideProviderAdapter(c, r.providerRuntimes, otherProvider, decision.value)
 		}
-		overrideProviderAdapter(c, r.providerRuntimes, otherProvider, failoverCred)
 	}
 	return c, nil
+}
+
+// failoverDecision records what happened when we tried to resolve a
+// credential for a failover provider. Either: a bound value was found
+// (use it), no chain was configured (canonical-env fallback is fine),
+// or the chain failed to resolve (canonical-env fallback may wrong-bill —
+// the run continues but the event is emitted loudly).
+type failoverDecision struct {
+	bound      bool
+	value      string
+	chainName  string
+	sourceKind string
+	sourceName string
+	skipReason string // populated when bound=false; empty when no chain configured
+}
+
+// emitFailoverEvent appends an `auth_failover_credential_decision` event
+// to progress.ndjson recording the resolver's decision for one failover
+// provider. Source value is never on the event stream.
+func emitFailoverEvent(execCtx *Execution, provider string, d failoverDecision) {
+	if execCtx == nil || execCtx.Engine == nil {
+		return
+	}
+	ev := map[string]any{
+		"event":    "auth_failover_credential_decision",
+		"provider": provider,
+		"bound":    d.bound,
+	}
+	if d.bound {
+		ev["chain_name"] = d.chainName
+		ev["source_kind"] = d.sourceKind
+		ev["source_name"] = d.sourceName
+	} else if d.skipReason != "" {
+		// chain was configured but didn't yield a usable source — loud signal
+		ev["fallback"] = "canonical_env"
+		ev["skip_reason"] = d.skipReason
+	} else {
+		// no chain configured for this provider — canonical-env is fine
+		ev["fallback"] = "canonical_env"
+		ev["skip_reason"] = "no_chain_configured"
+	}
+	execCtx.Engine.appendProgress(ev)
+}
+
+// resolveFailoverDecision walks the (provider, api_key) chain and
+// returns a structured decision distinguishing "no chain" from "chain
+// exhausted / ambiguous / unknown". Used by clientForRoute to drive
+// progress-event emission and adapter override.
+func resolveFailoverDecision(resolver *binding.Resolver, provider string) failoverDecision {
+	req := binding.Requirement{Provider: provider, Method: binding.MethodAPIKey}
+	snap, err := resolver.Resolve(req)
+	if err != nil {
+		// Distinguish "no chain configured" from real chain failures so
+		// the event stream can flag the latter as a wrong-billing risk.
+		var noChain *binding.ErrNoChainForRequirement
+		if errors.As(err, &noChain) {
+			return failoverDecision{}
+		}
+		return failoverDecision{skipReason: err.Error()}
+	}
+	cred, err := resolver.Bind(snap)
+	if err != nil {
+		return failoverDecision{skipReason: err.Error()}
+	}
+	return failoverDecision{
+		bound:      true,
+		value:      cred.Value,
+		chainName:  snap.ChainName,
+		sourceKind: string(snap.Source.Kind),
+		sourceName: snap.Source.Name,
+	}
 }
 
 // overrideProviderAdapter registers a credential-aware adapter for the
@@ -386,26 +458,6 @@ func overrideProviderAdapter(c *llm.Client, runtimes map[string]ProviderRuntime,
 	}
 }
 
-// resolveFailoverCredential tries the auth chain for (provider, api_key)
-// against the given resolver and returns the resolved env-var value when
-// a bound credential exists, or "" when no chain entry exists / no source
-// is reachable. Errors are returned for I/O / parse problems; chain-walk
-// errors (no chain, ambiguous, exhausted) are treated as "no override
-// available" and yield ("", nil).
-func resolveFailoverCredential(resolver *binding.Resolver, provider string) (string, error) {
-	req := binding.Requirement{Provider: provider, Method: binding.MethodAPIKey}
-	snap, err := resolver.Resolve(req)
-	if err != nil {
-		// Any resolver error here is "use canonical-env adapter as
-		// fallback" — failover candidates without a chain are valid.
-		return "", nil
-	}
-	cred, err := resolver.Bind(snap)
-	if err != nil {
-		return "", nil
-	}
-	return cred.Value, nil
-}
 
 // cloneLLMClient produces a shallow copy of an llm.Client suitable for
 // per-call adapter overrides. The underlying provider adapters are shared
