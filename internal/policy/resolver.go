@@ -1,25 +1,13 @@
 package policy
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
-	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
-
-// MachineState is the snapshot the resolver consults to decide
-// candidate reachability. Wrap the result of auth.ListAll.
-type MachineState struct {
-	Auth auth.ListOutput
-}
-
-// CollectMachineState runs the default detectors and returns a fresh
-// snapshot. Tests should NOT call this; tests construct MachineState
-// directly with crafted entries.
-func CollectMachineState() MachineState {
-	return MachineState{Auth: auth.ListAll("", auth.DefaultDetectors())}
-}
 
 // ResolveRequest is the input to the resolver.
 type ResolveRequest struct {
@@ -35,15 +23,37 @@ type ResolveResult struct {
 	Driver      string
 	Transport   string
 	HistorySink string
-	AuthMethod  string // candidate's Auth.Kind value
-	AuthSource  string // env var name OR cli name (the concrete identifier)
 
-	RequestType  string // "class" or "strict"
-	RequestValue string
-	FallbackRank int // 0-indexed position in chain (or -1 in strict mode)
-	Skipped      []SkipRecord
+	// AuthSnapshot is the binding.Snapshot the auth resolver picked for
+	// this candidate. Provider/method/source identity for prelaunch and
+	// observability; binder consumes it to materialize a Credential.
+	AuthSnapshot binding.Snapshot
+
+	RequestType   string // "class" or "strict"
+	RequestValue  string
+	FallbackRank  int // 0-indexed position in chain (or -1 in strict mode)
+	Skipped       []SkipRecord
 	PolicyVersion string
 	ResolvedAt    time.Time
+}
+
+// AuthMethod returns the credential method that satisfied the candidate's
+// auth requirement (api_key or cli_oauth). Convenience for downstream
+// consumers that don't unpack the AuthSnapshot.
+func (r ResolveResult) AuthMethod() string {
+	return string(r.AuthSnapshot.Method)
+}
+
+// AuthSource returns the concrete source identifier (env var name or CLI
+// tool name) that the chain selected. Empty when no source was bound.
+func (r ResolveResult) AuthSource() string {
+	switch r.AuthSnapshot.Source.Kind {
+	case binding.SourceEnvVar:
+		return r.AuthSnapshot.Source.Name
+	case binding.SourceCLISession:
+		return r.AuthSnapshot.Source.Tool
+	}
+	return ""
 }
 
 // SkipRecord explains why one candidate was rejected.
@@ -115,14 +125,20 @@ func (e ErrClassSunset) Error() string {
 }
 
 // Resolve is the entry point. It dispatches to class-mode or strict-mode.
-func Resolve(req ResolveRequest, data *Data, state MachineState) (ResolveResult, error) {
+// The auth resolver is consulted to check candidate reachability — a
+// candidate is reachable iff its Requires tuple resolves to a usable
+// source via the user/project auth config.
+func Resolve(req ResolveRequest, data *Data, authResolver *binding.Resolver) (ResolveResult, error) {
 	if req.ClassID != "" && req.ModelID != "" {
 		return ResolveResult{}, ErrBothClassAndModel{}
 	}
-	if req.ModelID != "" {
-		return resolveStrict(req, data, state)
+	if authResolver == nil {
+		return ResolveResult{}, fmt.Errorf("policy: nil auth resolver")
 	}
-	return resolveClass(req, data, state)
+	if req.ModelID != "" {
+		return resolveStrict(req, data, authResolver)
+	}
+	return resolveClass(req, data, authResolver)
 }
 
 // sortedClassNames returns a sorted slice of class names from the policy.
@@ -135,46 +151,41 @@ func sortedClassNames(classes map[string]Class) []string {
 	return names
 }
 
-// candidateReachability checks whether a candidate is reachable on the
-// current machine. Returns (authSource, skipReason): if skipReason is "",
-// the candidate is reachable and authSource is the concrete identifier.
-func candidateReachability(c Candidate, state MachineState) (authSource, skipReason string) {
-	switch c.Auth.Kind {
-	case "env_var":
-		for _, e := range state.Auth.Entries {
-			if e.Kind == auth.KindEnvVar &&
-				e.Source.EnvVar == c.Auth.EnvVar &&
-				e.State == auth.StateOK {
-				return c.Auth.EnvVar, ""
-			}
-		}
-		return c.Auth.EnvVar, "env_var_missing:" + c.Auth.EnvVar
-
-	case "cli_session":
-		found := false
-		for _, e := range state.Auth.Entries {
-			if e.Tool == c.Auth.CLI &&
-				(e.Kind == auth.KindCLIOAuth || e.Kind == auth.KindKeychain) {
-				found = true
-				if e.State == auth.StateOK {
-					return c.Auth.CLI, ""
-				}
-			}
-		}
-		if !found {
-			return c.Auth.CLI, "cli_not_installed:" + c.Auth.CLI
-		}
-		return c.Auth.CLI, "cli_no_session:" + c.Auth.CLI
-
-	case "none":
-		return "", ""
-
-	default:
-		return "", "unknown_auth_kind:" + c.Auth.Kind
+// candidateReachability checks whether a candidate is reachable by asking
+// the auth resolver for a snapshot satisfying the candidate's Requires.
+// Returns (snapshot, "") on success or (zero, skipReason) when unusable.
+// skipReason is a structured "<code>:<detail>" string suitable for
+// logging in SkipRecord.Reason.
+func candidateReachability(c Candidate, authResolver *binding.Resolver) (binding.Snapshot, string) {
+	snap, err := authResolver.Resolve(c.Requires)
+	if err == nil {
+		return snap, ""
 	}
+	return binding.Snapshot{}, classifyAuthError(err, c.Requires)
 }
 
-func resolveClass(req ResolveRequest, data *Data, state MachineState) (ResolveResult, error) {
+// classifyAuthError maps a binding error to a structured skip-reason code.
+func classifyAuthError(err error, req binding.Requirement) string {
+	var (
+		errNoChain   *binding.ErrNoChainForRequirement
+		errAmbiguous *binding.ErrAmbiguousAuthChain
+		errExhausted *binding.ErrChainExhausted
+		errUnknown   *binding.ErrUnknownChain
+	)
+	switch {
+	case errors.As(err, &errNoChain):
+		return "auth_no_chain:" + req.Key()
+	case errors.As(err, &errAmbiguous):
+		return "auth_ambiguous_chain:" + req.Key()
+	case errors.As(err, &errExhausted):
+		return "auth_chain_exhausted:" + errExhausted.ChainName
+	case errors.As(err, &errUnknown):
+		return "auth_unknown_chain:" + errUnknown.ChainName
+	}
+	return "auth_error:" + err.Error()
+}
+
+func resolveClass(req ResolveRequest, data *Data, authResolver *binding.Resolver) (ResolveResult, error) {
 	originalClassID := req.ClassID
 	classID := req.ClassID
 
@@ -214,15 +225,14 @@ func resolveClass(req ResolveRequest, data *Data, state MachineState) (ResolveRe
 	// 4. Walk chain, first reachable wins.
 	var skipped []SkipRecord
 	for i, c := range class.Chain {
-		authSource, skipReason := candidateReachability(c, state)
+		snap, skipReason := candidateReachability(c, authResolver)
 		if skipReason == "" {
 			return ResolveResult{
 				ModelID:       c.ModelID,
 				Driver:        c.Driver,
 				Transport:     c.Transport,
 				HistorySink:   c.HistorySink,
-				AuthMethod:    c.Auth.Kind,
-				AuthSource:    authSource,
+				AuthSnapshot:  snap,
 				RequestType:   "class",
 				RequestValue:  originalClassID,
 				FallbackRank:  i,
@@ -243,7 +253,7 @@ func resolveClass(req ResolveRequest, data *Data, state MachineState) (ResolveRe
 	return ResolveResult{}, ErrNoViableCandidate{ClassID: req.ClassID, Skipped: skipped}
 }
 
-func resolveStrict(req ResolveRequest, data *Data, state MachineState) (ResolveResult, error) {
+func resolveStrict(req ResolveRequest, data *Data, authResolver *binding.Resolver) (ResolveResult, error) {
 	type match struct {
 		c               Candidate
 		hasSubscription bool
@@ -281,15 +291,14 @@ func resolveStrict(req ResolveRequest, data *Data, state MachineState) (ResolveR
 	// 3. Try each match; first reachable one wins.
 	var lastReason string
 	for _, m := range matches {
-		authSource, skipReason := candidateReachability(m.c, state)
+		snap, skipReason := candidateReachability(m.c, authResolver)
 		if skipReason == "" {
 			return ResolveResult{
 				ModelID:       m.c.ModelID,
 				Driver:        m.c.Driver,
 				Transport:     m.c.Transport,
 				HistorySink:   m.c.HistorySink,
-				AuthMethod:    m.c.Auth.Kind,
-				AuthSource:    authSource,
+				AuthSnapshot:  snap,
 				RequestType:   "strict",
 				RequestValue:  req.ModelID,
 				FallbackRank:  -1,

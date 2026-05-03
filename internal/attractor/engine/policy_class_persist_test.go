@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
@@ -33,37 +33,43 @@ func TestResolveAgentClass_PersistsResolutionJSON(t *testing.T) {
 						Driver:      "anthropic_sdk",
 						Transport:   "http",
 						HistorySink: "anthropic-sse",
-						Auth: policy.AuthReq{
-							Kind:   "env_var",
-							EnvVar: "ANTHROPIC_API_KEY",
-						},
+						Requires:    binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
 					},
 					{
 						ModelID:     "claude-sonnet-4-6",
 						Driver:      "claude_cli",
 						Transport:   "cli_subprocess",
 						HistorySink: "claude-cli-jsonl",
-						Auth: policy.AuthReq{
-							Kind: "cli_session",
-							CLI:  "claude",
-						},
+						Requires:    binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
 					},
 				},
 			},
 		},
 	}
-	state := policy.MachineState{
-		Auth: auth.ListOutput{
-			Entries: []auth.Entry{
-				{
-					ID:    "anthropic.cli.claude",
-					Tool:  "claude",
-					Kind:  auth.KindCLIOAuth,
-					State: auth.StateOK,
-				},
+
+	// Auth config: anthropic api_key chain (env-only) + claude_cli chain
+	// (cli session). View marks ANTHROPIC_API_KEY as MISSING and claude
+	// session as OK, so the first candidate is skipped and the second wins.
+	cfg := &binding.Config{
+		Bindings: map[string]string{
+			"anthropic/api_key":          "anthropic_api_key",
+			"anthropic/cli_oauth/claude": "anthropic_claude_cli",
+		},
+		Chains: map[string]binding.Chain{
+			"anthropic_api_key": {
+				Name:     "anthropic_api_key",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "ANTHROPIC_API_KEY"}},
+			},
+			"anthropic_claude_cli": {
+				Name:     "anthropic_claude_cli",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
+				Sources:  []binding.Source{{Kind: binding.SourceCLISession, Tool: "claude"}},
 			},
 		},
 	}
+	view := testDetectionView{clis: map[string]bool{"claude": true}}
+	resolver := binding.NewResolver(cfg, view)
 
 	exec := &Execution{
 		Graph:    model.NewGraph("dogfood-graph"),
@@ -79,8 +85,8 @@ func TestResolveAgentClass_PersistsResolutionJSON(t *testing.T) {
 	node.Attrs["agent_class"] = "hard_coding"
 
 	cls, ok, err := ResolveAgentClass(node, exec, PolicyDeps{
-		Load:    func() (*policy.Data, error) { return data, nil },
-		Collect: func() policy.MachineState { return state },
+		Load:     func() (*policy.Data, error) { return data, nil },
+		Resolver: func(string) (*binding.Resolver, error) { return resolver, nil },
 	})
 	if err != nil {
 		t.Fatalf("ResolveAgentClass: %v", err)
@@ -124,8 +130,14 @@ func TestResolveAgentClass_PersistsResolutionJSON(t *testing.T) {
 	if got.Resolution.Resolved.Driver != "claude_cli" {
 		t.Errorf("resolved.driver = %q, want claude_cli", got.Resolution.Resolved.Driver)
 	}
-	if got.Resolution.Resolved.AuthMethod != "cli_session" {
-		t.Errorf("resolved.auth_method = %q, want cli_session", got.Resolution.Resolved.AuthMethod)
+	if got.Resolution.Resolved.AuthMethod != "cli_oauth" {
+		t.Errorf("resolved.auth_method = %q, want cli_oauth", got.Resolution.Resolved.AuthMethod)
+	}
+	if got.Resolution.Resolved.Auth.ChainName != "anthropic_claude_cli" {
+		t.Errorf("auth.chain_name = %q, want anthropic_claude_cli", got.Resolution.Resolved.Auth.ChainName)
+	}
+	if got.Resolution.Resolved.Auth.Source.Tool != "claude" {
+		t.Errorf("auth.source.tool = %q, want claude", got.Resolution.Resolved.Auth.Source.Tool)
 	}
 	if got.Resolution.Resolved.TurnCodec != "claude-cli-jsonl" {
 		t.Errorf("resolved.turn_codec = %q, want claude-cli-jsonl", got.Resolution.Resolved.TurnCodec)
@@ -152,8 +164,8 @@ func TestResolveAgentClass_PersistsResolutionJSON(t *testing.T) {
 	if skip.Driver != "anthropic_sdk" {
 		t.Errorf("skipped[0].driver = %q, want anthropic_sdk", skip.Driver)
 	}
-	if skip.Reason != "env_var_missing:ANTHROPIC_API_KEY" {
-		t.Errorf("skipped[0].reason = %q, want env_var_missing:ANTHROPIC_API_KEY", skip.Reason)
+	if skip.Reason != "auth_chain_exhausted:anthropic_api_key" {
+		t.Errorf("skipped[0].reason = %q, want auth_chain_exhausted:anthropic_api_key", skip.Reason)
 	}
 }
 
@@ -168,28 +180,33 @@ func TestResolveAgentClass_PersistResolution_NoLogsRootIsSafe(t *testing.T) {
 			"hard_coding": {
 				Chain: []policy.Candidate{
 					{
-						ModelID: "claude-opus-4-7",
-						Driver:  "claude_cli",
-						Auth:    policy.AuthReq{Kind: "cli_session", CLI: "claude"},
+						ModelID:  "claude-opus-4-7",
+						Driver:   "claude_cli",
+						Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
 					},
 				},
 			},
 		},
 	}
-	state := policy.MachineState{
-		Auth: auth.ListOutput{
-			Entries: []auth.Entry{{
-				ID: "x", Tool: "claude", Kind: auth.KindCLIOAuth, State: auth.StateOK,
-			}},
+	cfg := &binding.Config{
+		Bindings: map[string]string{"anthropic/cli_oauth/claude": "anthropic_claude_cli"},
+		Chains: map[string]binding.Chain{
+			"anthropic_claude_cli": {
+				Name:     "anthropic_claude_cli",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
+				Sources:  []binding.Source{{Kind: binding.SourceCLISession, Tool: "claude"}},
+			},
 		},
 	}
+	view := testDetectionView{clis: map[string]bool{"claude": true}}
+	resolver := binding.NewResolver(cfg, view)
 
 	node := model.NewNode("agent")
 	node.Attrs["agent_class"] = "hard_coding"
 
 	cls, ok, err := ResolveAgentClass(node, nil, PolicyDeps{
-		Load:    func() (*policy.Data, error) { return data, nil },
-		Collect: func() policy.MachineState { return state },
+		Load:     func() (*policy.Data, error) { return data, nil },
+		Resolver: func(string) (*binding.Resolver, error) { return resolver, nil },
 	})
 	if err != nil {
 		t.Fatalf("ResolveAgentClass with nil exec: %v", err)

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
@@ -55,10 +56,10 @@ func policyUsage() {
 // ── JSON-serialization view types ────────────────────────────────────────────
 
 type policyListJSON struct {
-	SchemaVersion string                `json:"schema_version"`
-	PolicyVersion string                `json:"policy_version"`
-	Classes       map[string]classJSON  `json:"classes"`
-	Aliases       []aliasJSON           `json:"aliases,omitempty"`
+	SchemaVersion string               `json:"schema_version"`
+	PolicyVersion string               `json:"policy_version"`
+	Classes       map[string]classJSON `json:"classes"`
+	Aliases       []aliasJSON          `json:"aliases,omitempty"`
 }
 
 type classJSON struct {
@@ -67,18 +68,18 @@ type classJSON struct {
 }
 
 type candidateJSON struct {
-	ModelID     string   `json:"model_id"`
-	Driver      string   `json:"driver"`
-	Transport   string   `json:"transport"`
-	HistorySink string   `json:"history_sink"`
-	Tags        []string `json:"tags"`
-	Auth        authJSON `json:"auth"`
+	ModelID     string       `json:"model_id"`
+	Driver      string       `json:"driver"`
+	Transport   string       `json:"transport"`
+	HistorySink string       `json:"history_sink"`
+	Tags        []string     `json:"tags"`
+	Requires    requiresJSON `json:"requires"`
 }
 
-type authJSON struct {
-	Kind   string `json:"kind"`
-	EnvVar string `json:"env_var,omitempty"`
-	CLI    string `json:"cli,omitempty"`
+type requiresJSON struct {
+	Provider string `json:"provider"`
+	Method   string `json:"method"`
+	Tool     string `json:"tool,omitempty"`
 }
 
 type aliasJSON struct {
@@ -99,10 +100,10 @@ func dataToPolicyListJSON(d *policy.Data) policyListJSON {
 				Transport:   c.Transport,
 				HistorySink: c.HistorySink,
 				Tags:        c.Tags,
-				Auth: authJSON{
-					Kind:   c.Auth.Kind,
-					EnvVar: c.Auth.EnvVar,
-					CLI:    c.Auth.CLI,
+				Requires: requiresJSON{
+					Provider: c.Requires.Provider,
+					Method:   string(c.Requires.Method),
+					Tool:     c.Requires.Tool,
 				},
 			}
 		}
@@ -254,10 +255,10 @@ func policyShow(args []string) {
 				Transport:   c.Transport,
 				HistorySink: c.HistorySink,
 				Tags:        c.Tags,
-				Auth: authJSON{
-					Kind:   c.Auth.Kind,
-					EnvVar: c.Auth.EnvVar,
-					CLI:    c.Auth.CLI,
+				Requires: requiresJSON{
+					Provider: c.Requires.Provider,
+					Method:   string(c.Requires.Method),
+					Tool:     c.Requires.Tool,
 				},
 			}
 		}
@@ -282,13 +283,10 @@ func policyShow(args []string) {
 		fmt.Printf("    Driver:       %s\n", c.Driver)
 		fmt.Printf("    Transport:    %s\n", c.Transport)
 		fmt.Printf("    History sink: %s\n", c.HistorySink)
-		switch c.Auth.Kind {
-		case "env_var":
-			fmt.Printf("    Auth:         env_var %s\n", c.Auth.EnvVar)
-		case "cli_session":
-			fmt.Printf("    Auth:         cli_session via `%s`\n", c.Auth.CLI)
-		default:
-			fmt.Printf("    Auth:         %s\n", c.Auth.Kind)
+		if c.Requires.Tool != "" {
+			fmt.Printf("    Requires:     provider=%s method=%s tool=%s\n", c.Requires.Provider, c.Requires.Method, c.Requires.Tool)
+		} else {
+			fmt.Printf("    Requires:     provider=%s method=%s\n", c.Requires.Provider, c.Requires.Method)
 		}
 		fmt.Printf("    Tags:         %s\n", strings.Join(c.Tags, ", "))
 		fmt.Println()
@@ -310,8 +308,12 @@ func policyResolve(args []string) {
 		os.Exit(1)
 	}
 
-	state := policy.CollectMachineState()
-	res, rerr := policy.Resolve(policy.ResolveRequest{ClassID: className}, data, state)
+	resolver, rErr := engine.DefaultBindingResolver("")
+	if rErr != nil {
+		fmt.Fprintf(os.Stderr, "auth resolver: %v\n", rErr)
+		os.Exit(1)
+	}
+	res, rerr := policy.Resolve(policy.ResolveRequest{ClassID: className}, data, resolver)
 
 	if asJSON {
 		out := map[string]any{}
@@ -323,8 +325,8 @@ func policyResolve(args []string) {
 				"driver":        res.Driver,
 				"transport":     res.Transport,
 				"history_sink":  res.HistorySink,
-				"auth_method":   res.AuthMethod,
-				"auth_source":   res.AuthSource,
+				"auth_method":   res.AuthMethod(),
+				"auth_source":   res.AuthSource(),
 				"fallback_rank": res.FallbackRank,
 				"skipped":       res.Skipped,
 				"request_type":  res.RequestType,
@@ -354,9 +356,9 @@ func policyResolve(args []string) {
 	fmt.Printf("  driver:       %s\n", res.Driver)
 	fmt.Printf("  transport:    %s\n", res.Transport)
 	fmt.Printf("  history sink: %s\n", res.HistorySink)
-	fmt.Printf("  auth:         %s", res.AuthMethod)
-	if res.AuthSource != "" {
-		fmt.Printf(" (%s)", res.AuthSource)
+	fmt.Printf("  auth:         %s", res.AuthMethod())
+	if res.AuthSource() != "" {
+		fmt.Printf(" (%s)", res.AuthSource())
 	}
 	fmt.Println()
 

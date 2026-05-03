@@ -21,6 +21,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/llm"
 	"github.com/danshapiro/kilroy/internal/llmclient"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
@@ -39,9 +40,9 @@ type AgentRouter struct {
 	apiErr    error
 
 	// For testing: injectable policy dependencies.
-	// If nil, production defaults (policy.Load / policy.CollectMachineState) are used.
-	policyLoad    func() (*policy.Data, error)
-	policyCollect func() policy.MachineState
+	// If nil, production defaults (policy.Load / DefaultBindingResolver) are used.
+	policyLoad     func() (*policy.Data, error)
+	policyResolver func(projectRoot string) (*binding.Resolver, error)
 }
 
 // nodeRoute holds the resolved routing information for a node.
@@ -158,7 +159,7 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 // resolveNodeRouteInner resolves the full routing info for a node, including
 // an optional policy.ResolveResult when the node carries a class= attribute.
 func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
-	cls, ok, err := ResolveAgentClass(node, exec, PolicyDeps{Load: r.policyLoad, Collect: r.policyCollect})
+	cls, ok, err := ResolveAgentClass(node, exec, PolicyDeps{Load: r.policyLoad, Resolver: r.policyResolver})
 	if err != nil {
 		return nodeRoute{}, err
 	}

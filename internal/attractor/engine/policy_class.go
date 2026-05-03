@@ -14,15 +14,17 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
+	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
-// PolicyDeps carries injectable policy data and machine-state collection.
-// Zero values mean "use production defaults" (policy.Load /
-// policy.CollectMachineState). Tests inject stubs.
+// PolicyDeps carries injectable policy data and auth-resolver construction.
+// Zero values mean "use production defaults" (policy.Load + auth detection
+// against the user/project auth.toml). Tests inject stubs.
 type PolicyDeps struct {
-	Load    func() (*policy.Data, error)
-	Collect func() policy.MachineState
+	Load     func() (*policy.Data, error)
+	Resolver func(projectRoot string) (*binding.Resolver, error)
 }
 
 // ClassResolution is the outcome of resolving a node's class= attribute.
@@ -76,17 +78,20 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 		return ClassResolution{}, false, fmt.Errorf("policy load: %w", err)
 	}
 
-	collect := deps.Collect
-	if collect == nil {
-		collect = policy.CollectMachineState
+	resolverFactory := deps.Resolver
+	if resolverFactory == nil {
+		resolverFactory = DefaultBindingResolver
 	}
-	state := collect()
+	authResolver, err := resolverFactory(projectRootForExec(exec))
+	if err != nil {
+		return ClassResolution{}, false, fmt.Errorf("auth resolver: %w", err)
+	}
 
 	res, err := policy.Resolve(policy.ResolveRequest{
 		ClassID:    className,
 		NodeID:     node.ID,
 		WorkflowID: graphNameForExec(exec),
-	}, data, state)
+	}, data, authResolver)
 	if err != nil {
 		return ClassResolution{}, false, fmt.Errorf("policy resolve %q: %w", className, err)
 	}
@@ -154,10 +159,10 @@ func EffectiveRouteForNode(n *model.Node) (provider, modelID string, err error) 
 // silently skip the write — the in-memory ResolveResult is still returned
 // to the caller and the progress event still fires.
 type resolutionRecord struct {
-	SchemaVersion string             `json:"schema_version"`
-	NodeID        string             `json:"node_id"`
-	WorkflowID    string             `json:"workflow_id,omitempty"`
-	Resolution    resolutionDetails  `json:"resolution"`
+	SchemaVersion string            `json:"schema_version"`
+	NodeID        string            `json:"node_id"`
+	WorkflowID    string            `json:"workflow_id,omitempty"`
+	Resolution    resolutionDetails `json:"resolution"`
 }
 
 type resolutionDetails struct {
@@ -175,12 +180,36 @@ type resolutionRequested struct {
 }
 
 type resolutionResolved struct {
-	ModelID    string `json:"model_id"`
-	Driver     string `json:"driver"`
-	Transport  string `json:"transport"`
-	AuthMethod string `json:"auth_method"`
-	AuthSource string `json:"auth_source,omitempty"`
-	TurnCodec  string `json:"turn_codec"`
+	ModelID    string         `json:"model_id"`
+	Driver     string         `json:"driver"`
+	Transport  string         `json:"transport"`
+	AuthMethod string         `json:"auth_method"`
+	AuthSource string         `json:"auth_source,omitempty"`
+	Auth       resolutionAuth `json:"auth"`
+	TurnCodec  string         `json:"turn_codec"`
+}
+
+// resolutionAuth carries the full binding.Snapshot identity for forensic
+// observability. The flat AuthMethod/AuthSource fields are kept alongside
+// for compatibility with consumers that haven't migrated.
+type resolutionAuth struct {
+	ChainName    string                  `json:"chain_name"`
+	Method       string                  `json:"method"`
+	Provider     string                  `json:"provider"`
+	Source       resolutionAuthSource    `json:"source"`
+	FallbackRank int                     `json:"fallback_rank"`
+	Skipped      []resolutionAuthSkipped `json:"skipped,omitempty"`
+}
+
+type resolutionAuthSource struct {
+	Kind string `json:"kind"`
+	Name string `json:"name,omitempty"`
+	Tool string `json:"tool,omitempty"`
+}
+
+type resolutionAuthSkipped struct {
+	Source resolutionAuthSource `json:"source"`
+	Reason string               `json:"reason"`
 }
 
 type resolutionSkipped struct {
@@ -226,6 +255,18 @@ func persistResolution(exec *Execution, nodeID, className string, res policy.Res
 		})
 	}
 
+	authSkipped := make([]resolutionAuthSkipped, 0, len(res.AuthSnapshot.Skipped))
+	for _, s := range res.AuthSnapshot.Skipped {
+		authSkipped = append(authSkipped, resolutionAuthSkipped{
+			Source: resolutionAuthSource{
+				Kind: string(s.Source.Kind),
+				Name: s.Source.Name,
+				Tool: s.Source.Tool,
+			},
+			Reason: s.Reason,
+		})
+	}
+
 	rec := resolutionRecord{
 		SchemaVersion: "1",
 		NodeID:        nodeID,
@@ -239,9 +280,21 @@ func persistResolution(exec *Execution, nodeID, className string, res policy.Res
 				ModelID:    res.ModelID,
 				Driver:     res.Driver,
 				Transport:  res.Transport,
-				AuthMethod: res.AuthMethod,
-				AuthSource: res.AuthSource,
-				TurnCodec:  res.HistorySink,
+				AuthMethod: res.AuthMethod(),
+				AuthSource: res.AuthSource(),
+				Auth: resolutionAuth{
+					ChainName: res.AuthSnapshot.ChainName,
+					Method:    string(res.AuthSnapshot.Method),
+					Provider:  res.AuthSnapshot.Provider,
+					Source: resolutionAuthSource{
+						Kind: string(res.AuthSnapshot.Source.Kind),
+						Name: res.AuthSnapshot.Source.Name,
+						Tool: res.AuthSnapshot.Source.Tool,
+					},
+					FallbackRank: res.AuthSnapshot.FallbackRank,
+					Skipped:      authSkipped,
+				},
+				TurnCodec: res.HistorySink,
 			},
 			FallbackRank:  res.FallbackRank,
 			Skipped:       skipped,
@@ -259,4 +312,34 @@ func persistResolution(exec *Execution, nodeID, className string, res policy.Res
 		return
 	}
 	_ = os.WriteFile(filepath.Join(stageDir, "resolution.json"), append(b, '\n'), 0o644)
+}
+
+// DefaultBindingResolver constructs the production binding.Resolver from
+// the user/project auth.toml + live detection. Returns ErrNoConfig when no
+// config exists — callers (prelaunch, agent dispatch) surface this with
+// the `kilroy auth init` remediation.
+//
+// projectRoot may be empty (no project override). Tests inject their own
+// resolver via PolicyDeps.Resolver instead of calling this.
+func DefaultBindingResolver(projectRoot string) (*binding.Resolver, error) {
+	cfg, err := binding.LoadConfig(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	view := binding.AuthListView{List: auth.ListAll("", auth.DefaultDetectors())}
+	return binding.NewResolver(&cfg, view), nil
+}
+
+// projectRootForExec returns the worktree directory if available — used as
+// the project root for auth config discovery. Empty string when exec is nil
+// (e.g. preflight standalone calls); the binding loader treats empty as
+// "no project layer."
+func projectRootForExec(exec *Execution) string {
+	if exec == nil {
+		return ""
+	}
+	if root := strings.TrimSpace(exec.WorktreeDir); root != "" {
+		return root
+	}
+	return ""
 }

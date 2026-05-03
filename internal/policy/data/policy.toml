@@ -28,9 +28,10 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:elite"]
-    [classes.hard_coding.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.hard_coding.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.hard_coding.chain]]
   model_id     = "claude-opus-4-7"
@@ -38,9 +39,9 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite"]
-    [classes.hard_coding.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.hard_coding.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
   [[classes.hard_coding.chain]]
   model_id     = "gpt-5"
@@ -48,9 +49,9 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "cross_provider"]
-    [classes.hard_coding.chain.auth]
-    kind    = "env_var"
-    env_var = "OPENAI_API_KEY"
+    [classes.hard_coding.chain.requires]
+    provider = "openai"
+    method   = "api_key"
 
   [[classes.hard_coding.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -58,9 +59,10 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:mid"]
-    [classes.hard_coding.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.hard_coding.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.hard_coding.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -68,9 +70,9 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:mid"]
-    [classes.hard_coding.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.hard_coding.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
 # ══════════════════════════════════════════════════════════════════
 # CLASS: quick_easy
@@ -88,9 +90,10 @@ description = "Low-latency, low-cost tasks where speed beats depth."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:cheap"]
-    [classes.quick_easy.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.quick_easy.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.quick_easy.chain]]
   model_id     = "claude-haiku-4-5"
@@ -98,9 +101,9 @@ description = "Low-latency, low-cost tasks where speed beats depth."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:cheap"]
-    [classes.quick_easy.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.quick_easy.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
   [[classes.quick_easy.chain]]
   model_id     = "gemini-2.5-flash"
@@ -108,9 +111,9 @@ description = "Low-latency, low-cost tasks where speed beats depth."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:cheap", "cross_provider"]
-    [classes.quick_easy.chain.auth]
-    kind    = "env_var"
-    env_var = "GOOGLE_API_KEY"
+    [classes.quick_easy.chain.requires]
+    provider = "google"
+    method   = "api_key"
 
   [[classes.quick_easy.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -118,9 +121,10 @@ description = "Low-latency, low-cost tasks where speed beats depth."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:mid"]
-    [classes.quick_easy.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.quick_easy.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.quick_easy.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -128,9 +132,9 @@ description = "Low-latency, low-cost tasks where speed beats depth."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:mid"]
-    [classes.quick_easy.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.quick_easy.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
 # ══════════════════════════════════════════════════════════════════
 # CLASS: deep_investigation
@@ -148,9 +152,10 @@ description = "Long-context research and synthesis requiring 1M+ token windows."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:elite", "long_context"]
-    [classes.deep_investigation.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.deep_investigation.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.deep_investigation.chain]]
   model_id     = "claude-opus-4-7"
@@ -158,9 +163,9 @@ description = "Long-context research and synthesis requiring 1M+ token windows."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "long_context"]
-    [classes.deep_investigation.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.deep_investigation.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
   [[classes.deep_investigation.chain]]
   model_id     = "gemini-2.5-pro"
@@ -168,9 +173,9 @@ description = "Long-context research and synthesis requiring 1M+ token windows."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "long_context", "cross_provider"]
-    [classes.deep_investigation.chain.auth]
-    kind    = "env_var"
-    env_var = "GOOGLE_API_KEY"
+    [classes.deep_investigation.chain.requires]
+    provider = "google"
+    method   = "api_key"
 
   [[classes.deep_investigation.chain]]
   model_id     = "gpt-5"
@@ -178,9 +183,9 @@ description = "Long-context research and synthesis requiring 1M+ token windows."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "cross_provider"]
-    [classes.deep_investigation.chain.auth]
-    kind    = "env_var"
-    env_var = "OPENAI_API_KEY"
+    [classes.deep_investigation.chain.requires]
+    provider = "openai"
+    method   = "api_key"
 
   [[classes.deep_investigation.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -188,9 +193,10 @@ description = "Long-context research and synthesis requiring 1M+ token windows."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:mid"]
-    [classes.deep_investigation.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.deep_investigation.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
 # ══════════════════════════════════════════════════════════════════
 # CLASS: frontend_aesthetic
@@ -208,9 +214,9 @@ description = "UI/UX design critique and frontend component generation."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "visual_reasoning"]
-    [classes.frontend_aesthetic.chain.auth]
-    kind    = "env_var"
-    env_var = "OPENAI_API_KEY"
+    [classes.frontend_aesthetic.chain.requires]
+    provider = "openai"
+    method   = "api_key"
 
   [[classes.frontend_aesthetic.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -218,9 +224,10 @@ description = "UI/UX design critique and frontend component generation."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:mid"]
-    [classes.frontend_aesthetic.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.frontend_aesthetic.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.frontend_aesthetic.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -228,9 +235,9 @@ description = "UI/UX design critique and frontend component generation."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:mid"]
-    [classes.frontend_aesthetic.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.frontend_aesthetic.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
   [[classes.frontend_aesthetic.chain]]
   model_id     = "gemini-2.5-pro"
@@ -238,9 +245,9 @@ description = "UI/UX design critique and frontend component generation."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "cross_provider"]
-    [classes.frontend_aesthetic.chain.auth]
-    kind    = "env_var"
-    env_var = "GOOGLE_API_KEY"
+    [classes.frontend_aesthetic.chain.requires]
+    provider = "google"
+    method   = "api_key"
 
   [[classes.frontend_aesthetic.chain]]
   model_id     = "claude-haiku-4-5"
@@ -248,9 +255,10 @@ description = "UI/UX design critique and frontend component generation."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:cheap"]
-    [classes.frontend_aesthetic.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.frontend_aesthetic.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
 # ══════════════════════════════════════════════════════════════════
 # CLASS: architectural_critique
@@ -267,9 +275,10 @@ description = "System design review and architectural trade-off analysis."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:elite"]
-    [classes.architectural_critique.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.architectural_critique.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
   [[classes.architectural_critique.chain]]
   model_id     = "claude-opus-4-7"
@@ -277,9 +286,9 @@ description = "System design review and architectural trade-off analysis."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite"]
-    [classes.architectural_critique.chain.auth]
-    kind    = "env_var"
-    env_var = "ANTHROPIC_API_KEY"
+    [classes.architectural_critique.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
 
   [[classes.architectural_critique.chain]]
   model_id     = "gpt-5"
@@ -287,9 +296,9 @@ description = "System design review and architectural trade-off analysis."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "cross_provider"]
-    [classes.architectural_critique.chain.auth]
-    kind    = "env_var"
-    env_var = "OPENAI_API_KEY"
+    [classes.architectural_critique.chain.requires]
+    provider = "openai"
+    method   = "api_key"
 
   [[classes.architectural_critique.chain]]
   model_id     = "gemini-2.5-pro"
@@ -297,9 +306,9 @@ description = "System design review and architectural trade-off analysis."
   transport    = "http"
   history_sink = "jsonl_local"
   tags         = ["api_key", "tier:elite", "cross_provider"]
-    [classes.architectural_critique.chain.auth]
-    kind    = "env_var"
-    env_var = "GOOGLE_API_KEY"
+    [classes.architectural_critique.chain.requires]
+    provider = "google"
+    method   = "api_key"
 
   [[classes.architectural_critique.chain]]
   model_id     = "claude-sonnet-4-6"
@@ -307,9 +316,10 @@ description = "System design review and architectural trade-off analysis."
   transport    = "cli_subprocess"
   history_sink = "jsonl_local"
   tags         = ["subscription", "tier:mid"]
-    [classes.architectural_critique.chain.auth]
-    kind = "cli_session"
-    cli  = "claude"
+    [classes.architectural_critique.chain.requires]
+    provider = "anthropic"
+    method   = "cli_oauth"
+    tool     = "claude"
 
 # ══════════════════════════════════════════════════════════════════
 # ALIASES

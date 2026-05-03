@@ -22,6 +22,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
@@ -125,12 +126,15 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 	if loadFn == nil {
 		loadFn = policy.Load
 	}
-	collectFn := deps.Collect
-	if collectFn == nil {
-		collectFn = policy.CollectMachineState
+	resolverFactory := deps.Resolver
+	if resolverFactory == nil {
+		resolverFactory = DefaultBindingResolver
 	}
-	var stateLoaded bool
-	var state policy.MachineState
+	// Snapshot the auth detector once for both the binding resolver and the
+	// secrets validator below.
+	var authList auth.ListOutput
+	var authResolver *binding.Resolver
+	var authLoaded bool
 
 	// Stable iteration so the report is deterministic.
 	nodeIDs := sortedNodeIDs(g)
@@ -169,16 +173,26 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 			}
 			policyData = d
 		}
-		if !stateLoaded {
-			state = collectFn()
-			stateLoaded = true
+		if !authLoaded {
+			authList = auth.ListAll("", auth.DefaultDetectors())
+			r, err := resolverFactory(opts.WorktreeDir)
+			if err != nil {
+				check.Status = "fail"
+				check.Errors = append(check.Errors, fmt.Sprintf("auth resolver: %v", err))
+				report.Nodes = append(report.Nodes, check)
+				report.Summary.Fail++
+				_ = writePreLaunchReport(opts.LogsRoot, report)
+				return report, fmt.Errorf("prelaunch: auth resolver: %w", err)
+			}
+			authResolver = r
+			authLoaded = true
 		}
 
 		res, err := policy.Resolve(policy.ResolveRequest{
 			ClassID:    className,
 			NodeID:     id,
 			WorkflowID: g.Name,
-		}, policyData, state)
+		}, policyData, authResolver)
 		if err != nil {
 			// Unknown agent_class= names are typos. They fail loudly —
 			// the policy surface is non-overloaded (use plain `class=`
@@ -194,8 +208,8 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 
 		check.ResolvedModel = res.ModelID
 		check.ResolvedDriver = res.Driver
-		check.AuthMethod = res.AuthMethod
-		check.AuthSource = res.AuthSource
+		check.AuthMethod = res.AuthMethod()
+		check.AuthSource = res.AuthSource()
 
 		// CLI drivers need their binary on PATH AND need to be executable
 		// (not a corrupt download, wrong arch, etc.). SDK drivers don't —
@@ -227,14 +241,14 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 	}
 
 	// Per-secret checks against the workflow's [secrets].needs list. If we
-	// haven't loaded machine state yet (no class-bearing nodes triggered
+	// haven't loaded the auth list yet (no class-bearing nodes triggered
 	// it), do so now so secrets can be validated independently.
 	if len(opts.RequiredSecrets) > 0 {
-		if !stateLoaded {
-			state = collectFn()
-			stateLoaded = true
+		if !authLoaded {
+			authList = auth.ListAll("", auth.DefaultDetectors())
+			authLoaded = true
 		}
-		secretChecks := validateSecrets(opts.RequiredSecrets, state)
+		secretChecks := validateSecrets(opts.RequiredSecrets, authList)
 		report.Secrets = secretChecks
 		for _, sc := range secretChecks {
 			if sc.Status == "fail" {
@@ -262,7 +276,7 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 // like "github" or "anthropic") has at least one auth entry in StateOK on
 // this machine. Returns one PreLaunchSecretCheck per `needs` entry, in the
 // order they were given.
-func validateSecrets(needs []string, state policy.MachineState) []PreLaunchSecretCheck {
+func validateSecrets(needs []string, authList auth.ListOutput) []PreLaunchSecretCheck {
 	if len(needs) == 0 {
 		return nil
 	}
@@ -274,7 +288,7 @@ func validateSecrets(needs []string, state policy.MachineState) []PreLaunchSecre
 		}
 		check := PreLaunchSecretCheck{Name: name}
 		satisfied := false
-		for _, e := range state.Auth.Entries {
+		for _, e := range authList.Entries {
 			if e.Provider == name && e.State == auth.StateOK {
 				satisfied = true
 				break

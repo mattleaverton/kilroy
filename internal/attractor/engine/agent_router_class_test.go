@@ -5,12 +5,12 @@ import (
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
 // makeTestPolicy builds a minimal *policy.Data with a single "hard_coding" class
-// containing one anthropic_sdk candidate guarded by ANTHROPIC_API_KEY.
+// containing one anthropic_sdk candidate guarded by api_key auth.
 func makeTestPolicy() *policy.Data {
 	return &policy.Data{
 		SchemaVersion: "1",
@@ -24,10 +24,7 @@ func makeTestPolicy() *policy.Data {
 						Driver:      "anthropic_sdk",
 						Transport:   "http",
 						HistorySink: "jsonl_local",
-						Auth: policy.AuthReq{
-							Kind:   "env_var",
-							EnvVar: "ANTHROPIC_API_KEY",
-						},
+						Requires:    binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
 					},
 				},
 			},
@@ -35,29 +32,39 @@ func makeTestPolicy() *policy.Data {
 	}
 }
 
-// makeTestState returns a MachineState that marks ANTHROPIC_API_KEY as present and OK.
-func makeTestState() policy.MachineState {
-	return policy.MachineState{
-		Auth: auth.ListOutput{
-			Entries: []auth.Entry{
-				{
-					ID:    "anthropic.env.ANTHROPIC_API_KEY",
-					Kind:  auth.KindEnvVar,
-					State: auth.StateOK,
-					Source: auth.Source{
-						EnvVar: "ANTHROPIC_API_KEY",
-					},
-				},
+// authResolverFactory returns a fixture binding.Resolver factory whose detection
+// view marks ANTHROPIC_API_KEY as present, so the test policy candidate
+// resolves cleanly.
+func authResolverFactory() func(string) (*binding.Resolver, error) {
+	cfg := &binding.Config{
+		Bindings: map[string]string{"anthropic/api_key": "anthropic_api_key"},
+		Chains: map[string]binding.Chain{
+			"anthropic_api_key": {
+				Name:     "anthropic_api_key",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "ANTHROPIC_API_KEY"}},
 			},
 		},
 	}
+	view := testDetectionView{envs: map[string]bool{"ANTHROPIC_API_KEY": true}}
+	r := binding.NewResolver(cfg, view)
+	return func(string) (*binding.Resolver, error) { return r, nil }
 }
 
-// makeTestRouter builds an AgentRouter with injected policy loader and state collector.
-func makeTestRouter(data *policy.Data, state policy.MachineState) *AgentRouter {
+// testDetectionView is a binding.DetectionView for engine tests.
+type testDetectionView struct {
+	envs map[string]bool
+	clis map[string]bool
+}
+
+func (v testDetectionView) EnvVarPresent(name string) bool { return v.envs[name] }
+func (v testDetectionView) CLISessionOK(tool string) bool  { return v.clis[tool] }
+
+// makeTestRouter builds an AgentRouter with injected policy loader and resolver factory.
+func makeTestRouter(data *policy.Data, factory func(string) (*binding.Resolver, error)) *AgentRouter {
 	return &AgentRouter{
-		policyLoad:    func() (*policy.Data, error) { return data, nil },
-		policyCollect: func() policy.MachineState { return state },
+		policyLoad:     func() (*policy.Data, error) { return data, nil },
+		policyResolver: factory,
 	}
 }
 
@@ -65,7 +72,7 @@ func makeTestRouter(data *policy.Data, state policy.MachineState) *AgentRouter {
 // carries class="hard_coding", the policy resolver overrides the bogus
 // llm_provider/llm_model stylesheet attributes.
 func TestAgentRouter_ClassAttribute_OverridesStylesheet(t *testing.T) {
-	router := makeTestRouter(makeTestPolicy(), makeTestState())
+	router := makeTestRouter(makeTestPolicy(), authResolverFactory())
 
 	node := model.NewNode("test-node")
 	node.Attrs["agent_class"] = "hard_coding"
@@ -98,7 +105,7 @@ func TestAgentRouter_ClassAttribute_OverridesStylesheet(t *testing.T) {
 // are caught at validation time, not silently fallen through. (CSS-style
 // stylesheet selectors live on the unrelated `class=` attribute.)
 func TestAgentRouter_AgentClass_UnknownClass_Errors(t *testing.T) {
-	router := makeTestRouter(makeTestPolicy(), makeTestState())
+	router := makeTestRouter(makeTestPolicy(), authResolverFactory())
 
 	node := model.NewNode("test-node")
 	node.Attrs["agent_class"] = "totally_made_up"

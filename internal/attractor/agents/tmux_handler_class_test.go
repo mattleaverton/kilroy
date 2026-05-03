@@ -20,9 +20,54 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
-	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
+
+// agentTestDetectionView is a binding.DetectionView for tmux handler tests.
+type agentTestDetectionView struct {
+	envs map[string]bool
+	clis map[string]bool
+}
+
+func (v agentTestDetectionView) EnvVarPresent(name string) bool { return v.envs[name] }
+func (v agentTestDetectionView) CLISessionOK(tool string) bool  { return v.clis[tool] }
+
+// claudeCLIResolverFactory builds a binding.Resolver factory whose detection
+// view marks the claude CLI as logged-in.
+func claudeCLIResolverFactory() func(string) (*binding.Resolver, error) {
+	cfg := &binding.Config{
+		Bindings: map[string]string{"anthropic/cli_oauth/claude": "anthropic_claude_cli"},
+		Chains: map[string]binding.Chain{
+			"anthropic_claude_cli": {
+				Name:     "anthropic_claude_cli",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
+				Sources:  []binding.Source{{Kind: binding.SourceCLISession, Tool: "claude"}},
+			},
+		},
+	}
+	view := agentTestDetectionView{clis: map[string]bool{"claude": true}}
+	r := binding.NewResolver(cfg, view)
+	return func(string) (*binding.Resolver, error) { return r, nil }
+}
+
+// anthropicSDKResolverFactory builds a binding.Resolver factory whose detection
+// view marks ANTHROPIC_API_KEY as set in the env.
+func anthropicSDKResolverFactory() func(string) (*binding.Resolver, error) {
+	cfg := &binding.Config{
+		Bindings: map[string]string{"anthropic/api_key": "anthropic_api_key"},
+		Chains: map[string]binding.Chain{
+			"anthropic_api_key": {
+				Name:     "anthropic_api_key",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "ANTHROPIC_API_KEY"}},
+			},
+		},
+	}
+	view := agentTestDetectionView{envs: map[string]bool{"ANTHROPIC_API_KEY": true}}
+	r := binding.NewResolver(cfg, view)
+	return func(string) (*binding.Resolver, error) { return r, nil }
+}
 
 // claudePolicy returns a stub policy whose hard_coding class resolves to a
 // single claude_cli candidate gated on a CLI session for "claude".
@@ -39,27 +84,8 @@ func claudePolicy() *policy.Data {
 						Driver:      "claude_cli",
 						Transport:   "cli_subprocess",
 						HistorySink: "jsonl_local",
-						Auth: policy.AuthReq{
-							Kind: "cli_session",
-							CLI:  "claude",
-						},
+						Requires:    binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
 					},
-				},
-			},
-		},
-	}
-}
-
-// claudeCLIState marks the claude CLI as logged-in and OK on the machine.
-func claudeCLIState() policy.MachineState {
-	return policy.MachineState{
-		Auth: auth.ListOutput{
-			Entries: []auth.Entry{
-				{
-					ID:    "anthropic.cli.claude",
-					Tool:  "claude",
-					Kind:  auth.KindCLIOAuth,
-					State: auth.StateOK,
 				},
 			},
 		},
@@ -137,8 +163,8 @@ exit 0
 		Templates: reg,
 		Timeout:   30 * time.Second,
 		PolicyDeps: engine.PolicyDeps{
-			Load:    func() (*policy.Data, error) { return claudePolicy(), nil },
-			Collect: func() policy.MachineState { return claudeCLIState() },
+			Load:     func() (*policy.Data, error) { return claudePolicy(), nil },
+			Resolver: claudeCLIResolverFactory(),
 		},
 	}
 
@@ -238,23 +264,10 @@ func TestTmuxAgentHandler_ClassAttribute_NonCLIDriver_Errors(t *testing.T) {
 						ModelID:   "claude-opus-4-7",
 						Driver:    "anthropic_sdk",
 						Transport: "http",
-						Auth: policy.AuthReq{
-							Kind:   "env_var",
-							EnvVar: "ANTHROPIC_API_KEY",
-						},
+						Requires:  binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
 					},
 				},
 			},
-		},
-	}
-	apiState := policy.MachineState{
-		Auth: auth.ListOutput{
-			Entries: []auth.Entry{{
-				ID:     "anthropic.env.ANTHROPIC_API_KEY",
-				Kind:   auth.KindEnvVar,
-				State:  auth.StateOK,
-				Source: auth.Source{EnvVar: "ANTHROPIC_API_KEY"},
-			}},
 		},
 	}
 
@@ -262,8 +275,8 @@ func TestTmuxAgentHandler_ClassAttribute_NonCLIDriver_Errors(t *testing.T) {
 		Templates: templates.DefaultRegistry(),
 		Timeout:   5 * time.Second,
 		PolicyDeps: engine.PolicyDeps{
-			Load:    func() (*policy.Data, error) { return apiOnlyPolicy, nil },
-			Collect: func() policy.MachineState { return apiState },
+			Load:     func() (*policy.Data, error) { return apiOnlyPolicy, nil },
+			Resolver: anthropicSDKResolverFactory(),
 		},
 	}
 
@@ -341,4 +354,3 @@ func eventNames(events []map[string]any) []string {
 	}
 	return names
 }
-

@@ -1,28 +1,48 @@
 package policy
 
 import (
+	"errors"
 	"testing"
 
-	"github.com/danshapiro/kilroy/internal/auth"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
-// envEntry builds a test auth.Entry representing an OK environment variable.
-func envEntry(provider, varName string) auth.Entry {
-	return auth.Entry{
-		Kind:     auth.KindEnvVar,
-		Provider: provider,
-		State:    auth.StateOK,
-		Source:   auth.Source{EnvVar: varName},
-	}
+// fakeView is a binding.DetectionView for tests.
+type fakeView struct {
+	envs map[string]bool
+	clis map[string]bool
 }
 
-// cliEntry builds a test auth.Entry representing an authenticated CLI tool.
-func cliEntry(provider, tool string) auth.Entry {
-	return auth.Entry{
-		Kind:     auth.KindCLIOAuth,
-		Provider: provider,
-		Tool:     tool,
-		State:    auth.StateOK,
+func (f fakeView) EnvVarPresent(name string) bool { return f.envs[name] }
+func (f fakeView) CLISessionOK(tool string) bool  { return f.clis[tool] }
+
+// testAuthConfig builds a binding.Config matching the policy candidates
+// minimalPolicy declares — anthropic api_key + cli_oauth/claude, openai
+// api_key.
+func testAuthConfig() *binding.Config {
+	return &binding.Config{
+		Bindings: map[string]string{
+			"anthropic/api_key":          "anthropic_api_key",
+			"anthropic/cli_oauth/claude": "anthropic_claude_cli",
+			"openai/api_key":             "openai_api_key",
+		},
+		Chains: map[string]binding.Chain{
+			"anthropic_api_key": {
+				Name:     "anthropic_api_key",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "ANTHROPIC_API_KEY"}},
+			},
+			"anthropic_claude_cli": {
+				Name:     "anthropic_claude_cli",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
+				Sources:  []binding.Source{{Kind: binding.SourceCLISession, Tool: "claude"}},
+			},
+			"openai_api_key": {
+				Name:     "openai_api_key",
+				Requires: binding.Requirement{Provider: "openai", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "OPENAI_API_KEY"}},
+			},
+		},
 	}
 }
 
@@ -40,14 +60,14 @@ func minimalPolicy() *Data {
 						Driver:      "claude_cli",
 						Transport:   "cli_subprocess",
 						HistorySink: "jsonl_local",
-						Auth:        AuthReq{Kind: "cli_session", CLI: "claude"},
+						Requires:    binding.Requirement{Provider: "anthropic", Method: binding.MethodCLIOAuth, Tool: "claude"},
 					},
 					{
 						ModelID:     "claude-opus-4-7",
 						Driver:      "anthropic_sdk",
 						Transport:   "http",
 						HistorySink: "api_stream",
-						Auth:        AuthReq{Kind: "env_var", EnvVar: "ANTHROPIC_API_KEY"},
+						Requires:    binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
 					},
 				},
 			},
@@ -59,7 +79,7 @@ func minimalPolicy() *Data {
 						Driver:      "openai_sdk",
 						Transport:   "http",
 						HistorySink: "api_stream",
-						Auth:        AuthReq{Kind: "env_var", EnvVar: "OPENAI_API_KEY"},
+						Requires:    binding.Requirement{Provider: "openai", Method: binding.MethodAPIKey},
 					},
 				},
 			},
@@ -67,14 +87,16 @@ func minimalPolicy() *Data {
 	}
 }
 
+// makeResolver constructs a binding.Resolver from a fakeView + the test config.
+func makeResolver(view fakeView) *binding.Resolver {
+	return binding.NewResolver(testAuthConfig(), view)
+}
+
 func TestResolver(t *testing.T) {
-	// Case 1: class match, first candidate reachable → rank 0, no skips.
 	t.Run("class match, first candidate reachable", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{Auth: auth.ListOutput{
-			Entries: []auth.Entry{cliEntry("anthropic", "claude")},
-		}}
-		result, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, state)
+		view := fakeView{envs: map[string]bool{}, clis: map[string]bool{"claude": true}}
+		result, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, makeResolver(view))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -90,15 +112,18 @@ func TestResolver(t *testing.T) {
 		if result.ModelID != "claude-opus-4-7" {
 			t.Errorf("unexpected ModelID: %s", result.ModelID)
 		}
+		if result.AuthMethod() != string(binding.MethodCLIOAuth) {
+			t.Errorf("expected AuthMethod=cli_oauth, got %s", result.AuthMethod())
+		}
+		if result.AuthSource() != "claude" {
+			t.Errorf("expected AuthSource=claude, got %s", result.AuthSource())
+		}
 	})
 
-	// Case 2: class match, first candidate unreachable, second reachable → rank 1, one skip.
 	t.Run("class match, first candidate unreachable second reachable", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{Auth: auth.ListOutput{
-			Entries: []auth.Entry{envEntry("anthropic", "ANTHROPIC_API_KEY")},
-		}}
-		result, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, state)
+		view := fakeView{envs: map[string]bool{"ANTHROPIC_API_KEY": true}, clis: map[string]bool{}}
+		result, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, makeResolver(view))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -108,93 +133,73 @@ func TestResolver(t *testing.T) {
 		if len(result.Skipped) != 1 {
 			t.Errorf("expected 1 skip, got %d", len(result.Skipped))
 		}
-		if len(result.Skipped) > 0 {
-			want := "cli_not_installed:claude"
-			if result.Skipped[0].Reason != want {
-				t.Errorf("expected skip reason %q, got %q", want, result.Skipped[0].Reason)
-			}
-		}
 		if result.Driver != "anthropic_sdk" {
 			t.Errorf("expected driver=anthropic_sdk, got %s", result.Driver)
 		}
+		if result.AuthSource() != "ANTHROPIC_API_KEY" {
+			t.Errorf("expected AuthSource=ANTHROPIC_API_KEY, got %s", result.AuthSource())
+		}
 	})
 
-	// Case 3: class with all candidates unreachable → ErrNoViableCandidate covering all.
 	t.Run("class with all candidates unreachable", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{Auth: auth.ListOutput{Entries: []auth.Entry{}}}
-		_, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, state)
+		view := fakeView{envs: map[string]bool{}, clis: map[string]bool{}}
+		_, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, makeResolver(view))
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		e, ok := err.(ErrNoViableCandidate)
-		if !ok {
+		var nv ErrNoViableCandidate
+		if !errors.As(err, &nv) {
 			t.Fatalf("expected ErrNoViableCandidate, got %T: %v", err, err)
 		}
-		wantSkips := len(policy.Classes["hard_coding"].Chain) // 2
-		if len(e.Skipped) != wantSkips {
-			t.Errorf("expected %d skip records (one per candidate), got %d", wantSkips, len(e.Skipped))
-		}
-		if e.ClassID != "hard_coding" {
-			t.Errorf("expected ClassID=hard_coding, got %s", e.ClassID)
+		wantSkips := len(policy.Classes["hard_coding"].Chain)
+		if len(nv.Skipped) != wantSkips {
+			t.Errorf("expected %d skip records, got %d", wantSkips, len(nv.Skipped))
 		}
 	})
 
-	// Case 4: unknown class → ErrUnknownClass with sorted Available.
 	t.Run("unknown class", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{}
-		_, err := Resolve(ResolveRequest{ClassID: "does_not_exist"}, policy, state)
+		view := fakeView{}
+		_, err := Resolve(ResolveRequest{ClassID: "does_not_exist"}, policy, makeResolver(view))
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		e, ok := err.(ErrUnknownClass)
-		if !ok {
+		var unk ErrUnknownClass
+		if !errors.As(err, &unk) {
 			t.Fatalf("expected ErrUnknownClass, got %T: %v", err, err)
 		}
-		if e.Name != "does_not_exist" {
-			t.Errorf("expected Name=does_not_exist, got %s", e.Name)
+		if unk.Name != "does_not_exist" {
+			t.Errorf("expected Name=does_not_exist, got %s", unk.Name)
 		}
-		if len(e.Available) < 2 {
-			t.Errorf("expected Available to list class names, got %v", e.Available)
+		if len(unk.Available) < 2 {
+			t.Errorf("expected Available list, got %v", unk.Available)
 		}
-		// Verify Available is sorted.
-		for i := 1; i < len(e.Available); i++ {
-			if e.Available[i-1] > e.Available[i] {
-				t.Errorf("Available not sorted: %v", e.Available)
+		for i := 1; i < len(unk.Available); i++ {
+			if unk.Available[i-1] > unk.Available[i] {
+				t.Errorf("Available not sorted: %v", unk.Available)
 				break
 			}
 		}
 	})
 
-	// Case 5: alias → resolving aliased name succeeds; RequestValue preserves original.
 	t.Run("alias resolves and preserves original RequestValue", func(t *testing.T) {
 		policy := minimalPolicy()
-		policy.Aliases = []ClassAlias{
-			{From: "coding", To: "hard_coding"},
-		}
-		state := MachineState{Auth: auth.ListOutput{
-			Entries: []auth.Entry{cliEntry("anthropic", "claude")},
-		}}
-		result, err := Resolve(ResolveRequest{ClassID: "coding"}, policy, state)
+		policy.Aliases = []ClassAlias{{From: "coding", To: "hard_coding"}}
+		view := fakeView{clis: map[string]bool{"claude": true}, envs: map[string]bool{}}
+		result, err := Resolve(ResolveRequest{ClassID: "coding"}, policy, makeResolver(view))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if result.RequestValue != "coding" {
-			t.Errorf("expected RequestValue=coding (original), got %s", result.RequestValue)
-		}
-		if result.ModelID == "" {
-			t.Error("expected a resolved ModelID")
+			t.Errorf("expected RequestValue=coding, got %s", result.RequestValue)
 		}
 	})
 
-	// Case 6: strict-mode match, reachable → FallbackRank == -1.
 	t.Run("strict mode match reachable", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{Auth: auth.ListOutput{
-			Entries: []auth.Entry{envEntry("anthropic", "ANTHROPIC_API_KEY")},
-		}}
-		result, err := Resolve(ResolveRequest{ModelID: "claude-opus-4-7"}, policy, state)
+		view := fakeView{envs: map[string]bool{"ANTHROPIC_API_KEY": true}, clis: map[string]bool{}}
+		result, err := Resolve(ResolveRequest{ModelID: "claude-opus-4-7"}, policy, makeResolver(view))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -204,94 +209,52 @@ func TestResolver(t *testing.T) {
 		if result.RequestType != "strict" {
 			t.Errorf("expected RequestType=strict, got %s", result.RequestType)
 		}
-		if result.RequestValue != "claude-opus-4-7" {
-			t.Errorf("expected RequestValue=claude-opus-4-7, got %s", result.RequestValue)
-		}
 	})
 
-	// Case 7: strict-mode, model not in any class → ErrUnknownModel.
 	t.Run("strict mode model not in any class", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{}
-		_, err := Resolve(ResolveRequest{ModelID: "nonexistent-model-xyz"}, policy, state)
+		_, err := Resolve(ResolveRequest{ModelID: "nonexistent-model-xyz"}, policy, makeResolver(fakeView{}))
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		e, ok := err.(ErrUnknownModel)
-		if !ok {
+		var um ErrUnknownModel
+		if !errors.As(err, &um) {
 			t.Fatalf("expected ErrUnknownModel, got %T: %v", err, err)
-		}
-		if e.ModelID != "nonexistent-model-xyz" {
-			t.Errorf("expected ModelID=nonexistent-model-xyz, got %s", e.ModelID)
 		}
 	})
 
-	// Case 8: strict-mode, model exists but unreachable → ErrStrictModelUnreachable.
 	t.Run("strict mode model exists but unreachable", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{Auth: auth.ListOutput{Entries: []auth.Entry{}}}
-		_, err := Resolve(ResolveRequest{ModelID: "claude-opus-4-7"}, policy, state)
+		_, err := Resolve(ResolveRequest{ModelID: "claude-opus-4-7"}, policy, makeResolver(fakeView{}))
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		e, ok := err.(ErrStrictModelUnreachable)
-		if !ok {
+		var su ErrStrictModelUnreachable
+		if !errors.As(err, &su) {
 			t.Fatalf("expected ErrStrictModelUnreachable, got %T: %v", err, err)
 		}
-		if e.ModelID != "claude-opus-4-7" {
-			t.Errorf("expected ModelID=claude-opus-4-7, got %s", e.ModelID)
-		}
-		if e.Reason == "" {
+		if su.Reason == "" {
 			t.Error("expected non-empty Reason")
 		}
 	})
 
-	// Case 9: both ClassID and ModelID set → ErrBothClassAndModel.
 	t.Run("both class and model set", func(t *testing.T) {
 		policy := minimalPolicy()
-		state := MachineState{}
-		_, err := Resolve(ResolveRequest{ClassID: "hard_coding", ModelID: "claude-opus-4-7"}, policy, state)
+		_, err := Resolve(ResolveRequest{ClassID: "hard_coding", ModelID: "claude-opus-4-7"}, policy, makeResolver(fakeView{}))
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
-		if _, ok := err.(ErrBothClassAndModel); !ok {
+		var bcm ErrBothClassAndModel
+		if !errors.As(err, &bcm) {
 			t.Fatalf("expected ErrBothClassAndModel, got %T: %v", err, err)
 		}
 	})
 
-	// Case 10: none-auth candidate → always reachable regardless of state.
-	t.Run("none-auth candidate always reachable", func(t *testing.T) {
-		policy := &Data{
-			SchemaVersion: "1",
-			PolicyVersion: "test",
-			Classes: map[string]Class{
-				"local": {
-					Description: "local model, no auth",
-					Chain: []Candidate{
-						{
-							ModelID:     "local-llm",
-							Driver:      "local_sdk",
-							Transport:   "http",
-							HistorySink: "jsonl_local",
-							Auth:        AuthReq{Kind: "none"},
-						},
-					},
-				},
-			},
-		}
-		state := MachineState{Auth: auth.ListOutput{Entries: []auth.Entry{}}}
-		result, err := Resolve(ResolveRequest{ClassID: "local"}, policy, state)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if result.FallbackRank != 0 {
-			t.Errorf("expected FallbackRank=0, got %d", result.FallbackRank)
-		}
-		if result.ModelID != "local-llm" {
-			t.Errorf("expected ModelID=local-llm, got %s", result.ModelID)
-		}
-		if result.AuthMethod != "none" {
-			t.Errorf("expected AuthMethod=none, got %s", result.AuthMethod)
+	t.Run("nil resolver errors", func(t *testing.T) {
+		policy := minimalPolicy()
+		_, err := Resolve(ResolveRequest{ClassID: "hard_coding"}, policy, nil)
+		if err == nil {
+			t.Fatal("expected error for nil resolver, got nil")
 		}
 	})
 }

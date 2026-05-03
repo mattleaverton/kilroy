@@ -15,6 +15,8 @@ import (
 	"fmt"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
 //go:embed data/policy.toml
@@ -22,40 +24,36 @@ var rawPolicy []byte
 
 // Data is the root structure decoded from the embedded TOML file.
 type Data struct {
-	SchemaVersion string             `toml:"schema_version"`
-	PolicyVersion string             `toml:"policy_version"`
-	Classes       map[string]Class   `toml:"classes"`
-	Aliases       []ClassAlias       `toml:"aliases"`
-	Deprecated    []Deprecation      `toml:"deprecated"`
+	SchemaVersion string           `toml:"schema_version"`
+	PolicyVersion string           `toml:"policy_version"`
+	Classes       map[string]Class `toml:"classes"`
+	Aliases       []ClassAlias     `toml:"aliases"`
+	Deprecated    []Deprecation    `toml:"deprecated"`
 }
 
 // Class is a named resolution strategy: an ordered fallback chain of
 // candidate routes. The resolver walks Chain[0], Chain[1], ... until
-// one passes the machine-state checks.
+// one passes the auth-binding checks.
 type Class struct {
 	Description string      `toml:"description"`
 	Chain       []Candidate `toml:"chain"`
 }
 
 // Candidate is one option in a class's fallback chain. The resolver
-// evaluates each candidate against MachineState and picks the first
-// that's reachable.
+// evaluates each candidate's Requires against the auth.binding resolver
+// and picks the first whose chain has a usable source.
+//
+// Per plan §13.7 / 2026-05-02-auth-class-resolver-integration §1: a
+// candidate declares only what credential type it needs (provider+method),
+// never an env var name. Concrete sources live in the user/project
+// auth.toml; the binding.Resolver consults them.
 type Candidate struct {
-	ModelID     string   `toml:"model_id"`
-	Driver      string   `toml:"driver"`        // "claude_cli" | "codex_cli" | "anthropic_sdk" | "openai_sdk" | "google_sdk"
-	Transport   string   `toml:"transport"`     // "http" | "cli_subprocess" | "tmux_pty"
-	HistorySink string   `toml:"history_sink"`  // "jsonl_local" | "api_stream"  (renamed turn_codec in plan §9; sink kept for v2 baseline)
-	Tags        []string `toml:"tags"`          // informational: "subscription" | "api_key" | "tier:elite"
-	Auth        AuthReq  `toml:"auth"`
-}
-
-// AuthReq describes the credential a candidate needs. The resolver
-// never reads the credential value — it consults MachineState to check
-// presence (env var set, CLI session probe true, etc.).
-type AuthReq struct {
-	Kind   string `toml:"kind"`              // "env_var" | "cli_session" | "none"
-	EnvVar string `toml:"env_var,omitempty"` // when Kind == "env_var"
-	CLI    string `toml:"cli,omitempty"`     // when Kind == "cli_session"
+	ModelID     string              `toml:"model_id"`
+	Driver      string              `toml:"driver"`       // "claude_cli" | "codex_cli" | "anthropic_sdk" | "openai_sdk" | "google_sdk"
+	Transport   string              `toml:"transport"`    // "http" | "cli_subprocess" | "tmux_pty"
+	HistorySink string              `toml:"history_sink"` // "jsonl_local" | "api_stream" (renamed turn_codec in plan §9; sink kept for v2 baseline)
+	Tags        []string            `toml:"tags"`         // informational: "subscription" | "api_key" | "tier:elite"
+	Requires    binding.Requirement `toml:"requires"`
 }
 
 // ClassAlias redirects an old class name to a current one. The
@@ -112,22 +110,21 @@ func validateData(d *Data) error {
 			if c.Driver == "" {
 				return fmt.Errorf("class %q candidate %d (%s): driver is required", name, i, c.ModelID)
 			}
-			if c.Auth.Kind == "" {
-				return fmt.Errorf("class %q candidate %d (%s): auth.kind is required", name, i, c.ModelID)
+			if c.Requires.Provider == "" {
+				return fmt.Errorf("class %q candidate %d (%s): requires.provider is required", name, i, c.ModelID)
 			}
-			switch c.Auth.Kind {
-			case "env_var":
-				if c.Auth.EnvVar == "" {
-					return fmt.Errorf("class %q candidate %d (%s): auth.env_var required when kind=env_var", name, i, c.ModelID)
+			if c.Requires.Method == "" {
+				return fmt.Errorf("class %q candidate %d (%s): requires.method is required", name, i, c.ModelID)
+			}
+			switch c.Requires.Method {
+			case binding.MethodAPIKey:
+				// Tool not required for api_key.
+			case binding.MethodCLIOAuth:
+				if c.Requires.Tool == "" {
+					return fmt.Errorf("class %q candidate %d (%s): requires.tool required when method=cli_oauth", name, i, c.ModelID)
 				}
-			case "cli_session":
-				if c.Auth.CLI == "" {
-					return fmt.Errorf("class %q candidate %d (%s): auth.cli required when kind=cli_session", name, i, c.ModelID)
-				}
-			case "none":
-				// no-op: local endpoints, no auth required
 			default:
-				return fmt.Errorf("class %q candidate %d (%s): unknown auth.kind %q", name, i, c.ModelID, c.Auth.Kind)
+				return fmt.Errorf("class %q candidate %d (%s): unknown requires.method %q", name, i, c.ModelID, c.Requires.Method)
 			}
 		}
 	}
