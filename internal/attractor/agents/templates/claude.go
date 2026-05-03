@@ -2,7 +2,6 @@
 package templates
 
 import (
-	"os"
 	"strings"
 	"time"
 
@@ -28,11 +27,14 @@ func Claude() Template {
 			return args
 		},
 		BuildEnv: func() map[string]string {
-			env := map[string]string{}
-			if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-				env["ANTHROPIC_API_KEY"] = key
-			}
-			return env
+			// Credential delivery is the binder's job (see
+			// internal/attractor/engine/binder_anthropic.go).
+			// In particular: when claude_cli is the resolved driver, the
+			// binder SCRUBS ANTHROPIC_API_KEY from the child env so the
+			// CLI uses the logged-in subscription session, not the env key
+			// (silent wrong-billing prevention). The template must NOT
+			// pass through env keys here.
+			return map[string]string{}
 		},
 		StructuredOutput: true,
 		PromptPrefix:     "❯",

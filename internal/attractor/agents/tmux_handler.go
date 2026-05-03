@@ -16,6 +16,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
 const kilroySocket = "kilroy"
@@ -109,6 +110,42 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	// Build environment variables.
 	env := buildTmuxAgentEnv(tmpl, exec, node.ID)
 
+	// When a class resolved, materialize the credential via the per-driver
+	// binder. This applies env scrubs (claude_cli MUST scrub
+	// ANTHROPIC_API_KEY so the CLI uses the logged-in session, not the
+	// env key) and any required isolated config files (codex auth.json).
+	stageDir := filepath.Join(exec.LogsRoot, node.ID)
+	_ = os.MkdirAll(stageDir, 0o755)
+	if hasClass {
+		bindResult, err := materializeCredential(cls, stageDir)
+		if err != nil {
+			return runtime.Outcome{
+				Status:        runtime.StatusFail,
+				FailureReason: fmt.Sprintf("credential bind: %v", err),
+			}, nil
+		}
+		for k, v := range bindResult.EnvSet {
+			env[k] = v
+		}
+		for _, name := range bindResult.EnvScrub {
+			delete(env, name)
+		}
+		for path, content := range bindResult.FilesToWrite {
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				return runtime.Outcome{
+					Status:        runtime.StatusFail,
+					FailureReason: fmt.Sprintf("write credential file dir: %v", err),
+				}, nil
+			}
+			if err := os.WriteFile(path, content, 0o600); err != nil {
+				return runtime.Outcome{
+					Status:        runtime.StatusFail,
+					FailureReason: fmt.Sprintf("write credential file: %v", err),
+				}, nil
+			}
+		}
+	}
+
 	// Resolve model: class-resolved value wins; otherwise legacy llm_model.
 	modelID := ""
 	if hasClass {
@@ -137,8 +174,6 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	}
 
 	// Build and write the command.
-	stageDir := filepath.Join(exec.LogsRoot, node.ID)
-	_ = os.MkdirAll(stageDir, 0o755)
 	command := tmpl.BuildCommand(prompt, exec.WorktreeDir, modelID)
 	// When the template produces structured JSONL output, redirect it to a
 	// known file so the log parser can find it without hunting through
@@ -461,4 +496,36 @@ func buildSessionName(runID, nodeID string) string {
 // shellQuoteSimple wraps a path in single quotes for shell redirection.
 func shellQuoteSimple(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// materializeCredential turns a class resolution into per-driver credential
+// artifacts: env vars to set, env vars to scrub from the child env, and
+// any per-stage files to write. The driver-specific dispatch lives in
+// engine/credential_binder.go; here we just bind the snapshot to a fresh
+// Credential and call it.
+//
+// Critically, claude_cli's binder returns EnvScrub=["ANTHROPIC_API_KEY"]
+// so the CLI uses the logged-in subscription session rather than silently
+// falling through to the env key.
+func materializeCredential(cls engine.ClassResolution, stageDir string) (engine.BindResult, error) {
+	snap := cls.Result.AuthSnapshot
+	// Construct a fresh Credential from the snapshot at execution time —
+	// per plan §5, source values are re-read fresh, never carried in the
+	// snapshot itself.
+	var cred binding.Credential
+	cred.Snapshot = snap
+	switch snap.Source.Kind {
+	case binding.SourceEnvVar:
+		val := os.Getenv(snap.Source.Name)
+		if val == "" {
+			return engine.BindResult{}, fmt.Errorf(
+				"auth source %s vanished between prelaunch and execution",
+				snap.Source.Name,
+			)
+		}
+		cred.Value = val
+	case binding.SourceCLISession:
+		cred.CLITool = snap.Source.Tool
+	}
+	return engine.Bind(cls.Driver, snap, cred, stageDir)
 }

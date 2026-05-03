@@ -110,6 +110,19 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 			"driver":        res.Driver,
 			"fallback_rank": res.FallbackRank,
 		})
+		// Plan §7 (auth integration): emit auth credential identity so
+		// progress.ndjson records which chain + source backed the
+		// resolution. Source kind/name are snapshot fields — never the
+		// secret value.
+		exec.Engine.appendProgress(map[string]any{
+			"event":       "auth_credential_selected",
+			"node_id":     node.ID,
+			"provider":    res.AuthSnapshot.Provider,
+			"method":      string(res.AuthSnapshot.Method),
+			"chain_name":  res.AuthSnapshot.ChainName,
+			"source_kind": string(res.AuthSnapshot.Source.Kind),
+			"source_name": authSourceIdentifier(res.AuthSnapshot.Source),
+		})
 	}
 
 	persistResolution(exec, node.ID, className, res)
@@ -340,6 +353,19 @@ func projectRootForExec(exec *Execution) string {
 	}
 	if root := strings.TrimSpace(exec.WorktreeDir); root != "" {
 		return root
+	}
+	return ""
+}
+
+// authSourceIdentifier returns the env var name or CLI tool name for a
+// binding.Source — used in progress events / artifacts where the kind is
+// already separately recorded.
+func authSourceIdentifier(s binding.Source) string {
+	switch s.Kind {
+	case binding.SourceEnvVar:
+		return s.Name
+	case binding.SourceCLISession:
+		return s.Tool
 	}
 	return ""
 }
