@@ -23,50 +23,20 @@ import (
 // Config loading
 // ─────────────────────────────────────────────────────────────────────────────
 
-// loadAuthConfig loads the merged user/project auth config.
-// projectRoot is the directory that contains .kilroy/; pass "" to auto-detect
-// via findProjectRoot(). Returns *binding.ErrNoConfig when neither file exists.
+// loadAuthConfig loads the merged user/project auth config via the
+// canonical binding.LoadConfig path (which respects XDG_CONFIG_HOME).
+// projectRoot is the directory that contains .kilroy/; pass "" to
+// auto-detect via findProjectRoot(). Returns *binding.ErrNoConfig when
+// neither file exists.
 func loadAuthConfig(projectRoot string) (*binding.Config, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = os.Getenv("HOME")
-	}
-	userPath := filepath.Join(home, ".config", "kilroy", "auth.toml")
-
 	if projectRoot == "" {
 		projectRoot = findProjectRoot()
 	}
-	var projectPath string
-	if projectRoot != "" {
-		projectPath = filepath.Join(projectRoot, ".kilroy", "auth.toml")
+	cfg, err := binding.LoadConfig(projectRoot)
+	if err != nil {
+		return nil, err
 	}
-
-	userCfg, userErr := loadOneCfg(userPath)
-	if userErr != nil {
-		return nil, userErr
-	}
-
-	var projectCfg *binding.Config
-	if projectPath != "" {
-		projectCfg, err = loadOneCfg(projectPath)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	if userCfg == nil && projectCfg == nil {
-		return nil, &binding.ErrNoConfig{
-			UserPath:    userPath,
-			ProjectPath: projectPath,
-		}
-	}
-	if userCfg == nil {
-		userCfg = &binding.Config{
-			Bindings: map[string]string{},
-			Chains:   map[string]binding.Chain{},
-		}
-	}
-	return mergeAuthConfigs(userCfg, projectCfg), nil
+	return &cfg, nil
 }
 
 // loadOneCfg reads a single auth.toml file. Returns nil, nil when the file is
