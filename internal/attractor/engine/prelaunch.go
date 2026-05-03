@@ -175,7 +175,16 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		}
 		if !authLoaded {
 			authList = auth.ListAll("", auth.DefaultDetectors())
-			r, err := resolverFactory(opts.WorktreeDir)
+			// Use the source workspace (not the not-yet-created worktree)
+			// as the project root for auth.toml lookup. The worktree is a
+			// copy of the workspace, so .kilroy/auth.toml is identical;
+			// using the workspace at prelaunch time means prelaunch and
+			// execution agree about the project chain set.
+			projectRoot := strings.TrimSpace(opts.Workspace)
+			if projectRoot == "" {
+				projectRoot = strings.TrimSpace(opts.RepoPath)
+			}
+			r, err := resolverFactory(projectRoot)
 			if err != nil {
 				check.Status = "fail"
 				check.Errors = append(check.Errors, fmt.Sprintf("auth resolver: %v", err))
