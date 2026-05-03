@@ -90,7 +90,7 @@ func TestAgentRouter_RunAPI_OneShot_StreamErrorEventTakesPrecedence(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	text, out, err := r.runAPI(ctx, execCtx, node, "openai", "gpt-5.2", "say hi")
+	text, out, err := r.runAPI(ctx, execCtx, node, "openai", "gpt-5.2", "say hi", nil)
 	if err == nil || !strings.Contains(err.Error(), "synthetic stream failure") {
 		t.Fatalf("expected stream failure, got err=%v", err)
 	}
@@ -176,7 +176,7 @@ func TestAgentRouter_RunAPI_OneShot_EmitsProviderToolLifecycleProgress(t *testin
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	text, out, err := r.runAPI(ctx, execCtx, node, "openai", "gpt-5.2", "say hi")
+	text, out, err := r.runAPI(ctx, execCtx, node, "openai", "gpt-5.2", "say hi", nil)
 	if err != nil {
 		t.Fatalf("runAPI: %v", err)
 	}

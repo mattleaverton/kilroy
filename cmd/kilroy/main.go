@@ -606,7 +606,12 @@ func attractorRun(args []string) {
 			ForceModels:   forceModels,
 			Registry:      newLayeredRegistry(useTmux),
 			GitOps:        gitOps,
-			PackageDir:    func() string { if pkg != nil { return pkg.Dir }; return "" }(),
+			PackageDir: func() string {
+				if pkg != nil {
+					return pkg.Dir
+				}
+				return ""
+			}(),
 			OnCXDBStartup: func(info *engine.CXDBStartupInfo) {
 				if info == nil {
 					return
@@ -671,7 +676,12 @@ func attractorRun(args []string) {
 		Labels:        labels,
 		GitOps:        gitOps,
 		Invocation:    os.Args,
-		PackageDir:    func() string { if pkg != nil { return pkg.Dir }; return "" }(),
+		PackageDir: func() string {
+			if pkg != nil {
+				return pkg.Dir
+			}
+			return ""
+		}(),
 		RequiredSecrets: func() []string {
 			if pkg != nil && pkg.ManifestV2 != nil {
 				return append([]string(nil), pkg.ManifestV2.Secrets...)

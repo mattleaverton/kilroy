@@ -844,11 +844,11 @@ type runShowDetail struct {
 
 // runShowOutputRef points at a declared output file on disk.
 type runShowOutputRef struct {
-	Name       string `json:"name"`
-	Path       string `json:"path,omitempty"`
-	SizeBytes  int64  `json:"size_bytes,omitempty"`
-	Found      bool   `json:"found"`
-	Source     string `json:"source,omitempty"` // "collected" or "worktree"
+	Name      string `json:"name"`
+	Path      string `json:"path,omitempty"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
+	Found     bool   `json:"found"`
+	Source    string `json:"source,omitempty"` // "collected" or "worktree"
 }
 
 func attractorRunsShow(args []string) {
@@ -1129,7 +1129,7 @@ func attractorRunsWait(args []string) {
 	var latest bool
 	var asJSON bool
 	labelFilters := map[string]string{}
-	timeout := time.Duration(0)           // 0 = no timeout
+	timeout := time.Duration(0) // 0 = no timeout
 	interval := 2 * time.Second
 
 	for i := 0; i < len(args); i++ {

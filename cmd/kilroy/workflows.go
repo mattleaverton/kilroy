@@ -55,7 +55,7 @@ type workflowsListEntry struct {
 	Source       string `json:"source"` // search-path root this workflow was found under
 	Description  string `json:"description,omitempty"`
 	DefaultClass string `json:"default_class,omitempty"`
-	Schema       string `json:"schema,omitempty"`        // "v2" or "legacy"
+	Schema       string `json:"schema,omitempty"` // "v2" or "legacy"
 	Version      string `json:"version,omitempty"`
 	Experimental bool   `json:"experimental,omitempty"`
 }
@@ -125,9 +125,9 @@ func workflowsList(args []string) {
 
 	if asJSON {
 		out := map[string]any{
-			"workflows":     entries,
-			"search_paths":  workflows.SearchPaths(projectRoot),
-			"project_root":  projectRoot,
+			"workflows":    entries,
+			"search_paths": workflows.SearchPaths(projectRoot),
+			"project_root": projectRoot,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
@@ -168,20 +168,20 @@ func workflowsList(args []string) {
 
 // workflowsDescribeEntry is the JSON shape for `describe <name>`.
 type workflowsDescribeEntry struct {
-	Name             string                  `json:"name"`
-	Description      string                  `json:"description"`
-	AgentDescription string                  `json:"agent_description,omitempty"`
-	Version          string                  `json:"version,omitempty"`
-	Schema           string                  `json:"schema"`
-	Source           string                  `json:"source"`
-	Dir              string                  `json:"dir"`
-	GraphFile        string                  `json:"graph_file"`
-	DefaultClass     string                  `json:"default_class,omitempty"`
-	Inputs           []workflows.InputSpec   `json:"inputs,omitempty"`
-	Outputs          []workflows.OutputSpec  `json:"outputs,omitempty"`
-	SideEffects      *sideEffectsView        `json:"side_effects,omitempty"`
+	Name             string                            `json:"name"`
+	Description      string                            `json:"description"`
+	AgentDescription string                            `json:"agent_description,omitempty"`
+	Version          string                            `json:"version,omitempty"`
+	Schema           string                            `json:"schema"`
+	Source           string                            `json:"source"`
+	Dir              string                            `json:"dir"`
+	GraphFile        string                            `json:"graph_file"`
+	DefaultClass     string                            `json:"default_class,omitempty"`
+	Inputs           []workflows.InputSpec             `json:"inputs,omitempty"`
+	Outputs          []workflows.OutputSpec            `json:"outputs,omitempty"`
+	SideEffects      *sideEffectsView                  `json:"side_effects,omitempty"`
 	Nodes            map[string]workflows.NodeOverride `json:"nodes,omitempty"`
-	Secrets          []string                `json:"secrets,omitempty"`
+	Secrets          []string                          `json:"secrets,omitempty"`
 }
 
 // sideEffectsView surfaces the four flags only when the workflow author
@@ -363,14 +363,14 @@ func workflowsDescribe(args []string) {
 
 // workflowsValidateResult is the JSON shape for `validate <name>`.
 type workflowsValidateResult struct {
-	Name       string                          `json:"name"`
-	Source     string                          `json:"source"`
-	Dir        string                          `json:"dir"`
-	GraphFile  string                          `json:"graph_file"`
-	Schema     string                          `json:"schema,omitempty"`
-	DOTIssues  []validateDOTIssue              `json:"dot_issues,omitempty"`
-	PreLaunch  *engine.PreLaunchReport         `json:"prelaunch,omitempty"`
-	Status     string                          `json:"status"` // "ok"|"fail"
+	Name      string                  `json:"name"`
+	Source    string                  `json:"source"`
+	Dir       string                  `json:"dir"`
+	GraphFile string                  `json:"graph_file"`
+	Schema    string                  `json:"schema,omitempty"`
+	DOTIssues []validateDOTIssue      `json:"dot_issues,omitempty"`
+	PreLaunch *engine.PreLaunchReport `json:"prelaunch,omitempty"`
+	Status    string                  `json:"status"` // "ok"|"fail"
 }
 
 type validateDOTIssue struct {

@@ -37,14 +37,14 @@ func NewGHDetector() *GHDetector { return &GHDetector{} }
 func (d *GHDetector) Name() string { return "gh" }
 
 const (
-	ghProvider         = "github"
-	ghTool             = "gh"
-	ghKeychainService  = "gh:github.com"
-	ghHost             = "github.com"
-	ghCLIEntryID       = "github.gh.cli_oauth"
-	ghEnvGHToken       = "GH_TOKEN"
-	ghEnvGithubToken   = "GITHUB_TOKEN"
-	ghRemediation      = "Run: gh auth login or gh auth switch"
+	ghProvider        = "github"
+	ghTool            = "gh"
+	ghKeychainService = "gh:github.com"
+	ghHost            = "github.com"
+	ghCLIEntryID      = "github.gh.cli_oauth"
+	ghEnvGHToken      = "GH_TOKEN"
+	ghEnvGithubToken  = "GITHUB_TOKEN"
+	ghRemediation     = "Run: gh auth login or gh auth switch"
 )
 
 // Detect scans for gh CLI credentials.

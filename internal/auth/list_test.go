@@ -10,8 +10,8 @@ type stubDetector struct {
 	entries []Entry
 }
 
-func (s *stubDetector) Name() string                  { return s.name }
-func (s *stubDetector) Detect() ([]Entry, error)      { return s.entries, nil }
+func (s *stubDetector) Name() string             { return s.name }
+func (s *stubDetector) Detect() ([]Entry, error) { return s.entries, nil }
 
 // TestListAll_DedupesEnvVarEntriesAcrossDetectors verifies that when
 // EnvVarDetector emits a canonical (Tool="") entry for an env var AND a

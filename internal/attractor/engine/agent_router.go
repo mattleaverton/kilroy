@@ -23,6 +23,9 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/llm"
+	"github.com/danshapiro/kilroy/internal/llm/providers/anthropic"
+	"github.com/danshapiro/kilroy/internal/llm/providers/google"
+	"github.com/danshapiro/kilroy/internal/llm/providers/openai"
 	"github.com/danshapiro/kilroy/internal/llmclient"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
 	"github.com/danshapiro/kilroy/internal/policy"
@@ -121,7 +124,7 @@ func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node
 
 	switch backend {
 	case BackendAPI:
-		return r.runAPI(ctx, exec, node, prov, modelID, prompt)
+		return r.runAPI(ctx, exec, node, prov, modelID, prompt, route.classResult)
 	case BackendCLI:
 		return r.runCLI(ctx, exec, node, prov, modelID, prompt)
 	default:
@@ -275,8 +278,65 @@ func (r *AgentRouter) ensureAPIClient() (*llm.Client, error) {
 	return r.apiClient, r.apiErr
 }
 
-func (r *AgentRouter) runAPI(ctx context.Context, execCtx *Execution, node *model.Node, provider string, modelID string, prompt string) (string, *runtime.Outcome, error) {
-	client, err := r.ensureAPIClient()
+// clientForRoute returns an llm.Client for an API call. When classResult
+// has a bound credential (the new auth integration path), build a fresh
+// single-provider client for THIS call using the credential's source value
+// (re-read at execution time via binding.Resolver.Bind). The cached
+// r.apiClient is bypassed because it constructed adapters from canonical
+// env-var names — using it would silently route to ANTHROPIC_API_KEY when
+// the resolver picked ANTHROPIC_API_KEY_KILROY (the wrong-billing path
+// reviewer caught).
+//
+// When classResult is nil (no agent_class= on the node — legacy stylesheet
+// routing), fall back to the cached client. That path still uses canonical
+// env vars; it's a transitional bridge until all workflows adopt
+// agent_class.
+func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classResult *policy.ResolveResult) (*llm.Client, error) {
+	if classResult == nil {
+		return r.ensureAPIClient()
+	}
+	// Re-read the credential source at execution time so a vanished source
+	// is decisive failure (mirrors materializeCredential on the tmux path).
+	projectRoot := ""
+	if execCtx != nil {
+		projectRoot = strings.TrimSpace(execCtx.WorktreeDir)
+	}
+	resolver, err := DefaultBindingResolver(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("auth resolver at execution: %w", err)
+	}
+	cred, err := resolver.Bind(classResult.AuthSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	if cred.Value == "" {
+		return nil, fmt.Errorf("api path requires env_var credential, got %q", classResult.AuthSnapshot.Source.Kind)
+	}
+	// Build a single-provider client adapter using the bound credential
+	// value. Pull base-URL override from runtime config when present.
+	rt, hasRT := r.providerRuntimes[provider]
+	var baseURL string
+	if hasRT && rt.Backend == BackendAPI {
+		baseURL = resolveBuiltInBaseURLOverride(provider, rt.API.DefaultBaseURL)
+	}
+	c := llm.NewClient()
+	switch provider {
+	case "anthropic":
+		c.Register(anthropic.NewWithProvider(provider, cred.Value, baseURL))
+	case "openai":
+		c.Register(openai.NewWithProvider(provider, cred.Value, baseURL))
+	case "google":
+		c.Register(google.NewWithProvider(provider, cred.Value, baseURL))
+	default:
+		// Unknown provider — fall back to cached client; downstream
+		// .Generate / .Stream will surface a clear error.
+		return r.ensureAPIClient()
+	}
+	return c, nil
+}
+
+func (r *AgentRouter) runAPI(ctx context.Context, execCtx *Execution, node *model.Node, provider string, modelID string, prompt string, classResult *policy.ResolveResult) (string, *runtime.Outcome, error) {
+	client, err := r.clientForRoute(execCtx, provider, classResult)
 	if err != nil {
 		return "", nil, err
 	}

@@ -91,7 +91,7 @@ func TestGeminiDetector_OAuthPersonal_FutureExpiry(t *testing.T) {
 	writeSettings(t, dir, "oauth-personal")
 
 	// expiry_date: 1 hour from now in milliseconds.
-	futureMs := float64(time.Now().Add(1*time.Hour).UnixMilli())
+	futureMs := float64(time.Now().Add(1 * time.Hour).UnixMilli())
 	writeJSON(t, geminiOAuthPath, map[string]interface{}{
 		"access_token":  "tok",
 		"refresh_token": "ref",
@@ -130,7 +130,7 @@ func TestGeminiDetector_OAuthPersonal_PastExpiry_WithRefresh(t *testing.T) {
 	writeSettings(t, dir, "oauth-personal")
 
 	// expiry_date: 1 hour ago in milliseconds.
-	pastMs := float64(time.Now().Add(-1*time.Hour).UnixMilli())
+	pastMs := float64(time.Now().Add(-1 * time.Hour).UnixMilli())
 	writeJSON(t, geminiOAuthPath, map[string]interface{}{
 		"access_token":  "tok",
 		"refresh_token": "ref",
@@ -168,7 +168,7 @@ func TestGeminiDetector_OAuthPersonal_PastExpiry_NoRefresh(t *testing.T) {
 
 	writeSettings(t, dir, "oauth-personal")
 
-	pastMs := float64(time.Now().Add(-2*time.Hour).UnixMilli())
+	pastMs := float64(time.Now().Add(-2 * time.Hour).UnixMilli())
 	writeJSON(t, geminiOAuthPath, map[string]interface{}{
 		"access_token":  "tok",
 		"refresh_token": "",

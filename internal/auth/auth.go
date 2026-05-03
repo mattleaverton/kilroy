@@ -75,13 +75,13 @@ type Entry struct {
 	// ID is a stable slug, e.g. "anthropic.env.ANTHROPIC_API_KEY".
 	ID string `json:"id"`
 
-	Kind     Kind     `json:"kind"`
-	Provider string   `json:"provider"`
-	Tool     string   `json:"tool,omitempty"`
-	State    State    `json:"state"`
-	Identity Identity `json:"identity,omitempty"`
-	Expiry   *Expiry  `json:"expiry,omitempty"`
-	Source   Source   `json:"source"`
+	Kind     Kind      `json:"kind"`
+	Provider string    `json:"provider"`
+	Tool     string    `json:"tool,omitempty"`
+	State    State     `json:"state"`
+	Identity Identity  `json:"identity,omitempty"`
+	Expiry   *Expiry   `json:"expiry,omitempty"`
+	Source   Source    `json:"source"`
 	Profiles []Profile `json:"profiles,omitempty"`
 
 	// Shadows lists entry IDs that this entry takes precedence over at

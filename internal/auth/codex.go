@@ -28,8 +28,8 @@ func (d *CodexDetector) Name() string { return "codex" }
 
 // codexFile is the on-disk structure of ~/.codex/auth.json.
 type codexFile struct {
-	AuthMode     string `json:"auth_mode"`
-	Tokens       struct {
+	AuthMode string `json:"auth_mode"`
+	Tokens   struct {
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 	} `json:"tokens"`

@@ -35,7 +35,7 @@ func Codex() Template {
 		// avoid confusion — auth.json materialization happens via the
 		// binder's FilesToWrite, applied by tmux_handler before session
 		// creation.
-		PrepareSession: nil,
+		PrepareSession:   nil,
 		PromptPrefix:     "›",
 		BusyIndicators:   []string{"Working", "esc to interrupt"},
 		ProcessNames:     []string{"codex", "node"},
