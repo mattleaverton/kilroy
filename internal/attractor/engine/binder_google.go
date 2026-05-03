@@ -67,7 +67,14 @@ func BindGeminiCLI(snap binding.Snapshot, cred binding.Credential, stageDir stri
 		}, nil
 
 	case binding.SourceCLISession:
+		// Scrub every Google-equivalent env var so the CLI uses the
+		// logged-in OAuth session at ~/.gemini/oauth_creds.json instead
+		// of silently using a stray key. Same wrong-billing prevention
+		// as claude_cli scrubs ANTHROPIC_API_KEY and codex_cli scrubs
+		// OPENAI_API_KEY. Google accepts multiple equivalent names; we
+		// scrub all of them.
 		return BindResult{
+			EnvScrub:   []string{"GOOGLE_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"},
 			SourceKind: string(binding.SourceCLISession),
 			SourceName: "gemini",
 		}, nil

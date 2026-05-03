@@ -48,6 +48,17 @@ func (c *Client) ProviderNames() []string {
 	return out
 }
 
+// Provider returns the registered adapter for the given name, or
+// (nil, false) when no such adapter is registered. Used by callers that
+// need to clone or wrap an existing client.
+func (c *Client) Provider(name string) (ProviderAdapter, bool) {
+	if c == nil || c.providers == nil {
+		return nil, false
+	}
+	a, ok := c.providers[name]
+	return a, ok
+}
+
 func (c *Client) Complete(ctx context.Context, req Request) (Response, error) {
 	if err := req.Validate(); err != nil {
 		return Response{}, err

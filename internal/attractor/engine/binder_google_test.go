@@ -132,7 +132,9 @@ func TestBindGeminiCLI_EnvVar_CanonicalName(t *testing.T) {
 	}
 }
 
-// Test 6: cli_session cred — no EnvSet, no FilesToWrite, correct source identity.
+// Test 6: cli_session cred — no EnvSet, no FilesToWrite, correct source identity,
+// AND scrubs Google-equivalent env vars to prevent silent wrong-billing
+// (matches the BindClaudeCLI/BindCodexCLI scrub pattern).
 func TestBindGeminiCLI_CLISession(t *testing.T) {
 	snap, cred := makeGeminiCLISessionCred()
 	result, err := BindGeminiCLI(snap, cred, "/tmp/stage")
@@ -154,6 +156,19 @@ func TestBindGeminiCLI_CLISession(t *testing.T) {
 	}
 	if result.SDKArg != "" {
 		t.Errorf("SDKArg should be empty for cli_session; got %q", result.SDKArg)
+	}
+	// Critical: cli_session must scrub all Google-equivalent env vars so
+	// the CLI uses the OAuth session, not a stray env key.
+	wantScrubs := map[string]bool{"GOOGLE_API_KEY": false, "GEMINI_API_KEY": false, "GOOGLE_GENERATIVE_AI_API_KEY": false}
+	for _, name := range result.EnvScrub {
+		if _, ok := wantScrubs[name]; ok {
+			wantScrubs[name] = true
+		}
+	}
+	for name, found := range wantScrubs {
+		if !found {
+			t.Errorf("cli_session EnvScrub missing %q (wrong-billing prevention)", name)
+		}
 	}
 }
 

@@ -130,9 +130,12 @@ func TestAuthList_ReferencedBy_JSON(t *testing.T) {
 	tmpHome := t.TempDir()
 	writeAuthConfig(t, tmpHome, authTOMLWithAnthropicRef())
 
+	// Clear all anthropic env-var detector keys so the only entry that
+	// surfaces is the one we explicitly set. Detector enriched in
+	// f16b7ed to cover ANTHROPIC_API_KEY_KILROY too.
 	cmd := exec.Command(bin, "auth", "list", "--json")
 	cmd.Env = envWithout(
-		[]string{"HOME", "ANTHROPIC_API_KEY"},
+		[]string{"HOME", "ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_KILROY"},
 		"HOME="+tmpHome,
 		"ANTHROPIC_API_KEY=sk-ant-testvalue1234",
 	)

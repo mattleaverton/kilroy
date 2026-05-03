@@ -279,18 +279,17 @@ func (r *AgentRouter) ensureAPIClient() (*llm.Client, error) {
 }
 
 // clientForRoute returns an llm.Client for an API call. When classResult
-// has a bound credential (the new auth integration path), build a fresh
-// single-provider client for THIS call using the credential's source value
-// (re-read at execution time via binding.Resolver.Bind). The cached
-// r.apiClient is bypassed because it constructed adapters from canonical
-// env-var names — using it would silently route to ANTHROPIC_API_KEY when
-// the resolver picked ANTHROPIC_API_KEY_KILROY (the wrong-billing path
-// reviewer caught).
+// has a bound credential (the new auth integration path), the credential
+// source value (re-read at execution time via binding.Resolver.Bind) is
+// used to register the SELECTED provider's adapter. All other failover
+// candidates are also registered (via the existing factory's
+// canonical-env path) so runtime failover semantics are preserved — only
+// the primary class-routed call is guaranteed credential-correct; failover
+// to a different provider falls back to canonical-env credentials for
+// that provider, which is the same behavior as the pre-auth-refactor path.
 //
 // When classResult is nil (no agent_class= on the node — legacy stylesheet
-// routing), fall back to the cached client. That path still uses canonical
-// env vars; it's a transitional bridge until all workflows adopt
-// agent_class.
+// routing), fall back to the cached client.
 func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classResult *policy.ResolveResult) (*llm.Client, error) {
 	if classResult == nil {
 		return r.ensureAPIClient()
@@ -312,14 +311,22 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 	if cred.Value == "" {
 		return nil, fmt.Errorf("api path requires env_var credential, got %q", classResult.AuthSnapshot.Source.Kind)
 	}
-	// Build a single-provider client adapter using the bound credential
-	// value. Pull base-URL override from runtime config when present.
+
+	// Start from the cached multi-provider client so failover candidates
+	// remain reachable (via canonical-env adapters from runtime config).
+	// Then OVERRIDE the selected provider's adapter with the bound-cred
+	// version — Register replaces by adapter.Name(), so this swaps in the
+	// correct credential for the primary call without touching others.
+	cached, err := r.ensureAPIClient()
+	if err != nil {
+		return nil, err
+	}
+	c := cloneLLMClient(cached)
 	rt, hasRT := r.providerRuntimes[provider]
 	var baseURL string
 	if hasRT && rt.Backend == BackendAPI {
 		baseURL = resolveBuiltInBaseURLOverride(provider, rt.API.DefaultBaseURL)
 	}
-	c := llm.NewClient()
 	switch provider {
 	case "anthropic":
 		c.Register(anthropic.NewWithProvider(provider, cred.Value, baseURL))
@@ -328,11 +335,26 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 	case "google":
 		c.Register(google.NewWithProvider(provider, cred.Value, baseURL))
 	default:
-		// Unknown provider — fall back to cached client; downstream
-		// .Generate / .Stream will surface a clear error.
-		return r.ensureAPIClient()
+		// Unknown selected provider — return the cached client unchanged.
+		// Downstream will surface a clear error if the primary call needs
+		// an adapter that doesn't exist; failover candidates remain.
+		return cached, nil
 	}
 	return c, nil
+}
+
+// cloneLLMClient produces a shallow copy of an llm.Client suitable for
+// per-call adapter overrides. The underlying provider adapters are shared
+// (they're stateless per request); only the registry map is duplicated so
+// Register on the clone doesn't mutate the cached client.
+func cloneLLMClient(src *llm.Client) *llm.Client {
+	c := llm.NewClient()
+	for _, name := range src.ProviderNames() {
+		if a, ok := src.Provider(name); ok {
+			c.Register(a)
+		}
+	}
+	return c
 }
 
 func (r *AgentRouter) runAPI(ctx context.Context, execCtx *Execution, node *model.Node, provider string, modelID string, prompt string, classResult *policy.ResolveResult) (string, *runtime.Outcome, error) {
