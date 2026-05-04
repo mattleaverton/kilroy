@@ -14,19 +14,28 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 )
 
+// agentHandlerImpl is the minimal interface the Dispatcher needs from
+// each path (tmux or codergen). Both handlers naturally satisfy it.
+// Exported as agentHandlerImpl rather than reusing engine.Handler so
+// tests can inject mocks without dragging in the full engine surface.
+type agentHandlerImpl interface {
+	Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error)
+}
+
 // Dispatcher is the single agent handler registered for shape=box nodes.
 // It resolves the agent route (class via policy snapshot, or explicit
 // DOT attrs) and delegates to either the tmux handler (CLI drivers) or
 // the codergen handler (SDK drivers).
 type Dispatcher struct {
-	Tmux      *TmuxAgentHandler
-	Codergen  *AgentHandler
+	Tmux      agentHandlerImpl
+	Codergen  agentHandlerImpl
 	PolicyDep engine.PolicyDeps
 }
 
 // NewDispatcher returns a Dispatcher with default tmux + codergen
 // handlers wired up. Production code uses this; tests can construct a
-// Dispatcher directly with custom sub-handlers.
+// Dispatcher directly with custom sub-handlers (any type satisfying
+// agentHandlerImpl).
 func NewDispatcher() *Dispatcher {
 	return &Dispatcher{
 		Tmux:     NewTmuxAgentHandler(),
@@ -85,14 +94,14 @@ func (d *Dispatcher) Execute(ctx context.Context, exec *engine.Execution, node *
 	}
 }
 
-func (d *Dispatcher) tmux() *TmuxAgentHandler {
+func (d *Dispatcher) tmux() agentHandlerImpl {
 	if d.Tmux != nil {
 		return d.Tmux
 	}
 	return NewTmuxAgentHandler()
 }
 
-func (d *Dispatcher) codergen() *AgentHandler {
+func (d *Dispatcher) codergen() agentHandlerImpl {
 	if d.Codergen != nil {
 		return d.Codergen
 	}
