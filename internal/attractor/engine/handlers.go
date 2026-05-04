@@ -522,7 +522,16 @@ func BuildWorktreeContextPreamble(worktreeDir string) string {
 }
 
 func (h *CodergenHandler) Execute(ctx context.Context, exec *Execution, node *model.Node) (runtime.Outcome, error) {
-	route, err := ResolveAgentRoute(node, exec, PolicyDeps{})
+	// Compatibility adapter for callers that still reach CodergenHandler
+	// through the legacy Handler interface. Normal v2 workflow execution
+	// resolves once in the engine/dispatcher and calls ExecuteAgent with
+	// the frozen route. When this adapter is used, feed it the same provider
+	// runtime snapshot the launch path installed on Engine.Options.
+	deps := PolicyDeps{}
+	if exec != nil && exec.Engine != nil {
+		deps.ProviderRuntimes = exec.Engine.Options.ProviderRuntimes
+	}
+	route, err := ResolveAgentRoute(node, exec, deps)
 	if err != nil {
 		return AgentRouteFailureOutcome(err), nil
 	}

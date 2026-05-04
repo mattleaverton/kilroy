@@ -52,9 +52,9 @@ exit 0
 	return script
 }
 
-func fakeAgentTemplate(scriptPath string) templates.Template {
+func fakeAgentTemplateNamed(name, scriptPath string) templates.Template {
 	return templates.Template{
-		Name:   "fake",
+		Name:   name,
 		Binary: scriptPath,
 		BuildArgs: func(prompt, workDir, model, _, _ string) []string {
 			return []string{prompt}
@@ -67,12 +67,17 @@ func fakeAgentTemplate(scriptPath string) templates.Template {
 	}
 }
 
+func fakeAgentTemplate(scriptPath string) templates.Template {
+	return fakeAgentTemplateNamed("claude", scriptPath)
+}
+
 func fakeAgentRoute(nodeID string) engine.AgentRoute {
 	return engine.AgentRoute{
 		NodeID:   nodeID,
 		Source:   "test:fake-agent",
-		Provider: "test",
+		Provider: "anthropic",
 		Model:    "fake-model",
+		Driver:   "claude_cli",
 		Backend:  engine.BackendCLI,
 	}
 }
@@ -251,5 +256,60 @@ func TestTmuxAgentHandler_FakeAgent_WorksInWorkDir(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "hello from agent") {
 		t.Fatalf("file content = %q, want 'hello from agent'", string(data))
+	}
+}
+
+func TestTmuxAgentHandler_UnmappedRouteDriver_DoesNotFallbackToNodeTool(t *testing.T) {
+	scriptDir := t.TempDir()
+	script := writeFakeAgent(t, scriptDir, "SHOULD_NOT_RUN", 0)
+
+	reg := templates.DefaultRegistry()
+	reg.Register(fakeAgentTemplateNamed("fake", script))
+
+	mgr := tmux.NewManager(testSocket)
+	defer exec.Command("tmux", "-u", "-L", testSocket, "kill-server").Run()
+
+	handler := &TmuxAgentHandler{
+		Tmux:      mgr,
+		Templates: reg,
+		Timeout:   30 * time.Second,
+	}
+
+	node := model.NewNode("bad_driver_node")
+	node.Attrs["agent_tool"] = "fake"
+	node.Attrs["prompt"] = "do not execute"
+
+	execCtx := &engine.Execution{
+		Graph:       model.NewGraph("test"),
+		Context:     runtime.NewContext(),
+		LogsRoot:    t.TempDir(),
+		WorktreeDir: t.TempDir(),
+		Engine: &engine.Engine{
+			Options: engine.RunOptions{RunID: "test-run-bad-driver"},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	outcome, err := handler.ExecuteAgent(ctx, execCtx, node, engine.AgentRoute{
+		NodeID:   node.ID,
+		Source:   "test:unmapped-driver",
+		Provider: "test",
+		Model:    "fake-model",
+		Driver:   "made_up_cli",
+		Backend:  engine.BackendCLI,
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAgent error: %v", err)
+	}
+	if outcome.Status != runtime.StatusFail {
+		t.Fatalf("status = %q, want fail", outcome.Status)
+	}
+	if !strings.Contains(outcome.FailureReason, "made_up_cli") {
+		t.Fatalf("failure_reason = %q, want driver name", outcome.FailureReason)
+	}
+	if _, err := os.Stat(filepath.Join(execCtx.LogsRoot, node.ID, "response.md")); !os.IsNotExist(err) {
+		t.Fatalf("unmapped driver should not execute fake fallback template; response stat err=%v", err)
 	}
 }

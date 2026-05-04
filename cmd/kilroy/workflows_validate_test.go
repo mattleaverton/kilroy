@@ -103,6 +103,59 @@ description = "missing version"
 	}
 }
 
+func TestWorkflowsValidate_AdHocProviderWithoutSpec_ExitsOne(t *testing.T) {
+	bin := buildTestBinary(t)
+	pkgRoot := t.TempDir()
+	dir := filepath.Join(pkgRoot, "unknown-provider")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflow.toml"), []byte(`
+[workflow]
+name = "unknown-provider"
+version = "1"
+description = "test"
+default_class = "hard_coding"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "graph.dot"), []byte(`digraph unknown_provider {
+  start [shape=Mdiamond, label="Start"]
+  a [shape=box, label="agent", llm_provider="local-openai-compatible", llm_model="local-model"]
+  done [shape=Msquare, label="Done"]
+  start -> a
+  a -> done [condition="outcome=success"]
+}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(bin, "workflows", "validate", "unknown-provider")
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS="+pkgRoot,
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	out, err := cmd.Output()
+	if err == nil {
+		t.Fatalf("expected validate to fail for unresolved provider route\nstdout: %s", out)
+	}
+	var got workflowsValidateResult
+	if decodeErr := json.Unmarshal(out, &got); decodeErr != nil {
+		t.Fatalf("output not JSON: %v\n%s", decodeErr, out)
+	}
+	if got.Status != "fail" {
+		t.Fatalf("status = %q, want fail\nfull: %+v", got.Status, got)
+	}
+	if got.PreLaunch == nil || len(got.PreLaunch.Nodes) != 1 || got.PreLaunch.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed prelaunch node, got %+v", got.PreLaunch)
+	}
+	joined := strings.Join(got.PreLaunch.Nodes[0].Errors, " ")
+	for _, want := range []string{"local-openai-compatible", "no executable route"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("prelaunch errors missing %q: %v", want, got.PreLaunch.Nodes[0].Errors)
+		}
+	}
+}
+
 func TestWorkflowsValidate_UnknownName_ExitsOne(t *testing.T) {
 	bin := buildTestBinary(t)
 	cmd := exec.Command(bin, "workflows", "validate", "no-such-workflow")

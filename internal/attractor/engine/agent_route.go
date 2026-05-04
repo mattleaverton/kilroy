@@ -71,6 +71,25 @@ func (r AgentRoute) IsCLI() bool { return r.Backend == BackendCLI }
 // IsAPI reports whether the route runs through the HTTP/SDK path.
 func (r AgentRoute) IsAPI() bool { return r.Backend == BackendAPI }
 
+func validateExecutableAgentRoute(route AgentRoute) error {
+	if strings.TrimSpace(route.Driver) == "" || route.Backend == "" {
+		provider := strings.TrimSpace(route.Provider)
+		if provider == "" {
+			provider = "<empty>"
+		}
+		return fmt.Errorf(
+			"llm_provider=%q has no executable route: provider is not built in and no provider runtime/spec with a supported backend/protocol is loaded",
+			provider,
+		)
+	}
+	switch route.Backend {
+	case BackendCLI, BackendAPI:
+		return nil
+	default:
+		return fmt.Errorf("route for provider %q uses unsupported backend %q", route.Provider, route.Backend)
+	}
+}
+
 func AgentRouteFailureOutcome(err error) runtime.Outcome {
 	reason := "agent route: unresolved"
 	if err != nil {
@@ -104,6 +123,9 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 	if route, ok, err := LoadPreLaunchAgentRouteForExec(exec, node.ID); err != nil {
 		return AgentRoute{}, err
 	} else if ok {
+		if err := validateExecutableAgentRoute(route); err != nil {
+			return AgentRoute{}, fmt.Errorf("prelaunch snapshot route for node %q is invalid: %w", node.ID, err)
+		}
 		if route.ClassResult != nil {
 			emitResolutionEvents(exec, node.ID, route.Class, *route.ClassResult)
 			persistResolution(exec, node.ID, route.Class, *route.ClassResult)
@@ -117,7 +139,7 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 	}
 	if hasClass {
 		result := cls.Result
-		return AgentRoute{
+		route := AgentRoute{
 			NodeID:      node.ID,
 			Source:      "policy_class:" + cls.Class,
 			Class:       cls.Class,
@@ -126,7 +148,11 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 			Driver:      cls.Driver,
 			Backend:     cls.Backend,
 			ClassResult: &result,
-		}, nil
+		}
+		if err := validateExecutableAgentRoute(route); err != nil {
+			return AgentRoute{}, err
+		}
+		return route, nil
 	}
 
 	if tool := strings.TrimSpace(node.Attr("agent_tool", "")); tool != "" {
@@ -147,14 +173,18 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 					"agent_tool=\"opencode\" requires explicit llm_provider= " +
 						"(opencode is multi-provider; the node must say which one)")
 			}
-			return AgentRoute{
+			route := AgentRoute{
 				NodeID:   node.ID,
 				Source:   "agent_tool=opencode",
 				Provider: normalizeProviderKey(explicitProvider),
 				Model:    modelID,
 				Driver:   "opencode",
 				Backend:  BackendCLI,
-			}, nil
+			}
+			if err := validateExecutableAgentRoute(route); err != nil {
+				return AgentRoute{}, err
+			}
+			return route, nil
 		}
 
 		// Fixed-provider tools (claude/codex/gemini): driver determines
@@ -171,28 +201,36 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 				"agent_tool=%q implies llm_provider=%q; node also sets llm_provider=%q which conflicts",
 				tool, provider, explicitProvider)
 		}
-		return AgentRoute{
+		route := AgentRoute{
 			NodeID:   node.ID,
 			Source:   "agent_tool=" + tool,
 			Provider: provider,
 			Model:    modelID,
 			Driver:   driver,
 			Backend:  backend,
-		}, nil
+		}
+		if err := validateExecutableAgentRoute(route); err != nil {
+			return AgentRoute{}, err
+		}
+		return route, nil
 	}
 
 	provider := strings.TrimSpace(node.Attr("llm_provider", ""))
 	modelID := strings.TrimSpace(node.Attr("llm_model", ""))
 	if provider != "" && modelID != "" {
 		canonProv, driver, backend := routeForProvider(provider, deps.ProviderRuntimes)
-		return AgentRoute{
+		route := AgentRoute{
 			NodeID:   node.ID,
 			Source:   "llm_provider=" + provider,
 			Provider: canonProv,
 			Model:    modelID,
 			Driver:   driver,
 			Backend:  backend,
-		}, nil
+		}
+		if err := validateExecutableAgentRoute(route); err != nil {
+			return AgentRoute{}, err
+		}
+		return route, nil
 	}
 
 	return AgentRoute{}, fmt.Errorf("agent node %q has no agent_class=, agent_tool=, or llm_provider+llm_model — cannot resolve route", node.ID)

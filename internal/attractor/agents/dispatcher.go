@@ -95,13 +95,6 @@ func (d *Dispatcher) ExecuteAgent(ctx context.Context, exec *engine.Execution, n
 	case dispatchAPI:
 		return d.codergen().ExecuteAgent(ctx, exec, node, route)
 	default:
-		// Ad-hoc providers can still arrive without a named driver when
-		// their runtime config does not map to a built-in protocol. Delegate
-		// to codergen only when the route at least names a provider; the
-		// router will fail loudly if the route has no executable backend.
-		if route.Driver == "" && strings.TrimSpace(route.Provider) != "" {
-			return d.codergen().ExecuteAgent(ctx, exec, node, route)
-		}
 		return runtime.Outcome{
 			Status: runtime.StatusFail,
 			FailureReason: fmt.Sprintf(

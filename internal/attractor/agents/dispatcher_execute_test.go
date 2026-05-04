@@ -178,3 +178,37 @@ func TestDispatcher_ExecuteVagueNode_DeterministicFailure(t *testing.T) {
 		t.Fatalf("neither handler should be invoked for vague node (tmux=%v cg=%v)", tmux.called, cg.called)
 	}
 }
+
+func TestDispatcher_ExecuteAgentEmptyDriver_DeterministicFailure(t *testing.T) {
+	tmux := &recordingHandler{label: "tmux"}
+	cg := &recordingHandler{label: "codergen"}
+	d := &Dispatcher{Tmux: tmux, Codergen: cg}
+
+	node := &model.Node{
+		ID: "adhoc",
+		Attrs: map[string]string{
+			"llm_provider": "local-openai-compatible",
+			"llm_model":    "local-model",
+		},
+	}
+	out, err := d.ExecuteAgent(context.Background(), nil, node, engine.AgentRoute{
+		NodeID:   node.ID,
+		Source:   "test:unresolved",
+		Provider: "local-openai-compatible",
+		Model:    "local-model",
+		Driver:   "",
+		Backend:  "",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Status != runtime.StatusFail {
+		t.Fatalf("empty-driver route should fail; got status %q", out.Status)
+	}
+	if out.Meta["failure_class"] != "deterministic" {
+		t.Fatalf("expected deterministic failure_class; got %v", out.Meta)
+	}
+	if tmux.called || cg.called {
+		t.Fatalf("neither handler should be invoked for empty driver (tmux=%v cg=%v)", tmux.called, cg.called)
+	}
+}

@@ -618,6 +618,26 @@ func TestValidatePreLaunch_NonClass_OpenAICompatProvider_FirstClassRoute(t *test
 	}
 }
 
+func TestValidatePreLaunch_NonClass_AdHocProviderWithoutSpec_FailsLoudly(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "local-openai-compatible",
+		"llm_model":    "local-model",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail for ad-hoc provider without loaded runtime/spec")
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed node, got %+v", report.Nodes)
+	}
+	if !anyError(report.Nodes[0].Errors, "local-openai-compatible") {
+		t.Errorf("error should name the provider; got %v", report.Nodes[0].Errors)
+	}
+	if !anyError(report.Nodes[0].Errors, "no executable route") {
+		t.Errorf("error should reject unresolved routes; got %v", report.Nodes[0].Errors)
+	}
+}
+
 // Reviewer regression: a fully vague agent node — no agent_class, no
 // agent_tool, no llm_provider+llm_model — fails prelaunch loudly.
 func TestValidatePreLaunch_NonClass_VagueNode_FailsLoudly(t *testing.T) {

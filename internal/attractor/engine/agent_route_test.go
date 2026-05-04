@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
+	"github.com/danshapiro/kilroy/internal/providerspec"
 )
 
 func TestDriverForAgentTool(t *testing.T) {
@@ -197,7 +198,7 @@ func TestResolveAgentRoute_OpenAICompatProvider_FirstClassRoute(t *testing.T) {
 	}
 }
 
-func TestResolveAgentRoute_AdHocProviderWithoutSpec_RemainsUnresolved(t *testing.T) {
+func TestResolveAgentRoute_AdHocProviderWithoutSpec_FailsLoudly(t *testing.T) {
 	node := &model.Node{
 		ID: "adhoc",
 		Attrs: map[string]string{
@@ -205,12 +206,44 @@ func TestResolveAgentRoute_AdHocProviderWithoutSpec_RemainsUnresolved(t *testing
 			"llm_model":    "local-model",
 		},
 	}
-	r, err := ResolveAgentRoute(node, nil, PolicyDeps{})
-	if err != nil {
-		t.Fatalf("ad-hoc provider should not error at route parse time: %v", err)
+	_, err := ResolveAgentRoute(node, nil, PolicyDeps{})
+	if err == nil {
+		t.Fatalf("expected ad-hoc provider without a loaded provider runtime/spec to fail")
 	}
-	if r.Driver != "" {
-		t.Fatalf("ad-hoc provider without a loaded provider spec should remain explicit-unresolved, got driver %q", r.Driver)
+	for _, want := range []string{"local-openai-compatible", "no executable route", "provider runtime"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q; got %q", want, err.Error())
+		}
+	}
+}
+
+func TestResolveAgentRoute_ConfiguredOpenAICompatProvider_FirstClassRoute(t *testing.T) {
+	node := &model.Node{
+		ID: "adhoc",
+		Attrs: map[string]string{
+			"llm_provider": "local-openai-compatible",
+			"llm_model":    "local-model",
+		},
+	}
+	r, err := ResolveAgentRoute(node, nil, PolicyDeps{
+		ProviderRuntimes: map[string]ProviderRuntime{
+			"local-openai-compatible": {
+				Key:     "local-openai-compatible",
+				Backend: BackendAPI,
+				API: providerspec.APISpec{
+					Protocol: providerspec.ProtocolOpenAIChatCompletions,
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("configured OpenAI-compatible provider should resolve: %v", err)
+	}
+	if r.Driver != "openai_compat_api" {
+		t.Fatalf("driver: got %q want openai_compat_api", r.Driver)
+	}
+	if r.Backend != BackendAPI {
+		t.Fatalf("backend: got %q want %q", r.Backend, BackendAPI)
 	}
 	if r.Provider != "local-openai-compatible" {
 		t.Fatalf("provider = %q, want local-openai-compatible", r.Provider)

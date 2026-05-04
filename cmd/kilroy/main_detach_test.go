@@ -5,11 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/danshapiro/kilroy/internal/attractor/procutil"
 )
 
 func TestRun_DetachedModeSurvivesLauncherExit(t *testing.T) {
@@ -214,13 +215,9 @@ func readPIDFile(t *testing.T, pidPath string) int {
 
 func waitForProcessExit(t *testing.T, pid int, timeout time.Duration) {
 	t.Helper()
-	if runtime.GOOS != "linux" {
-		return
-	}
-	procPath := filepath.Join("/proc", strconv.Itoa(pid))
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(procPath); os.IsNotExist(err) {
+		if !procutil.PIDAlive(pid) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
