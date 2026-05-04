@@ -17,9 +17,19 @@ at execution.
 **Fix**: introduced `engine.ResolveAgentRoute(node, exec, deps)` —
 single source of truth for the route decision, returning a first-class
 `AgentRoute` (NodeID, Source, Class, Provider, Model, Driver, Backend,
-ClassResult). Used by the dispatcher and by prelaunch. Vague nodes and
-unknown `agent_tool=` values now fail prelaunch loudly with a clear
-error naming the offending input.
+ClassResult). Now consumed by:
+
+  - the **Dispatcher** (replaces the old `resolveDriverForDispatch`)
+  - **prelaunch** validation (replaces the className-only branch
+    that silently no-op'd vague nodes)
+  - **TmuxAgentHandler.Execute** (replaces a parallel
+    `ResolveAgentClass` call + duplicated stylesheet attribute parsing)
+  - **agent_router.resolveNodeRouteInner** (same; keeps
+    `backendForProvider` fallback for legacy non-canonical providers)
+
+This finishes the reviewer's "first-class AgentRoute consumed by both
+handlers" ask. Vague nodes and unknown `agent_tool=` values now fail
+prelaunch loudly with a clear error naming the offending input.
 
 Lenient corner: unknown `llm_provider=` values (kimi, zai, minimax,
 custom OpenAI-compat endpoints) are deferred to the runtime — they
