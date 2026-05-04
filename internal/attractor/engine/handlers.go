@@ -510,7 +510,11 @@ func (h *CodergenHandler) Execute(ctx context.Context, exec *Execution, node *mo
 	stageStatusPath := filepath.Join(stageDir, "status.json")
 	contract := StageStatusContract{}
 	if exec != nil {
-		contract = BuildStageStatusContract(exec.WorktreeDir)
+		runID := ""
+		if exec.Engine != nil {
+			runID = exec.Engine.Options.RunID
+		}
+		contract = BuildStageStatusContract(exec.WorktreeDir, runID)
 	}
 	worktreeStatusPaths := contract.Fallbacks
 	// Clear stale files from prior stages so we don't accidentally attribute them.

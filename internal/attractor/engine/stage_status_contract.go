@@ -19,7 +19,13 @@ type StageStatusContract struct {
 	Fallbacks      []FallbackStatusPath
 }
 
-func BuildStageStatusContract(worktreeDir string) StageStatusContract {
+// BuildStageStatusContract builds the per-stage status.json contract.
+// runID is the *current run's* ID — passing it explicitly closes a
+// previous bug (F11) where inferRunIDForStatusFallback fell back to
+// reading KILROY_RUN_ID from the parent process env, causing a child
+// kilroy run launched from inside a kilroy tool node to inherit the
+// parent's run_id in the fallback path.
+func BuildStageStatusContract(worktreeDir, runID string) StageStatusContract {
 	wt := strings.TrimSpace(worktreeDir)
 	if wt == "" {
 		return StageStatusContract{}
@@ -28,8 +34,12 @@ func BuildStageStatusContract(worktreeDir string) StageStatusContract {
 	if err != nil {
 		return StageStatusContract{}
 	}
+	resolvedRunID := strings.TrimSpace(runID)
+	if resolvedRunID == "" {
+		resolvedRunID = inferRunIDForStatusFallback(wtAbs)
+	}
 	primary := filepath.Join(wtAbs, "status.json")
-	fallback := filepath.Join(runScopedWorktreeRoot(wtAbs, inferRunIDForStatusFallback(wtAbs)), "status.json")
+	fallback := filepath.Join(runScopedWorktreeRoot(wtAbs, resolvedRunID), "status.json")
 	promptPreamble := mustRenderStageStatusContractPromptPreamble(primary, fallback)
 
 	return StageStatusContract{

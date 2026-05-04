@@ -477,7 +477,11 @@ func (r *AgentRouter) runAPI(ctx context.Context, execCtx *Execution, node *mode
 	if err != nil {
 		return "", nil, err
 	}
-	contract := BuildStageStatusContract(execCtx.WorktreeDir)
+	apiRunID := ""
+	if execCtx.Engine != nil {
+		apiRunID = execCtx.Engine.Options.RunID
+	}
+	contract := BuildStageStatusContract(execCtx.WorktreeDir, apiRunID)
 	mode := strings.ToLower(strings.TrimSpace(node.Attr("agent_mode", "")))
 	if mode == "" {
 		// Fall back to agent_mode for backward compatibility.
@@ -1391,7 +1395,11 @@ func profileForProvider(provider string, modelID string) (agent.ProviderProfile,
 
 func (r *AgentRouter) runCLI(ctx context.Context, execCtx *Execution, node *model.Node, provider string, modelID string, prompt string) (string, *runtime.Outcome, error) {
 	stageDir := filepath.Join(execCtx.LogsRoot, node.ID)
-	contract := BuildStageStatusContract(execCtx.WorktreeDir)
+	apiRunID := ""
+	if execCtx.Engine != nil {
+		apiRunID = execCtx.Engine.Options.RunID
+	}
+	contract := BuildStageStatusContract(execCtx.WorktreeDir, apiRunID)
 	stageEnv := map[string]string{}
 	for k, v := range contract.EnvVars {
 		stageEnv[k] = v

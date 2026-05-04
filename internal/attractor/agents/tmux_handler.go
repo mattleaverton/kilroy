@@ -508,7 +508,11 @@ func buildTmuxAgentEnv(tmpl *templates.Template, exec *engine.Execution, nodeID 
 		env[k] = v
 	}
 	if exec != nil {
-		for k, v := range engine.BuildStageStatusContract(exec.WorktreeDir).EnvVars {
+		runID := ""
+		if exec.Engine != nil {
+			runID = exec.Engine.Options.RunID
+		}
+		for k, v := range engine.BuildStageStatusContract(exec.WorktreeDir, runID).EnvVars {
 			env[k] = v
 		}
 	}
