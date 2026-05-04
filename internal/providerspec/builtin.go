@@ -71,11 +71,18 @@ var builtinSpecs = map[string]Spec{
 		Key:     "kimi",
 		Aliases: []string{"moonshot", "moonshotai"},
 		API: &APISpec{
-			Protocol:           ProtocolAnthropicMessages,
-			DefaultBaseURL:     "https://api.kimi.com/coding",
-			DefaultPath:        "/v1/messages",
+			// Moonshot ships two API products with separate keys:
+			//   - api.moonshot.ai (this one) — OpenAI-compatible chat
+			//     completions; models include kimi-k2.5 and moonshot-v1-*.
+			//   - api.kimi.com/coding — anthropic-messages compatible,
+			//     part of the separate "Kimi Coding CLI" product.
+			// We target the moonshot.ai endpoint by default — it's the
+			// general-purpose API users are most likely to have a key for.
+			Protocol:           ProtocolOpenAIChatCompletions,
+			DefaultBaseURL:     "https://api.moonshot.ai",
+			DefaultPath:        "/v1/chat/completions",
 			DefaultAPIKeyEnv:   "KIMI_API_KEY",
-			ProviderOptionsKey: "anthropic",
+			ProviderOptionsKey: "openai",
 			ProfileFamily:      "openai",
 		},
 	},

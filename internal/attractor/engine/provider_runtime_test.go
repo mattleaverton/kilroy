@@ -19,8 +19,12 @@ func TestResolveProviderRuntimes_MergesBuiltinAndConfigOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveProviderRuntimes: %v", err)
 	}
-	if rt["kimi"].API.Protocol != "anthropic_messages" {
-		t.Fatalf("kimi protocol mismatch")
+	// Kimi defaults to Moonshot's general-purpose API (api.moonshot.ai),
+	// which speaks OpenAI-compatible chat completions. The kimi.com/coding
+	// "Kimi Coding CLI" product (anthropic_messages) is reachable via
+	// per-run config overrides — see kimi_zai_api_integration_test.go.
+	if rt["kimi"].API.Protocol != "openai_chat_completions" {
+		t.Fatalf("kimi protocol = %q, want openai_chat_completions", rt["kimi"].API.Protocol)
 	}
 	kimi, ok := rt["kimi"]
 	if !ok {

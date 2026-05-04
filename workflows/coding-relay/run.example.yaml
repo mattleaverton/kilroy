@@ -1,0 +1,41 @@
+# Minimal run config for coding-relay. Copy into your project (e.g.
+# under .kilroy/) and pass via --config <path>, or place at
+# workflows/coding-relay/run.yaml — until kilroy auto-discovers per-workflow
+# run configs you must point at it explicitly.
+#
+# Why this exists: the coder node uses kimi via opencode, which auto-detection
+# does not know about (auto-detection covers anthropic/openai/google only).
+# Run-with-config refuses to start when a graph references a provider whose
+# backend isn't declared.
+version: 1
+
+# repo.path must be set when --config is used. The CLI's --workspace flag
+# sets it for default invocations but not when an explicit config is loaded.
+# Use a placeholder here; kilroy run --workspace <path> will override at launch.
+repo:
+  path: /tmp/coding-relay-smoke
+
+llm:
+  cli_profile: real
+  providers:
+    # Kimi has only an API contract in providerspec.Builtin (no CLI contract).
+    # The coder routes through opencode (a CLI tool) which then talks to
+    # kimi over HTTP — so from kilroy's perspective kimi is an api-backed
+    # provider even though our agent dispatch is CLI. Auth: opencode reads
+    # KIMI_API_KEY from env (BuildEnv prefers KIMI_API_KEY_KILROY per
+    # kilroy's budget-isolation convention).
+    kimi:
+      backend: api
+    # Anthropic + openai are also declared explicitly so that this config
+    # is self-describing rather than relying on auto-detection. Match the
+    # routes resolved by prelaunch:
+    #   - planner       → anthropic_sdk → backend=api
+    #   - status_pulse  → claude_cli (via class quick_easy) → backend=cli
+    #   - critic        → codex_cli → backend=cli
+    # Two anthropic backends in one run is fine — class-routed nodes
+    # carry their own auth snapshot; the SDK path uses the run config's
+    # api credential for non-class nodes.
+    anthropic:
+      backend: api
+    openai:
+      backend: cli

@@ -10,7 +10,7 @@ func Gemini() Template {
 	return Template{
 		Name:   "gemini",
 		Binary: "gemini",
-		BuildArgs: func(prompt, workDir, model, _ string) []string {
+		BuildArgs: func(prompt, workDir, model, _, _ string) []string {
 			args := []string{"--auto-accept-all"}
 			if model != "" {
 				args = append(args, "--model", model)

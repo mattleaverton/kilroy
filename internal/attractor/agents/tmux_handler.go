@@ -201,7 +201,7 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	// incompatible with OAuth). Non-class routes have empty auth_method →
 	// templates fall back to their default args.
 	authMethod := route.AuthMethod()
-	command := tmpl.BuildCommand(prompt, exec.WorktreeDir, modelID, authMethod)
+	command := tmpl.BuildCommand(prompt, exec.WorktreeDir, modelID, authMethod, route.Provider)
 	// When the template produces structured JSONL output, redirect it to a
 	// known file so the log parser can find it without hunting through
 	// tool-specific directories.

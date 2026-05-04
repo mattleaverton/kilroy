@@ -1,0 +1,56 @@
+# Coding-relay: 4-stage iterative coding loop with mixed provider routing.
+# Designed for fire-and-forget background work — agents can dispatch a
+# spec, monitor STATUS.md for progress, and read result.md when done.
+
+[workflow]
+name              = "coding-relay"
+version           = "1"
+description       = """
+Iterative coding loop with four roles handed off in sequence:
+- planner   (anthropic SDK, sonnet 4.6) reads spec + prior feedback, scopes one sub-task.
+- coder     (opencode + kimi-k2)        implements the task, attempts a build.
+- critic    (codex CLI + gpt-5)         judges work against spec, writes feedback + decision.
+- status    (quick_easy class)          writes STATUS.md for external monitoring.
+
+Loop bound: 6 iterations or until critic writes COMPLETE to .kilroy/decision.md.
+Exercises agents.Dispatcher driver routing (SDK vs CLI), the auth binder
+across three providers, and the class resolver via the status node.
+"""
+agent_description = "Background coding loop with planner/coder/critic/status. Monitor STATUS.md while it runs; read result.md when done."
+graph             = "graph.dot"
+experimental      = true
+
+[inputs.prompt]
+type        = "string"
+required    = true
+description = "Absolute path to the spec / requirements / instruction file the coder should work from."
+
+[inputs.context_files]
+type        = "string"
+required    = false
+description = "Newline-separated absolute paths the agents should read for additional context."
+
+[inputs.verify_command]
+type        = "string"
+required    = false
+description = "Shell command run after each coder iteration to capture build output. Default builds Go; override per-project."
+default     = "go build ./... 2>&1"
+
+[outputs.result]
+type        = "path"
+description = "Final summary written when the loop terminates (success or failure)."
+path        = "result.md"
+
+[outputs.status]
+type        = "path"
+description = "Live status overview, refreshed every iteration. Safe for external readers to poll."
+path        = "STATUS.md"
+
+[side_effects]
+mutates_git    = true
+writes_files   = true
+network_egress = true
+idempotent     = false
+
+[defaults]
+labels = { workflow = "coding-relay" }

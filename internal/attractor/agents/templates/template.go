@@ -13,10 +13,14 @@ import (
 // "" for legacy stylesheet paths that don't go through the resolver.
 // Most templates can ignore it; claude uses it to decide whether to
 // include the --bare flag, which is incompatible with OAuth.
+//
+// provider is the resolved provider key ("anthropic", "openai", "kimi",
+// "google", etc.) — used by multi-provider templates (opencode) to
+// pick the right model prefix. Single-provider templates can ignore it.
 type Template struct {
 	Name             string // tool name (e.g. "claude", "codex")
 	Binary           string // executable name
-	BuildArgs        func(prompt, workDir, model, authMethod string) []string
+	BuildArgs        func(prompt, workDir, model, authMethod, provider string) []string
 	BuildEnv         func() map[string]string
 	PrepareSession   func(stageDir string, env map[string]string) error // optional pre-session setup (e.g. write config files)
 	StructuredOutput bool                                               // when true, command output is JSONL; handler redirects to agent_output.jsonl
@@ -44,8 +48,8 @@ type StartupDialog struct {
 }
 
 // BuildCommand constructs the full command string for the template.
-func (t *Template) BuildCommand(prompt, workDir, model, authMethod string) string {
-	args := t.BuildArgs(prompt, workDir, model, authMethod)
+func (t *Template) BuildCommand(prompt, workDir, model, authMethod, provider string) string {
+	args := t.BuildArgs(prompt, workDir, model, authMethod, provider)
 	// Simple shell-safe joining for the tmux respawn-pane command.
 	parts := make([]string, 0, len(args)+1)
 	parts = append(parts, t.Binary)

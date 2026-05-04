@@ -25,7 +25,7 @@ func Claude() Template {
 		Name:       "claude",
 		Binary:     "claude",
 		LogLocator: &agentlog.ClaudeLogLocator{},
-		BuildArgs: func(prompt, workDir, model, authMethod string) []string {
+		BuildArgs: func(prompt, workDir, model, authMethod, _ string) []string {
 			args := []string{"--dangerously-skip-permissions", "--print",
 				"--output-format", "stream-json", "--verbose"}
 			if authMethod != "cli_oauth" {
