@@ -172,7 +172,7 @@ kilroy runs prune --label experiment=true --yes
 
 ## Validate Semantics
 
-`attractor validate` runs parse + transforms + validators and fails on error-severity diagnostics.
+`kilroy validate --graph <file.dot>` runs parse + transforms + validators and fails on error-severity diagnostics.
 
 Key checks:
 

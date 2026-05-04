@@ -112,7 +112,7 @@ To classify run state:
 - Running: `final.json` missing and `live.json`/`progress.ndjson` still changing.
 - Finished: `final.json` present.
 - Likely stalled: no `progress.ndjson` updates for longer than configured stall timeout.
-- `attractor status` can show terminal `fail` while `progress.ndjson` still advances in overlap conditions; timestamp comparison resolves this ambiguity.
+- `kilroy status` can show terminal `fail` while `progress.ndjson` still advances in overlap conditions; timestamp comparison resolves this ambiguity.
 
 To quickly validate terminal state vs liveness, use:
 

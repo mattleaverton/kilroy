@@ -27,7 +27,7 @@ verified end-to-end. Plan doc has the full round log.
 - `kilroy run` now accepts both shapes: workflow-name (`kilroy run
   implement`) and direct mode (`kilroy run --graph X.dot` /
   `kilroy run --package <dir>`). Direct mode preserves the engine's
-  full flag surface (`--tmux`, `--detach`, `--config`, `--validate`, …).
+  full flag surface (`--detach`, `--config`, …).
 - `--preflight` and `--test-run` retired; `--validate` is the only name.
 - README, AGENTS, demos, skills, helper code all swept to the new surface.
 
@@ -57,7 +57,7 @@ parallel-worker work loop is the next major task.
 Concrete options:
 
 1. **Work-loop runs** (Matt's stated next step). Use `kilroy run
-   <workflow> --detach --tmux` to spin up parallel workers across
+   <workflow> --detach` to spin up parallel workers across
    whichever in-flight items we want to grind on. Quick-launch workflow
    already exists; main thing is picking the queue.
 

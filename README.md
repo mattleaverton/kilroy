@@ -409,7 +409,7 @@ kilroy run --graph <file.dot> [--config <run.yaml>]   # advanced: ad-hoc graph
 kilroy run --package <dir>    [--config <run.yaml>]   # advanced: ad-hoc package
 kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
 kilroy runs list | show <id> | wait <id> | prune  [--json | --pretty] [--label KEY=VALUE]
-kilroy status [--logs-root <dir> | --latest] [--json] [--follow]
+kilroy status [--logs-root <dir> | --latest] [--json] [--watch] [--interval <sec>]
 kilroy resume --logs-root <dir>
 kilroy resume --run-branch <attractor/run/...> [--repo <path>]
 kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
