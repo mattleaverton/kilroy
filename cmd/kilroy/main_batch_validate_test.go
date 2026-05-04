@@ -159,6 +159,57 @@ func TestAttractorValidateBatch_ThreeFiles(t *testing.T) {
 	}
 }
 
+// TestValidate_Batch_RunsCatalogCheck verifies that --batch runs the
+// model-ID catalog check. A graph whose model_stylesheet declares a
+// non-canonical Anthropic model ID (claude-opus-4-6 with dashed version)
+// must produce a stylesheet_noncanonical_model_id ERROR. Written inline at
+// runtime so the repo's pre-commit DOT validator doesn't reject the
+// intentionally-bad fixture.
+func TestValidate_Batch_RunsCatalogCheck(t *testing.T) {
+	bin := buildKilroyBinary(t)
+	bad := filepath.Join(t.TempDir(), "bad_model.dot")
+	src := `digraph G {
+  graph [model_stylesheet="* { llm_provider: anthropic; llm_model: claude-opus-4-6; }"]
+  start [shape=Mdiamond]
+  exit  [shape=Msquare]
+  work  [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
+  start -> work
+  work -> exit [condition="outcome=success"]
+}`
+	if err := os.WriteFile(bad, []byte(src), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	code, out := runKilroy(t, bin, "validate", "--batch", bad, "--json")
+	if code != 1 {
+		t.Fatalf("expected exit code 1 (catalog error), got %d\n%s", code, out)
+	}
+
+	var results []struct {
+		File   string `json:"file"`
+		Errors []struct {
+			Rule    string `json:"rule"`
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal([]byte(out), &results); err != nil {
+		t.Fatalf("JSON parse failed: %v\noutput:\n%s", err, out)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	found := false
+	for _, e := range results[0].Errors {
+		if e.Rule == "stylesheet_noncanonical_model_id" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected stylesheet_noncanonical_model_id error, got errors: %+v", results[0].Errors)
+	}
+}
+
 // testdataBatchFile returns the absolute path to a file under
 // cmd/kilroy/testdata/batch, failing the test if the file does not exist.
 func testdataBatchFile(t *testing.T, name string) string {

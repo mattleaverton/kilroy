@@ -13,6 +13,7 @@ import (
 
 	"github.com/danshapiro/kilroy/internal/attractor/dot"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
+	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/style"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
@@ -480,8 +481,18 @@ func workflowsValidate(args []string) {
 		out.Schema = m.Schema
 	}
 
+	// Load embedded model catalog so stylesheet model ID lint rules fire
+	// (mirrors the --graph fallback in run_with_config.go:144-148). On
+	// failure, fall back to nil catalog (degraded mode: model ID checks are
+	// skipped; all other rules still run).
+	cat, catErr := modeldb.LoadEmbeddedCatalog()
+	if catErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: model catalog unavailable, model ID checks skipped: %v\n", catErr)
+		cat = nil
+	}
+
 	// DOT-level validation (semantic rules, terminal-edge gates, etc.).
-	for _, diag := range validate.Validate(g) {
+	for _, diag := range validate.ValidateWithOptions(g, validate.ValidateOptions{Catalog: cat}) {
 		out.DOTIssues = append(out.DOTIssues, validateDOTIssue{
 			Severity: severityString(diag.Severity),
 			Rule:     diag.Rule,

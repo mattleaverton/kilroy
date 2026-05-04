@@ -876,6 +876,16 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 		os.Exit(1)
 	}
 
+	// Load embedded model catalog so stylesheet model ID lint rules fire in
+	// batch mode (mirrors the --graph fallback in run_with_config.go:144-148).
+	// On failure, fall back to nil catalog (degraded mode: model ID checks
+	// skipped; all other rules still run).
+	cat, catErr := modeldb.LoadEmbeddedCatalog()
+	if catErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: model catalog unavailable, model ID checks skipped: %v\n", catErr)
+		cat = nil
+	}
+
 	results := make([]batchFileResult, 0, len(files))
 	anyErrors := false
 	anyWarnings := false
@@ -893,7 +903,7 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 			results = append(results, res)
 			continue
 		}
-		_, diags, prepErr := engine.Prepare(dotSource)
+		_, diags, prepErr := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat})
 		// Collect diagnostics even when Prepare returns an error.
 		for _, d := range diags {
 			switch d.Severity {

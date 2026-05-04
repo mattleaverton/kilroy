@@ -156,6 +156,65 @@ default_class = "hard_coding"
 	}
 }
 
+// TestWorkflowsValidate_RunsCatalogCheck verifies that `workflows validate
+// <name>` runs the model-ID catalog check. A workflow whose graph.dot
+// declares a non-canonical Anthropic model ID in its model_stylesheet must
+// produce a stylesheet_noncanonical_model_id ERROR in dot_issues and a
+// status of "fail".
+func TestWorkflowsValidate_RunsCatalogCheck(t *testing.T) {
+	bin := buildTestBinary(t)
+	pkgRoot := t.TempDir()
+	dir := filepath.Join(pkgRoot, "badmodel")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "workflow.toml"), []byte(`
+[workflow]
+name        = "badmodel"
+version     = "1"
+description = "Test workflow with a non-canonical model ID in its stylesheet"
+graph       = "graph.dot"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := `digraph G {
+  graph [model_stylesheet="* { llm_provider: anthropic; llm_model: claude-opus-4-6; }"]
+  start [shape=Mdiamond]
+  exit  [shape=Msquare]
+  work  [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
+  start -> work
+  work -> exit [condition="outcome=success"]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "graph.dot"), []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command(bin, "workflows", "validate", "badmodel")
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS="+pkgRoot,
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	out, _ := cmd.Output()
+
+	var got workflowsValidateResult
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("output not JSON: %v\n%s", err, out)
+	}
+	if got.Status != "fail" {
+		t.Errorf("status = %q, want fail\nfull: %+v", got.Status, got)
+	}
+	found := false
+	for _, d := range got.DOTIssues {
+		if d.Rule == "stylesheet_noncanonical_model_id" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected stylesheet_noncanonical_model_id in dot_issues, got: %+v", got.DOTIssues)
+	}
+}
+
 func TestWorkflowsValidate_UnknownName_ExitsOne(t *testing.T) {
 	bin := buildTestBinary(t)
 	cmd := exec.Command(bin, "workflows", "validate", "no-such-workflow")
