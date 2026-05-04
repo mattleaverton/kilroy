@@ -842,6 +842,9 @@ func attractorValidate(args []string) {
 	if err != nil {
 		for _, d := range diags {
 			fmt.Fprintf(os.Stderr, "%s: %s (%s)\n", d.Severity, d.Message, d.Rule)
+			if d.Fix != "" {
+				fmt.Fprintf(os.Stderr, "  fix: %s\n", d.Fix)
+			}
 		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -849,6 +852,9 @@ func attractorValidate(args []string) {
 	fmt.Printf("ok: %s\n", filepath.Base(graphPath))
 	for _, d := range diags {
 		fmt.Printf("%s: %s (%s)\n", d.Severity, d.Message, d.Rule)
+		if d.Fix != "" {
+			fmt.Printf("  fix: %s\n", d.Fix)
+		}
 	}
 	os.Exit(0)
 }

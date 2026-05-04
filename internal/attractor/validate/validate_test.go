@@ -1400,6 +1400,43 @@ func TestValidate_G12_UnknownProvider_NoWarning(t *testing.T) {
 	assertNoRule(t, diags, "stylesheet_noncanonical_model_id")
 }
 
+// TestValidate_StylesheetModelIDFix_PointsAtModeldbSuggest checks that the Fix
+// strings on both stylesheet model-ID rules direct users at
+// `kilroy modeldb suggest --provider <P>` so they can find canonical IDs.
+func TestValidate_StylesheetModelIDFix_PointsAtModeldbSuggest(t *testing.T) {
+	cases := []struct {
+		name       string
+		stylesheet string
+		wantRule   string
+	}{
+		{"unknown", `* { llm_provider: anthropic; llm_model: claude-totally-bogus; }`, "stylesheet_unknown_model"},
+		{"noncanonical", `* { llm_provider: anthropic; llm_model: claude-opus-4-6; }`, "stylesheet_noncanonical_model_id"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g, err := dot.Parse(minimalGraphWithStylesheet(tc.stylesheet))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			catalog := buildTestCatalog()
+			diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
+			var found *Diagnostic
+			for i := range diags {
+				if diags[i].Rule == tc.wantRule {
+					found = &diags[i]
+					break
+				}
+			}
+			if found == nil {
+				t.Fatalf("expected diagnostic %q; got %+v", tc.wantRule, diags)
+			}
+			if !strings.Contains(found.Fix, "kilroy modeldb suggest --provider anthropic") {
+				t.Fatalf("Fix missing modeldb-suggest reference: %q", found.Fix)
+			}
+		})
+	}
+}
+
 // TestPromptFile_ConflictLintRule_FiresWhenBothSet verifies that when a node
 // has both prompt_file and prompt/llm_prompt set and expandPromptFiles has NOT
 // run (RepoPath is empty, so prompt_file remains unresolved), the

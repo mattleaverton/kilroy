@@ -543,14 +543,14 @@ func lintStylesheetModelIDs(g *model.Graph, catalog *modeldb.Catalog) []Diagnost
 				Rule:     "stylesheet_unknown_model",
 				Severity: SeverityWarning,
 				Message:  fmt.Sprintf("model_stylesheet: model %q not found in catalog for provider %q", modelID, provider),
-				Fix:      fmt.Sprintf("check the model ID spelling; for Anthropic use dots in versions (e.g. claude-sonnet-4.6)"),
+				Fix:      fmt.Sprintf("check the model ID spelling; run `kilroy modeldb suggest --provider %s` for the canonical list (Anthropic uses dots in versions, e.g. claude-sonnet-4.6)", provider),
 			})
 		case modeldb.ModelFoundNonCanonical:
 			diags = append(diags, Diagnostic{
 				Rule:     "stylesheet_noncanonical_model_id",
 				Severity: SeverityError,
 				Message:  fmt.Sprintf("model_stylesheet: model %q uses non-canonical format; version suffixes must use dots not dashes (e.g. claude-opus-4.6 not claude-opus-4-6)", modelID),
-				Fix:      "replace dashes in the version number suffix with dots: claude-opus-4-6 → claude-opus-4.6",
+				Fix:      fmt.Sprintf("replace dashes in the version number suffix with dots: claude-opus-4-6 → claude-opus-4.6 (or run `kilroy modeldb suggest --provider %s` for the canonical list)", provider),
 			})
 		case modeldb.ModelFoundCanonical, modeldb.ModelProviderUnknown:
 			// No warning: canonical match or catalog has no data for this provider.
