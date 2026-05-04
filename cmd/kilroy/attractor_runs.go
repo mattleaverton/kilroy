@@ -830,24 +830,30 @@ func appendZombieProgressEvent(logsRoot, runID string) {
 // --- show ---
 
 // runShowDetail is the JSON payload for `runs show --json`.
+//
+// ProviderSelections is omitted (via omitempty) when the underlying DB has
+// no rows for this run — e.g. when prelaunch validation failed before any
+// agent node executed. Consumers should treat absence as "no selections
+// were recorded," not as an error.
 type runShowDetail struct {
-	RunID         string             `json:"run_id"`
-	GraphName     string             `json:"graph_name"`
-	Goal          string             `json:"goal,omitempty"`
-	Status        string             `json:"status"`
-	StartedAt     time.Time          `json:"started_at"`
-	CompletedAt   *time.Time         `json:"completed_at,omitempty"`
-	DurationMS    *int64             `json:"duration_ms,omitempty"`
-	LogsRoot      string             `json:"logs_root,omitempty"`
-	WorktreeDir   string             `json:"worktree_dir,omitempty"`
-	RepoPath      string             `json:"repo_path,omitempty"`
-	RunBranch     string             `json:"run_branch,omitempty"`
-	FinalSHA      string             `json:"final_sha,omitempty"`
-	FailureReason string             `json:"failure_reason,omitempty"`
-	Labels        map[string]string  `json:"labels,omitempty"`
-	Inputs        map[string]any     `json:"inputs,omitempty"`
-	Invocation    []string           `json:"invocation,omitempty"`
-	Outputs       []runShowOutputRef `json:"outputs,omitempty"`
+	RunID              string                              `json:"run_id"`
+	GraphName          string                              `json:"graph_name"`
+	Goal               string                              `json:"goal,omitempty"`
+	Status             string                              `json:"status"`
+	StartedAt          time.Time                           `json:"started_at"`
+	CompletedAt        *time.Time                          `json:"completed_at,omitempty"`
+	DurationMS         *int64                              `json:"duration_ms,omitempty"`
+	LogsRoot           string                              `json:"logs_root,omitempty"`
+	WorktreeDir        string                              `json:"worktree_dir,omitempty"`
+	RepoPath           string                              `json:"repo_path,omitempty"`
+	RunBranch          string                              `json:"run_branch,omitempty"`
+	FinalSHA           string                              `json:"final_sha,omitempty"`
+	FailureReason      string                              `json:"failure_reason,omitempty"`
+	Labels             map[string]string                   `json:"labels,omitempty"`
+	Inputs             map[string]any                      `json:"inputs,omitempty"`
+	Invocation         []string                            `json:"invocation,omitempty"`
+	Outputs            []runShowOutputRef                  `json:"outputs,omitempty"`
+	ProviderSelections []rundb.ProviderSelectionSummary    `json:"provider_selections,omitempty"`
 }
 
 // runShowOutputRef points at a declared output file on disk.
@@ -982,24 +988,30 @@ func attractorRunsShow(args []string) {
 	}
 
 	if asJSON {
+		selections, err := db.GetProviderSelections(run.RunID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load provider selections: %v\n", err)
+			os.Exit(1)
+		}
 		detail := runShowDetail{
-			RunID:         run.RunID,
-			GraphName:     run.GraphName,
-			Goal:          run.Goal,
-			Status:        run.Status,
-			StartedAt:     run.StartedAt,
-			CompletedAt:   run.CompletedAt,
-			DurationMS:    run.DurationMS,
-			LogsRoot:      run.LogsRoot,
-			WorktreeDir:   run.WorktreeDir,
-			RepoPath:      run.RepoPath,
-			RunBranch:     run.RunBranch,
-			FinalSHA:      run.FinalSHA,
-			FailureReason: run.FailureReason,
-			Labels:        run.Labels,
-			Inputs:        run.Inputs,
-			Invocation:    run.Invocation,
-			Outputs:       outputs,
+			RunID:              run.RunID,
+			GraphName:          run.GraphName,
+			Goal:               run.Goal,
+			Status:             run.Status,
+			StartedAt:          run.StartedAt,
+			CompletedAt:        run.CompletedAt,
+			DurationMS:         run.DurationMS,
+			LogsRoot:           run.LogsRoot,
+			WorktreeDir:        run.WorktreeDir,
+			RepoPath:           run.RepoPath,
+			RunBranch:          run.RunBranch,
+			FinalSHA:           run.FinalSHA,
+			FailureReason:      run.FailureReason,
+			Labels:             run.Labels,
+			Inputs:             run.Inputs,
+			Invocation:         run.Invocation,
+			Outputs:            outputs,
+			ProviderSelections: selections,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

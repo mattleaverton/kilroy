@@ -320,16 +320,17 @@ func (d *DB) GetEdgeDecisions(runID string) ([]EdgeDecisionSummary, error) {
 
 // ProviderSelectionSummary is a read-only view of a provider selection.
 type ProviderSelectionSummary struct {
-	NodeID   string `json:"node_id"`
-	Attempt  int    `json:"attempt"`
-	Provider string `json:"provider"`
-	Model    string `json:"model"`
-	Backend  string `json:"backend"`
+	NodeID     string    `json:"node_id"`
+	Attempt    int       `json:"attempt"`
+	Provider   string    `json:"provider"`
+	Model      string    `json:"model"`
+	Backend    string    `json:"backend"`
+	SelectedAt time.Time `json:"selected_at"`
 }
 
 // GetProviderSelections returns all provider selections for a run.
 func (d *DB) GetProviderSelections(runID string) ([]ProviderSelectionSummary, error) {
-	rows, err := d.db.Query(`SELECT node_id, attempt, provider, model, backend
+	rows, err := d.db.Query(`SELECT node_id, attempt, provider, model, backend, selected_at
 		FROM provider_selections WHERE run_id = ? ORDER BY id ASC`, runID)
 	if err != nil {
 		return nil, err
@@ -339,9 +340,11 @@ func (d *DB) GetProviderSelections(runID string) ([]ProviderSelectionSummary, er
 	var results []ProviderSelectionSummary
 	for rows.Next() {
 		var p ProviderSelectionSummary
-		if err := rows.Scan(&p.NodeID, &p.Attempt, &p.Provider, &p.Model, &p.Backend); err != nil {
+		var selectedAt string
+		if err := rows.Scan(&p.NodeID, &p.Attempt, &p.Provider, &p.Model, &p.Backend, &selectedAt); err != nil {
 			return nil, err
 		}
+		p.SelectedAt, _ = time.Parse(time.RFC3339Nano, selectedAt)
 		results = append(results, p)
 	}
 	return results, nil
