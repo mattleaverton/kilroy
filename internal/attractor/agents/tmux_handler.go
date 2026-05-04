@@ -164,6 +164,18 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 		modelID = strings.TrimSpace(node.Attr("llm_model", ""))
 	}
 
+	// Surface the resolved provider + model to the template's
+	// PrepareSession via env. Multi-provider templates (opencode) read
+	// these to construct OPENCODE_CONFIG_CONTENT for the right provider
+	// rather than hardcoding anthropic. Single-provider templates
+	// ignore them.
+	if route.Provider != "" {
+		env["KILROY_AGENT_PROVIDER"] = route.Provider
+	}
+	if modelID != "" {
+		env["KILROY_AGENT_MODEL"] = modelID
+	}
+
 	// Emit provider_selected event so tmux runs match the API path's surface.
 	if exec != nil && exec.Engine != nil {
 		source := route.Source

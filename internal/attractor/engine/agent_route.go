@@ -107,11 +107,43 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 		if driver == "" {
 			return AgentRoute{}, fmt.Errorf("agent_tool=%q has no driver mapping (expected claude|codex|gemini|opencode)", tool)
 		}
+		modelID := strings.TrimSpace(node.Attr("llm_model", ""))
+		explicitProvider := strings.TrimSpace(node.Attr("llm_provider", ""))
+
+		// opencode is multi-provider — the user picks anthropic/kimi/zai/etc.
+		// via opencode's --model arg and provider config. Provider must come
+		// from llm_provider= on the node; the node says which provider
+		// opencode should use.
+		if driver == "opencode" {
+			if explicitProvider == "" {
+				return AgentRoute{}, fmt.Errorf(
+					"agent_tool=\"opencode\" requires explicit llm_provider= " +
+						"(opencode is multi-provider; the node must say which one)")
+			}
+			return AgentRoute{
+				NodeID:   node.ID,
+				Source:   "agent_tool=opencode",
+				Provider: normalizeProviderKey(explicitProvider),
+				Model:    modelID,
+				Driver:   "opencode",
+				Backend:  BackendCLI,
+			}, nil
+		}
+
+		// Fixed-provider tools (claude/codex/gemini): driver determines
+		// provider. If the node also sets llm_provider=, it must match —
+		// otherwise the metadata says one thing and the binary does
+		// another, which is exactly the silent-wrong-mapping class of
+		// bug we're trying to eliminate.
 		provider, backend := providerAndBackendForDriver(driver)
 		if provider == "" {
 			return AgentRoute{}, fmt.Errorf("agent_tool=%q maps to driver %q which has no provider mapping", tool, driver)
 		}
-		modelID := strings.TrimSpace(node.Attr("llm_model", ""))
+		if explicitProvider != "" && normalizeProviderKey(explicitProvider) != provider {
+			return AgentRoute{}, fmt.Errorf(
+				"agent_tool=%q implies llm_provider=%q; node also sets llm_provider=%q which conflicts",
+				tool, provider, explicitProvider)
+		}
 		return AgentRoute{
 			NodeID:   node.ID,
 			Source:   "agent_tool=" + tool,
@@ -133,10 +165,12 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 		}
 		// Unknown providers (kimi, zai, minimax, custom OpenAI-compat
 		// endpoints, etc.) are routed via run-config rather than a
-		// canonical driver. The Dispatcher rejects empty-Driver routes;
-		// the legacy CodergenHandler resolves them through
-		// cfg.LLM.Providers. Prelaunch stays lenient — typos surface at
-		// dispatch time, real config-driven providers continue to work.
+		// canonical driver. The Dispatcher detects Driver=="" with a
+		// non-empty Provider and delegates to codergen
+		// (CodergenHandler/AgentRouter) which resolves them through
+		// cfg.LLM.Providers. Prelaunch stays lenient — typos surface
+		// at execution-time backend lookup; real config-driven
+		// providers continue to work.
 		return AgentRoute{
 			NodeID:   node.ID,
 			Source:   "llm_provider=" + provider,
