@@ -228,7 +228,6 @@ func attractorRun(args []string) {
 	var noCXDB bool
 	var skipCLIHeadlessWarning bool
 	var inputPath string
-	var promptFile string
 	var inputFileSpecs []string
 	var workspace string
 	var labelSpecs []string
@@ -281,13 +280,6 @@ func attractorRun(args []string) {
 				os.Exit(1)
 			}
 			inputPath = args[i]
-		case "--prompt-file":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(os.Stderr, "--prompt-file requires a file path")
-				os.Exit(1)
-			}
-			promptFile = args[i]
 		case "--input-file":
 			i++
 			if i >= len(args) {
@@ -374,37 +366,30 @@ func attractorRun(args []string) {
 		graphDir = filepath.Dir(absPath)
 	}
 
-	// Load structured inputs.
+	// Load structured inputs from a JSON/YAML file. Inline JSON sniffing
+	// (`--input '{...}'`) is gone — explicit-routing direction. Inline
+	// JSON had two failure modes the public surface shouldn't carry:
+	// shells mangle braces in unquoted strings, and the type sniff
+	// "starts with `{`?" silently steered the parser. For inline values,
+	// write a file and use --input <path> or --input-file KEY=<path>.
 	var inputs map[string]any
 	if inputPath != "" {
-		var err error
-		if strings.HasPrefix(strings.TrimSpace(inputPath), "{") {
-			// JSON string passed directly.
-			inputs, err = engine.LoadInputString(inputPath)
-		} else {
-			inputs, err = engine.LoadInputFile(inputPath)
+		trimmed := strings.TrimSpace(inputPath)
+		if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+			fmt.Fprintln(os.Stderr, "--input no longer accepts inline JSON; pass a file path (or use --input-file KEY=PATH)")
+			os.Exit(1)
 		}
+		var err error
+		inputs, err = engine.LoadInputFile(inputPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error loading inputs: %v\n", err)
 			os.Exit(1)
 		}
 	}
-	// --prompt-file reads a file verbatim and assigns its contents to the
-	// "prompt" input key. Overrides any prompt already set via --input.
-	if promptFile != "" {
-		data, err := os.ReadFile(promptFile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error reading --prompt-file %q: %v\n", promptFile, err)
-			os.Exit(1)
-		}
-		if inputs == nil {
-			inputs = map[string]any{}
-		}
-		inputs["prompt"] = string(data)
-	}
 	// --input-file KEY=PATH reads the file verbatim into inputs[KEY].
-	// Generalization of --prompt-file for workflows whose required key
-	// is question/issue/target/spec/topic instead of prompt. Repeatable.
+	// The canonical way to inject any input value (including prompts).
+	// Repeatable. (--prompt-file was a narrow alias and is gone — use
+	// --input-file prompt=<file> for the same effect.)
 	for _, spec := range inputFileSpecs {
 		idx := strings.IndexByte(spec, '=')
 		if idx <= 0 {
@@ -513,19 +498,11 @@ func attractorRun(args []string) {
 		if noCXDB {
 			childArgs = append(childArgs, "--no-cxdb")
 		}
-		if inputPath != "" && !strings.HasPrefix(strings.TrimSpace(inputPath), "{") {
+		if inputPath != "" {
 			if abs, err := filepath.Abs(inputPath); err == nil {
 				inputPath = abs
 			}
 			childArgs = append(childArgs, "--input", inputPath)
-		} else if inputPath != "" {
-			childArgs = append(childArgs, "--input", inputPath)
-		}
-		if promptFile != "" {
-			if abs, err := filepath.Abs(promptFile); err == nil {
-				promptFile = abs
-			}
-			childArgs = append(childArgs, "--prompt-file", promptFile)
 		}
 		for _, spec := range inputFileSpecs {
 			// Resolve path component to absolute so the detach child (cwd =
