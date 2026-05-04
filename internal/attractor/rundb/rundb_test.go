@@ -231,6 +231,51 @@ func TestPruneRuns_Before(t *testing.T) {
 	}
 }
 
+func TestPruneRuns_DefaultExcludesRunning(t *testing.T) {
+	db := openTestDB(t)
+	startedAt := time.Now().Add(-48 * time.Hour)
+	_ = db.InsertRun(RunRecord{RunID: "old-running", Status: "running", StartedAt: startedAt})
+	_ = db.InsertRun(RunRecord{RunID: "old-fail", Status: "fail", StartedAt: startedAt})
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	n, err := db.PruneRuns(PruneFilter{Before: &cutoff})
+	if err != nil {
+		t.Fatalf("PruneRuns: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("pruned %d, want 1 (running row must be preserved)", n)
+	}
+
+	if r, _ := db.GetRun("old-running"); r == nil {
+		t.Error("running run was deleted by default — must require --include-running")
+	}
+	if r, _ := db.GetRun("old-fail"); r != nil {
+		t.Error("fail run was not deleted")
+	}
+}
+
+func TestPruneRuns_IncludeRunningFlag(t *testing.T) {
+	db := openTestDB(t)
+	startedAt := time.Now().Add(-48 * time.Hour)
+	_ = db.InsertRun(RunRecord{RunID: "old-running", Status: "running", StartedAt: startedAt})
+	_ = db.InsertRun(RunRecord{RunID: "old-fail", Status: "fail", StartedAt: startedAt})
+
+	cutoff := time.Now().Add(-24 * time.Hour)
+	n, err := db.PruneRuns(PruneFilter{Before: &cutoff, IncludeRunning: true})
+	if err != nil {
+		t.Fatalf("PruneRuns: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("pruned %d, want 2", n)
+	}
+	if r, _ := db.GetRun("old-running"); r != nil {
+		t.Error("running run was not deleted with IncludeRunning=true")
+	}
+	if r, _ := db.GetRun("old-fail"); r != nil {
+		t.Error("fail run was not deleted")
+	}
+}
+
 func TestPruneRuns_Orphans(t *testing.T) {
 	db := openTestDB(t)
 	existingDir := t.TempDir()

@@ -118,13 +118,17 @@ func (d *DB) ListRuns(f ListFilter) ([]RunSummary, error) {
 
 // PruneFilter specifies criteria for pruning old runs.
 type PruneFilter struct {
-	Before    *time.Time        // prune runs started before this time
-	GraphName string            // prune only runs matching this graph pattern
-	Labels    map[string]string // prune only runs with these labels
-	Orphans   bool              // prune runs whose logs_root no longer exists
+	Before         *time.Time        // prune runs started before this time
+	GraphName      string            // prune only runs matching this graph pattern
+	Labels         map[string]string // prune only runs with these labels
+	Orphans        bool              // prune runs whose logs_root no longer exists
+	IncludeRunning bool              // when false (default), exclude status='running' rows from deletion
 }
 
 // PruneRuns deletes runs matching the filter and returns the count deleted.
+// By default, runs with status='running' are excluded from deletion to avoid
+// breaking foreign-key references from an in-flight engine. Pass
+// IncludeRunning=true to override.
 func (d *DB) PruneRuns(f PruneFilter) (int, error) {
 	if f.Orphans {
 		return d.pruneOrphans()
@@ -148,6 +152,10 @@ func (d *DB) PruneRuns(f PruneFilter) (int, error) {
 
 	if len(where) == 0 {
 		return 0, fmt.Errorf("prune requires at least one filter criterion")
+	}
+
+	if !f.IncludeRunning {
+		where = append(where, "status != 'running'")
 	}
 
 	q := "DELETE FROM runs WHERE " + strings.Join(where, " AND ")

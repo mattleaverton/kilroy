@@ -44,7 +44,8 @@ func runsUsage() {
 	fmt.Fprintln(os.Stderr, "  kilroy runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]")
 	fmt.Fprintln(os.Stderr, "  kilroy runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]")
 	fmt.Fprintln(os.Stderr, "    exit codes: 0=success, 1=fail/canceled/error, 2=timeout")
-	fmt.Fprintln(os.Stderr, "  kilroy runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--zombies] [--dry-run | --yes] [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy runs prune [--before YYYY-MM-DD] [--older-than <duration>] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--zombies] [--include-running] [--dry-run | --yes] [--json]")
+	fmt.Fprintln(os.Stderr, "    by default, in-flight runs (status=running) are excluded; pass --include-running to opt in")
 }
 
 // runManifest is the subset of manifest.json fields we care about for list/prune.
@@ -355,6 +356,7 @@ func attractorRunsPrune(args []string) {
 	var orphansOnly bool
 	var zombies bool
 	var asJSON bool
+	var includeRunning bool
 	dryRun := true
 
 	for i := 0; i < len(args); i++ {
@@ -363,6 +365,8 @@ func attractorRunsPrune(args []string) {
 			orphansOnly = true
 		case "--zombies":
 			zombies = true
+		case "--include-running":
+			includeRunning = true
 		case "--json":
 			asJSON = true
 		case "--before":
@@ -450,7 +454,7 @@ func attractorRunsPrune(args []string) {
 	}
 
 	// Try RunDB-based prune first.
-	if pruneFromDB(beforeTime, graphPattern, labelKey, labelVal, orphansOnly, dryRun) {
+	if pruneFromDB(beforeTime, graphPattern, labelKey, labelVal, orphansOnly, includeRunning, dryRun) {
 		return
 	}
 
@@ -511,7 +515,7 @@ func attractorRunsPrune(args []string) {
 	}
 }
 
-func pruneFromDB(beforeTime time.Time, graphPattern, labelKey, labelVal string, orphansOnly, dryRun bool) bool {
+func pruneFromDB(beforeTime time.Time, graphPattern, labelKey, labelVal string, orphansOnly, includeRunning, dryRun bool) bool {
 	db, err := rundb.Open(rundb.DefaultPath())
 	if err != nil {
 		return false
@@ -519,8 +523,9 @@ func pruneFromDB(beforeTime time.Time, graphPattern, labelKey, labelVal string, 
 	defer db.Close()
 
 	filter := rundb.PruneFilter{
-		Orphans:   orphansOnly,
-		GraphName: graphPattern,
+		Orphans:        orphansOnly,
+		GraphName:      graphPattern,
+		IncludeRunning: includeRunning,
 	}
 	if !beforeTime.IsZero() {
 		filter.Before = &beforeTime
@@ -542,6 +547,9 @@ func pruneFromDB(beforeTime time.Time, graphPattern, labelKey, labelVal string, 
 		var count int
 		for _, r := range runs {
 			if !beforeTime.IsZero() && !r.StartedAt.Before(beforeTime) {
+				continue
+			}
+			if !includeRunning && r.Status == "running" {
 				continue
 			}
 			count++
