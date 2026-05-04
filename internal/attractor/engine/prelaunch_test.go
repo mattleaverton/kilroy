@@ -139,6 +139,121 @@ func TestValidatePreLaunch_UnknownAgentClass_FailsTyped(t *testing.T) {
 	}
 }
 
+// TestValidatePreLaunch_AllCandidatesSkipped_PreservesPerCandidateDetail
+// confirms that when policy.Resolve returns ErrNoViableCandidate, the
+// rank-by-rank Skipped detail is surfaced verbatim into
+// PreLaunchNodeCheck.SkippedCandidates so automation can read the
+// per-candidate reason without parsing the human-readable error string.
+func TestValidatePreLaunch_AllCandidatesSkipped_PreservesPerCandidateDetail(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_class": "probe_all_fail",
+	})
+	data := &policy.Data{
+		SchemaVersion: "1",
+		PolicyVersion: "test",
+		Classes: map[string]policy.Class{
+			"probe_all_fail": {Chain: []policy.Candidate{
+				{
+					ModelID:  "claude-opus-4-7",
+					Driver:   "anthropic_sdk",
+					Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
+				},
+				{
+					ModelID:  "gpt-5",
+					Driver:   "openai_sdk",
+					Requires: binding.Requirement{Provider: "openai", Method: binding.MethodAPIKey},
+				},
+			}},
+		},
+	}
+
+	// Both chains are bound, but the detection view sees no env vars and
+	// no CLI sessions — every source is exhausted, so both candidates
+	// are skipped with distinct reasons.
+	cfg := &binding.Config{
+		Bindings: map[string]string{
+			"anthropic/api_key": "anthropic_api_key",
+			"openai/api_key":    "openai_api_key",
+		},
+		Chains: map[string]binding.Chain{
+			"anthropic_api_key": {
+				Name:     "anthropic_api_key",
+				Requires: binding.Requirement{Provider: "anthropic", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "ANTHROPIC_API_KEY"}},
+			},
+			"openai_api_key": {
+				Name:     "openai_api_key",
+				Requires: binding.Requirement{Provider: "openai", Method: binding.MethodAPIKey},
+				Sources:  []binding.Source{{Kind: binding.SourceEnvVar, Name: "OPENAI_API_KEY"}},
+			},
+		},
+	}
+	resolver := binding.NewResolver(cfg, testDetectionView{})
+
+	logsRoot := t.TempDir()
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: logsRoot}, PolicyDeps{
+		Load:     func() (*policy.Data, error) { return data, nil },
+		Resolver: func(string) (*binding.Resolver, error) { return resolver, nil },
+	})
+	if err == nil {
+		t.Fatal("expected error when all candidates are unreachable")
+	}
+	if _, ok := err.(*PreLaunchError); !ok {
+		t.Errorf("error type = %T, want *PreLaunchError", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed node, got %+v", report.Nodes)
+	}
+
+	got := report.Nodes[0].SkippedCandidates
+	if len(got) != 2 {
+		t.Fatalf("SkippedCandidates = %d entries, want 2: %+v", len(got), got)
+	}
+	// Rank 0: anthropic candidate.
+	if got[0].Rank != 0 {
+		t.Errorf("got[0].Rank = %d, want 0", got[0].Rank)
+	}
+	if got[0].ModelID != "claude-opus-4-7" {
+		t.Errorf("got[0].ModelID = %q, want claude-opus-4-7", got[0].ModelID)
+	}
+	if got[0].Driver != "anthropic_sdk" {
+		t.Errorf("got[0].Driver = %q, want anthropic_sdk", got[0].Driver)
+	}
+	if got[0].Reason != "auth_chain_exhausted:anthropic_api_key" {
+		t.Errorf("got[0].Reason = %q, want auth_chain_exhausted:anthropic_api_key", got[0].Reason)
+	}
+	// Rank 1: openai candidate.
+	if got[1].Rank != 1 {
+		t.Errorf("got[1].Rank = %d, want 1", got[1].Rank)
+	}
+	if got[1].ModelID != "gpt-5" {
+		t.Errorf("got[1].ModelID = %q, want gpt-5", got[1].ModelID)
+	}
+	if got[1].Driver != "openai_sdk" {
+		t.Errorf("got[1].Driver = %q, want openai_sdk", got[1].Driver)
+	}
+	if got[1].Reason != "auth_chain_exhausted:openai_api_key" {
+		t.Errorf("got[1].Reason = %q, want auth_chain_exhausted:openai_api_key", got[1].Reason)
+	}
+
+	// Confirm the structured payload survives the JSON round-trip onto disk.
+	rpt, err := os.ReadFile(filepath.Join(logsRoot, "prelaunch_validation.json"))
+	if err != nil {
+		t.Fatalf("read prelaunch_validation.json: %v", err)
+	}
+	var roundtrip PreLaunchReport
+	if err := json.Unmarshal(rpt, &roundtrip); err != nil {
+		t.Fatalf("decode prelaunch report: %v", err)
+	}
+	if len(roundtrip.Nodes) != 1 || len(roundtrip.Nodes[0].SkippedCandidates) != 2 {
+		t.Errorf("on-disk SkippedCandidates = %+v, want 2 entries", roundtrip.Nodes)
+	}
+	if roundtrip.Nodes[0].SkippedCandidates[0].Reason != "auth_chain_exhausted:anthropic_api_key" {
+		t.Errorf("on-disk rank-0 reason = %q, want auth_chain_exhausted:anthropic_api_key",
+			roundtrip.Nodes[0].SkippedCandidates[0].Reason)
+	}
+}
+
 func TestValidatePreLaunch_NoAuth_FailsWithSkippedReason(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
 		"agent_class": "hard_coding",

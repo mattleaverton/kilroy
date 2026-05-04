@@ -12,6 +12,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -106,6 +107,23 @@ type PreLaunchNodeCheck struct {
 	BinaryFound *bool    `json:"binary_found,omitempty"`
 	Status      string   `json:"status"` // "ok" | "fail"
 	Errors      []string `json:"errors,omitempty"`
+	// SkippedCandidates carries the rank-by-rank reasons every candidate
+	// in a class chain was rejected, when the failure is
+	// policy.ErrNoViableCandidate. Lets automation distinguish
+	// "missing env var" from "binary not found" without re-parsing the
+	// human-readable Errors strings.
+	SkippedCandidates []PreLaunchSkippedCandidate `json:"skipped_candidates,omitempty"`
+}
+
+// PreLaunchSkippedCandidate is the JSON-friendly mirror of
+// policy.SkipRecord. Lifted into the engine package so callers reading
+// prelaunch_validation.json don't need a policy-package import to
+// interpret it.
+type PreLaunchSkippedCandidate struct {
+	Rank    int    `json:"rank"`
+	ModelID string `json:"model_id,omitempty"`
+	Driver  string `json:"driver,omitempty"`
+	Reason  string `json:"reason"`
 }
 
 // PreLaunchSecretCheck records whether a single required secret (a
@@ -188,6 +206,7 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		if err != nil {
 			check.Status = "fail"
 			check.Errors = append(check.Errors, err.Error())
+			check.SkippedCandidates = extractSkippedCandidates(err)
 			report.Nodes = append(report.Nodes, check)
 			report.Summary.Fail++
 			continue
@@ -395,6 +414,27 @@ func probeCLIBinary(binaryPath string) error {
 		return err
 	}
 	return nil
+}
+
+// extractSkippedCandidates unwraps err looking for
+// policy.ErrNoViableCandidate and returns its rank-by-rank skip records
+// in the engine's JSON-friendly shape. Returns nil when the error chain
+// does not carry that typed payload (e.g. unknown class, vague node).
+func extractSkippedCandidates(err error) []PreLaunchSkippedCandidate {
+	var noViable policy.ErrNoViableCandidate
+	if !errors.As(err, &noViable) || len(noViable.Skipped) == 0 {
+		return nil
+	}
+	out := make([]PreLaunchSkippedCandidate, 0, len(noViable.Skipped))
+	for _, s := range noViable.Skipped {
+		out = append(out, PreLaunchSkippedCandidate{
+			Rank:    s.Rank,
+			ModelID: s.ModelID,
+			Driver:  s.Driver,
+			Reason:  s.Reason,
+		})
+	}
+	return out
 }
 
 // cliBinaryForDriver maps a CLI driver to the expected PATH binary name.
