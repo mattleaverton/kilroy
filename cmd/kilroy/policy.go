@@ -15,6 +15,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
@@ -44,8 +45,8 @@ func policyCmd(args []string) {
 
 func policyUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  kilroy policy list [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy policy show <class-name> [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy list [--json] [--project <dir>]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy show <class-name> [--json] [--project <dir>]")
 	fmt.Fprintln(os.Stderr, "  kilroy policy resolve <class-name> [--json] [--project <dir>]")
 	fmt.Fprintln(os.Stderr, "    resolve runs the resolver against the current machine state")
 	fmt.Fprintln(os.Stderr, "    and reports which candidate would be picked for the class.")
@@ -76,6 +77,12 @@ type candidateJSON struct {
 	HistorySink string       `json:"history_sink"`
 	Tags        []string     `json:"tags"`
 	Requires    requiresJSON `json:"requires"`
+	// Auth probe fields populated when a binding.Resolver is available
+	// (i.e. the user/project auth.toml stack loaded). Empty otherwise so
+	// the JSON shape is stable for callers that run without auth config.
+	AuthMethod string `json:"auth_method,omitempty"`
+	AuthSource string `json:"auth_source,omitempty"`
+	SkipReason string `json:"skip_reason,omitempty"`
 }
 
 type requiresJSON struct {
@@ -91,12 +98,12 @@ type aliasJSON struct {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func dataToPolicyListJSON(d *policy.Data) policyListJSON {
+func dataToPolicyListJSON(d *policy.Data, resolver *binding.Resolver) policyListJSON {
 	classes := make(map[string]classJSON, len(d.Classes))
 	for name, cls := range d.Classes {
 		chain := make([]candidateJSON, len(cls.Chain))
 		for i, c := range cls.Chain {
-			chain[i] = candidateJSON{
+			cj := candidateJSON{
 				ModelID:     c.ModelID,
 				Driver:      c.Driver,
 				Transport:   c.Transport,
@@ -108,6 +115,8 @@ func dataToPolicyListJSON(d *policy.Data) policyListJSON {
 					Tool:     c.Requires.Tool,
 				},
 			}
+			cj.AuthMethod, cj.AuthSource, cj.SkipReason = candidateAuthStatus(resolver, c)
+			chain[i] = cj
 		}
 		classes[name] = classJSON{
 			Description: cls.Description,
@@ -124,6 +133,61 @@ func dataToPolicyListJSON(d *policy.Data) policyListJSON {
 		Classes:       classes,
 		Aliases:       aliases,
 	}
+}
+
+// candidateAuthStatus probes one candidate's Requires against the resolver
+// and returns the satisfying auth method+source, or a structured skip
+// reason when no source in the bound chain is usable. Returns all empty
+// strings when resolver is nil (no auth.toml stack loaded) so callers can
+// distinguish "not probed" from "probed and skipped".
+func candidateAuthStatus(resolver *binding.Resolver, c policy.Candidate) (authMethod, authSource, skipReason string) {
+	if resolver == nil {
+		return "", "", ""
+	}
+	snap, err := resolver.Resolve(c.Requires)
+	if err != nil {
+		return "", "", err.Error()
+	}
+	switch snap.Source.Kind {
+	case binding.SourceEnvVar:
+		return string(snap.Method), snap.Source.Name, ""
+	case binding.SourceCLISession:
+		return string(snap.Method), snap.Source.Tool, ""
+	}
+	return string(snap.Method), "", ""
+}
+
+// resolverForProject builds the production binding.Resolver against the
+// user/project auth.toml stack rooted at projectRoot. ErrNoConfig (no
+// auth.toml found at either layer) is treated as a soft "skip auth
+// probing" signal: the caller still renders the policy chain but without
+// per-candidate reachability annotations. Other errors (malformed config,
+// I/O failure) are surfaced.
+func resolverForProject(projectRoot string) (*binding.Resolver, error) {
+	resolver, err := engine.DefaultBindingResolver(projectRoot)
+	if err != nil {
+		var noCfg *binding.ErrNoConfig
+		if errors.As(err, &noCfg) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return resolver, nil
+}
+
+// resolveProjectRoot returns the explicit --project value when non-empty,
+// otherwise the upward-discovered project root via projectroot.Find. An
+// empty result means "no project layer" — callers pass that straight to
+// DefaultBindingResolver, which then loads only the user-layer auth.toml.
+func resolveProjectRoot(projectDir string) (string, error) {
+	if projectDir != "" {
+		return projectDir, nil
+	}
+	root, _, err := projectroot.Find("")
+	if err != nil {
+		return "", err
+	}
+	return root, nil
 }
 
 // resolveAlias looks up className against the alias table; returns (resolved, aliasUsed, originalFrom).
@@ -148,18 +212,10 @@ func sortedClassNames(d *policy.Data) []string {
 // ── policyList ───────────────────────────────────────────────────────────────
 
 func policyList(args []string) {
-	var jsonOut bool
-	for _, a := range args {
-		switch a {
-		case "--json":
-			jsonOut = true
-		case "-h", "--help":
-			policyUsage()
-			os.Exit(0)
-		default:
-			fmt.Fprintf(os.Stderr, "unknown flag: %q\n", a)
-			os.Exit(1)
-		}
+	jsonOut, projectDir, err := parsePolicyListArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 
 	d, err := policy.Load()
@@ -168,8 +224,19 @@ func policyList(args []string) {
 		os.Exit(1)
 	}
 
+	projectRoot, err := resolveProjectRoot(projectDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "project root: %v\n", err)
+		os.Exit(1)
+	}
+	resolver, err := resolverForProject(projectRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth resolver: %v\n", err)
+		os.Exit(1)
+	}
+
 	if jsonOut {
-		v := dataToPolicyListJSON(d)
+		v := dataToPolicyListJSON(d, resolver)
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(v); err != nil {
@@ -191,36 +258,55 @@ func policyList(args []string) {
 			// (`subscription` / `api_key`) and from the per-class detail
 			// view. Avoid synthesizing duplicates of those tag values.
 			tagStr := strings.Join(c.Tags, ", ")
-			fmt.Printf("    rank %d: %s / %s (%s)\n", i, c.ModelID, c.Driver, tagStr)
+			line := fmt.Sprintf("    rank %d: %s / %s (%s)", i, c.ModelID, c.Driver, tagStr)
+			method, source, skip := candidateAuthStatus(resolver, c)
+			switch {
+			case skip != "":
+				line += fmt.Sprintf(" — auth: skip (%s)", skip)
+			case method != "":
+				if source != "" {
+					line += fmt.Sprintf(" — auth: %s (%s)", method, source)
+				} else {
+					line += fmt.Sprintf(" — auth: %s", method)
+				}
+			}
+			fmt.Println(line)
 		}
 		fmt.Println()
 	}
 }
 
+// parsePolicyListArgs parses arguments for `kilroy policy list`:
+// "[--json] [--project <dir>]". Mirrors parsePolicyResolveArgs for symmetry
+// across the policy subcommands.
+func parsePolicyListArgs(args []string) (asJSON bool, projectDir string, err error) {
+	usage := "usage: kilroy policy list [--json] [--project <dir>]"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch a {
+		case "--json":
+			asJSON = true
+		case "--project":
+			i++
+			if i >= len(args) {
+				return false, "", fmt.Errorf("--project requires a directory argument\n%s", usage)
+			}
+			projectDir = args[i]
+		case "-h", "--help":
+			return false, "", fmt.Errorf("%s", usage)
+		default:
+			return false, "", fmt.Errorf("unknown flag: %q\n%s", a, usage)
+		}
+	}
+	return asJSON, projectDir, nil
+}
+
 // ── policyShow ───────────────────────────────────────────────────────────────
 
 func policyShow(args []string) {
-	var jsonOut bool
-	var className string
-
-	for _, a := range args {
-		switch a {
-		case "--json":
-			jsonOut = true
-		case "-h", "--help":
-			policyUsage()
-			os.Exit(0)
-		default:
-			if strings.HasPrefix(a, "--") {
-				fmt.Fprintf(os.Stderr, "unknown flag: %q\n", a)
-				os.Exit(1)
-			}
-			className = a
-		}
-	}
-
-	if className == "" {
-		policyUsage()
+	className, jsonOut, projectDir, err := parsePolicyShowArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
@@ -245,13 +331,24 @@ func policyShow(args []string) {
 		os.Exit(1)
 	}
 
+	projectRoot, err := resolveProjectRoot(projectDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "project root: %v\n", err)
+		os.Exit(1)
+	}
+	resolver, err := resolverForProject(projectRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth resolver: %v\n", err)
+		os.Exit(1)
+	}
+
 	if jsonOut {
 		cj := classJSON{
 			Description: cls.Description,
 			Chain:       make([]candidateJSON, len(cls.Chain)),
 		}
 		for i, c := range cls.Chain {
-			cj.Chain[i] = candidateJSON{
+			cd := candidateJSON{
 				ModelID:     c.ModelID,
 				Driver:      c.Driver,
 				Transport:   c.Transport,
@@ -263,6 +360,8 @@ func policyShow(args []string) {
 					Tool:     c.Requires.Tool,
 				},
 			}
+			cd.AuthMethod, cd.AuthSource, cd.SkipReason = candidateAuthStatus(resolver, c)
+			cj.Chain[i] = cd
 		}
 		out := map[string]classJSON{className: cj}
 		enc := json.NewEncoder(os.Stdout)
@@ -291,8 +390,52 @@ func policyShow(args []string) {
 			fmt.Printf("    Requires:     provider=%s method=%s\n", c.Requires.Provider, c.Requires.Method)
 		}
 		fmt.Printf("    Tags:         %s\n", strings.Join(c.Tags, ", "))
+		method, source, skip := candidateAuthStatus(resolver, c)
+		switch {
+		case skip != "":
+			fmt.Printf("    Auth status:  skip (%s)\n", skip)
+		case method != "":
+			if source != "" {
+				fmt.Printf("    Auth status:  reachable via %s (%s)\n", method, source)
+			} else {
+				fmt.Printf("    Auth status:  reachable via %s\n", method)
+			}
+		}
 		fmt.Println()
 	}
+}
+
+// parsePolicyShowArgs parses arguments for `kilroy policy show`:
+// "<class-name> [--json] [--project <dir>]". Mirrors parsePolicyResolveArgs.
+func parsePolicyShowArgs(args []string) (className string, asJSON bool, projectDir string, err error) {
+	usage := "usage: kilroy policy show <class-name> [--json] [--project <dir>]"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch a {
+		case "--json":
+			asJSON = true
+		case "--project":
+			i++
+			if i >= len(args) {
+				return "", false, "", fmt.Errorf("--project requires a directory argument\n%s", usage)
+			}
+			projectDir = args[i]
+		case "-h", "--help":
+			return "", false, "", fmt.Errorf("%s", usage)
+		default:
+			if strings.HasPrefix(a, "--") {
+				return "", false, "", fmt.Errorf("unknown flag: %q\n%s", a, usage)
+			}
+			if className != "" {
+				return "", false, "", fmt.Errorf("unexpected extra argument %q\n%s", a, usage)
+			}
+			className = a
+		}
+	}
+	if className == "" {
+		return "", false, "", fmt.Errorf("class name required\n%s", usage)
+	}
+	return className, asJSON, projectDir, nil
 }
 
 // ── kilroy policy resolve ────────────────────────────────────────────────────

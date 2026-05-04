@@ -221,6 +221,182 @@ func TestPolicyResolve_ProjectLayerOverride_CwdDiscovery(t *testing.T) {
 	}
 }
 
+// TestPolicyShow_ProjectLayerOverride_ExplicitFlag verifies that
+// `kilroy policy show <class> --project <dir>` annotates the chain
+// candidates with the project-layer auth.toml's bindings.
+func TestPolicyShow_ProjectLayerOverride_ExplicitFlag(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir() // no user auth.toml
+	projectRoot := t.TempDir()
+	writeProjectAuth(t, projectRoot, projectAuthTOMLForResolveProbe())
+
+	cmd := exec.Command(bin, "policy", "show", "hard_coding",
+		"--json", "--project", projectRoot)
+	cmd.Env = resolveProbeEnv(tmpHome, "MY_TEST_KEY_PROBE_F3=present-value")
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("expected exit 0, got %v\nstdout: %s\nstderr: %s",
+			err, stdout.String(), stderr.String())
+	}
+
+	var out map[string]classJSON
+	if err := json.Unmarshal([]byte(stdout.String()), &out); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, stdout.String())
+	}
+	cls, ok := out["hard_coding"]
+	if !ok {
+		t.Fatalf("hard_coding not present in output: %s", stdout.String())
+	}
+	// Find at least one api_key candidate that resolved to MY_TEST_KEY_PROBE_F3
+	// — this is the project-layer chain. Without project-layer discovery the
+	// candidate would either skip (no chain found) or pick a different env var.
+	found := false
+	for _, c := range cls.Chain {
+		if c.Requires.Method == "api_key" && c.Requires.Provider == "anthropic" {
+			if c.AuthSource == "MY_TEST_KEY_PROBE_F3" && c.AuthMethod == "api_key" {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no anthropic/api_key candidate resolved to MY_TEST_KEY_PROBE_F3 (project-layer chain not honored)\nchain: %+v", cls.Chain)
+	}
+}
+
+// TestPolicyShow_ProjectLayerOverride_CwdDiscovery verifies that
+// `kilroy policy show <class>` (no --project flag) walks upward from cwd
+// to find the project root, the same way `kilroy run` and `kilroy policy
+// resolve` do.
+func TestPolicyShow_ProjectLayerOverride_CwdDiscovery(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir() // no user auth.toml
+	projectRoot := t.TempDir()
+	writeProjectAuth(t, projectRoot, projectAuthTOMLForResolveProbe())
+
+	subDir := filepath.Join(projectRoot, "sub", "deep")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+
+	cmd := exec.Command(bin, "policy", "show", "hard_coding", "--json")
+	cmd.Dir = subDir
+	cmd.Env = resolveProbeEnv(tmpHome, "MY_TEST_KEY_PROBE_F3=present-value")
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("expected exit 0, got %v\nstdout: %s\nstderr: %s",
+			err, stdout.String(), stderr.String())
+	}
+
+	var out map[string]classJSON
+	if err := json.Unmarshal([]byte(stdout.String()), &out); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, stdout.String())
+	}
+	cls := out["hard_coding"]
+	found := false
+	for _, c := range cls.Chain {
+		if c.AuthSource == "MY_TEST_KEY_PROBE_F3" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("AuthSource=MY_TEST_KEY_PROBE_F3 not found (cwd discovery did not find .kilroy/)\nchain: %+v", cls.Chain)
+	}
+}
+
+// TestPolicyList_ProjectLayerOverride_ExplicitFlag verifies that
+// `kilroy policy list --project <dir>` annotates each class's chain
+// candidates with the project-layer auth.toml's bindings.
+func TestPolicyList_ProjectLayerOverride_ExplicitFlag(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir() // no user auth.toml
+	projectRoot := t.TempDir()
+	writeProjectAuth(t, projectRoot, projectAuthTOMLForResolveProbe())
+
+	cmd := exec.Command(bin, "policy", "list",
+		"--json", "--project", projectRoot)
+	cmd.Env = resolveProbeEnv(tmpHome, "MY_TEST_KEY_PROBE_F3=present-value")
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("expected exit 0, got %v\nstdout: %s\nstderr: %s",
+			err, stdout.String(), stderr.String())
+	}
+
+	var v policyListJSON
+	if err := json.Unmarshal([]byte(stdout.String()), &v); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, stdout.String())
+	}
+	cls, ok := v.Classes["hard_coding"]
+	if !ok {
+		t.Fatalf("hard_coding not present: %+v", v.Classes)
+	}
+	found := false
+	for _, c := range cls.Chain {
+		if c.Requires.Method == "api_key" && c.Requires.Provider == "anthropic" {
+			if c.AuthSource == "MY_TEST_KEY_PROBE_F3" && c.AuthMethod == "api_key" {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Errorf("no anthropic/api_key candidate resolved to MY_TEST_KEY_PROBE_F3 (project-layer chain not honored)\nchain: %+v", cls.Chain)
+	}
+}
+
+// TestPolicyList_ProjectLayerOverride_CwdDiscovery verifies that
+// `kilroy policy list` (no --project flag) walks upward from cwd to find
+// the project root.
+func TestPolicyList_ProjectLayerOverride_CwdDiscovery(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir() // no user auth.toml
+	projectRoot := t.TempDir()
+	writeProjectAuth(t, projectRoot, projectAuthTOMLForResolveProbe())
+
+	subDir := filepath.Join(projectRoot, "sub", "deep")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("mkdir sub: %v", err)
+	}
+
+	cmd := exec.Command(bin, "policy", "list", "--json")
+	cmd.Dir = subDir
+	cmd.Env = resolveProbeEnv(tmpHome, "MY_TEST_KEY_PROBE_F3=present-value")
+
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("expected exit 0, got %v\nstdout: %s\nstderr: %s",
+			err, stdout.String(), stderr.String())
+	}
+
+	var v policyListJSON
+	if err := json.Unmarshal([]byte(stdout.String()), &v); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, stdout.String())
+	}
+	cls := v.Classes["hard_coding"]
+	found := false
+	for _, c := range cls.Chain {
+		if c.AuthSource == "MY_TEST_KEY_PROBE_F3" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("AuthSource=MY_TEST_KEY_PROBE_F3 not found (cwd discovery did not find .kilroy/)\nchain: %+v", cls.Chain)
+	}
+}
+
 func TestPolicyList_JSONOutput_ParsesAsJSON(t *testing.T) {
 	bin := buildTestBinary(t)
 	cmd := exec.Command(bin, "policy", "list", "--json")
