@@ -442,6 +442,34 @@ collision with engine names). Updated graph.dot, README.
 This footgun is invisible until you actually run a workflow and inspect
 the artifacts. Worth at least the lint or doc.
 
+### F12 — UX: engine auto-creates `.gitignore` with `.kilroy/` so workflow `git add .kilroy/...` silently no-ops
+
+**Symptom:** A workflow critic stage that does `git add .kilroy/feedback/`
+followed by `git commit -m ...` silently adds nothing because the
+engine's auto-generated `.gitignore` excludes `.kilroy/`. The critic in
+the smoke run noticed this on its own and used `git add -f`, which is
+what saved the workflow — but a less careful agent would silently
+produce empty commits and the loop's iteration tracking would degrade.
+
+**Suggested fix:**
+
+1. Document the convention in workflow-author docs: "If your
+   workflow stages need to commit anything inside `.kilroy/`, use
+   `git add -f <path>` because the engine's auto `.gitignore` excludes
+   that directory."
+2. Or expose a workflow-level toggle to opt out of auto-gitignoring
+   `.kilroy/` (a workflow that wants per-iteration feedback committed
+   shouldn't have to fight the engine).
+3. Or recommend workflow-managed files live OUTSIDE `.kilroy/` (e.g.,
+   the workflow could write to `.coding-relay/feedback/` instead, where
+   the workflow author owns gitignore policy).
+
+This is the second `.kilroy/`-related collision we hit (after F11 — the
+TASK.md case-collision). Both stem from the engine treating `.kilroy/`
+as private workspace, but the loop pattern needs persistent
+per-iteration files there. The naming + ignoring conventions could be
+clearer.
+
 ### F8 — UX: stale-build detection is not git-worktree-aware
 
 **Symptom:**
