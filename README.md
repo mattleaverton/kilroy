@@ -404,21 +404,19 @@ Typical stage-level artifacts under `{logs_root}/{node_id}`:
 ## Commands
 
 ```text
-kilroy run <workflow-name> [--input-file KEY=PATH ...] [--label KEY=VALUE ...] [--detach]
+kilroy run <workflow-name> [--input-file KEY=PATH ...] [--label KEY=VALUE ...] [--detach] [--wait] [--pretty]
 kilroy run --graph <file.dot> [--config <run.yaml>]   # advanced: ad-hoc graph
 kilroy run --package <dir>    [--config <run.yaml>]   # advanced: ad-hoc package
 kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
 kilroy runs list | show <id> | wait <id> | prune  [--json | --pretty] [--label KEY=VALUE]
 kilroy status [--logs-root <dir> | --latest] [--json] [--follow]
 kilroy resume --logs-root <dir>
-kilroy resume --cxdb <http_base_url> --context-id <id>
 kilroy resume --run-branch <attractor/run/...> [--repo <path>]
 kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
 kilroy validate --graph <file.dot>            # static DOT validation
 kilroy auth list | check | init | suggest-fix
 kilroy policy list | show <class> | resolve <class> | explain <run-id>
 kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] <requirements>
-kilroy review --graph <file.dot> [--output <file>] [--json]
 kilroy serve [--addr <host:port>]
 ```
 

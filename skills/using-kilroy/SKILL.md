@@ -19,12 +19,11 @@ Kilroy is a local-first Attractor runner:
 Use these exact command forms:
 
 ```text
-kilroy run <workflow-name> [--input-file KEY=PATH ...] [--input <path>] [--label KEY=VALUE] [--detach] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>]
+kilroy run <workflow-name> [--input-file KEY=PATH ...] [--input <path>] [--label KEY=VALUE] [--detach] [--wait] [--pretty] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>]
 kilroy run --graph <file.dot> [--config <run.yaml>] [...]   # advanced ad-hoc graph mode
 kilroy run --package <dir>    [--config <run.yaml>] [...]   # advanced ad-hoc package mode
-kilroy resume --logs-root <dir>
-kilroy resume --cxdb <http_base_url> --context-id <id>
-kilroy resume --run-branch <attractor/run/...> [--repo <path>]
+kilroy resume --logs-root <dir> [--pretty]
+kilroy resume --run-branch <attractor/run/...> [--repo <path>] [--pretty]
 kilroy status [--logs-root <dir> | --latest] [--json] [--follow|-f] [--cxdb] [--raw] [--watch] [--interval <sec>]
 kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
 kilroy runs list   [--json|--pretty] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
@@ -339,7 +338,6 @@ Valid statuses: `success`, `partial_success`, `retry`, `fail`, `skipped`.
 ## Resume Behavior
 
 - `--logs-root`: direct and most reliable.
-- `--cxdb --context-id`: recovers logs path from recent `RunStarted`/`CheckpointSaved` turns.
 - `--run-branch`: derives run id from branch suffix and scans default runs directory for manifest match.
 
 On resume, Kilroy:
@@ -410,7 +408,7 @@ When Kilroy runs inside a Claude Code session, the `CLAUDECODE` env var is set. 
 - `missing llm_model on node`: set `llm_model` (or stylesheet model that resolves to it).
 - `missing status.json (auto_status=false)`: write status file or set `auto_status=true`.
 - `repo has uncommitted changes`: commit/stash before run or resume.
-- `could not locate logs_root for run_branch`: use `--logs-root` or `--cxdb --context-id`.
+- `could not locate logs_root for run_branch`: use `--logs-root`.
 - `resume: missing per-run model catalog snapshot`: ensure run logs are intact.
 
 ## Related Files
