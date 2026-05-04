@@ -182,15 +182,15 @@ func TestResolveAgentRoute_LLMProviderWithoutModel_FailsLoudly(t *testing.T) {
 	}
 }
 
-// AgentTool wins when both agent_tool and llm_provider are present —
-// the node is asking for a specific CLI tool, not just a provider.
-func TestResolveAgentRoute_AgentToolWinsOverLLMProvider(t *testing.T) {
+// agent_tool=claude + matching llm_provider=anthropic resolves cleanly.
+// The metadata says the same thing the binary does.
+func TestResolveAgentRoute_AgentToolWithMatchingLLMProvider(t *testing.T) {
 	node := &model.Node{
 		ID: "mixed",
 		Attrs: map[string]string{
 			"agent_tool":   "claude",
-			"llm_provider": "openai",
-			"llm_model":    "gpt-5.4",
+			"llm_provider": "anthropic",
+			"llm_model":    "claude-sonnet-4-5",
 		},
 	}
 	r, err := ResolveAgentRoute(node, nil, PolicyDeps{})
@@ -198,7 +198,78 @@ func TestResolveAgentRoute_AgentToolWinsOverLLMProvider(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if r.Driver != "claude_cli" {
-		t.Fatalf("agent_tool should win: got driver %q want claude_cli", r.Driver)
+		t.Fatalf("driver: got %q want claude_cli", r.Driver)
+	}
+}
+
+// agent_tool=claude + mismatched llm_provider=openai is a loud failure.
+// Without this check, route metadata says one provider while the binary
+// uses another — the silent-wrong-mapping class of bug.
+func TestResolveAgentRoute_FixedProviderMismatch_FailsLoudly(t *testing.T) {
+	node := &model.Node{
+		ID: "mismatch",
+		Attrs: map[string]string{
+			"agent_tool":   "claude",
+			"llm_provider": "openai",
+			"llm_model":    "gpt-5.4",
+		},
+	}
+	_, err := ResolveAgentRoute(node, nil, PolicyDeps{})
+	if err == nil {
+		t.Fatalf("expected loud failure on agent_tool/llm_provider mismatch")
+	}
+	for _, want := range []string{"claude", "anthropic", "openai", "conflicts"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q; got %q", want, err.Error())
+		}
+	}
+}
+
+// agent_tool=opencode is multi-provider — the node MUST set
+// llm_provider= to disambiguate which provider opencode talks to.
+func TestResolveAgentRoute_Opencode_RequiresExplicitProvider(t *testing.T) {
+	node := &model.Node{
+		ID:    "oc",
+		Attrs: map[string]string{"agent_tool": "opencode"},
+	}
+	_, err := ResolveAgentRoute(node, nil, PolicyDeps{})
+	if err == nil {
+		t.Fatalf("expected error: opencode without llm_provider should fail")
+	}
+	for _, want := range []string{"opencode", "llm_provider", "multi-provider"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q; got %q", want, err.Error())
+		}
+	}
+}
+
+// agent_tool=opencode + llm_provider=kimi resolves to a route whose
+// Provider is the user-chosen one (not driver-implied). Driver=opencode,
+// Backend=BackendCLI.
+func TestResolveAgentRoute_Opencode_AcceptsKimi(t *testing.T) {
+	node := &model.Node{
+		ID: "oc_kimi",
+		Attrs: map[string]string{
+			"agent_tool":   "opencode",
+			"llm_provider": "kimi",
+			"llm_model":    "kimi-k2",
+		},
+	}
+	r, err := ResolveAgentRoute(node, nil, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.Driver != "opencode" {
+		t.Fatalf("driver: got %q want opencode", r.Driver)
+	}
+	if r.Provider != "kimi" {
+		t.Fatalf("provider: got %q want kimi", r.Provider)
+	}
+	if r.Backend != BackendCLI {
+		t.Fatalf("backend: got %q want %q", r.Backend, BackendCLI)
+	}
+	if r.Source != "agent_tool=opencode" {
+		t.Fatalf("source: got %q", r.Source)
 	}
 }
 

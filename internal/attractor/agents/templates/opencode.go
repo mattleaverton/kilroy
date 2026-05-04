@@ -8,9 +8,18 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agents/agentlog"
+	"github.com/danshapiro/kilroy/internal/providerspec"
 )
 
 // OpenCode returns an invocation template for the opencode CLI.
+//
+// opencode is multi-provider: it picks anthropic / kimi / zai / etc.
+// based on its model arg ("anthropic/claude-...", "kimi/kimi-k2", etc.)
+// and the provider config block embedded via OPENCODE_CONFIG_CONTENT.
+// Both the model prefix and the config block come from the resolved
+// AgentRoute — tmux_handler stashes route.Provider / route.Model under
+// KILROY_AGENT_PROVIDER / KILROY_AGENT_MODEL in env before calling the
+// template's BuildArgs and PrepareSession.
 func OpenCode() Template {
 	return Template{
 		Name:       "opencode",
@@ -19,11 +28,18 @@ func OpenCode() Template {
 		BuildArgs: func(prompt, workDir, model, _ string) []string {
 			args := []string{"run", "--format", "json", "--pure"}
 			if model != "" {
-				// opencode uses provider/model format (e.g. "anthropic/claude-sonnet-4-5").
-				// Add "anthropic/" prefix if missing, normalize dots to dashes.
+				// opencode takes provider/model (e.g. "anthropic/claude-sonnet-4-5",
+				// "kimi/kimi-k2"). When the resolved provider is in env, use it
+				// for the prefix. Otherwise, default to "anthropic/" so existing
+				// fixtures that don't pass a provider continue to work. Dots are
+				// normalized to dashes — opencode's model registry uses dashes.
 				m := strings.ReplaceAll(model, ".", "-")
 				if !strings.Contains(m, "/") {
-					m = "anthropic/" + m
+					provider := strings.TrimSpace(os.Getenv("KILROY_AGENT_PROVIDER"))
+					if provider == "" {
+						provider = "anthropic"
+					}
+					m = provider + "/" + m
 				}
 				args = append(args, "--model", m)
 			}
@@ -53,28 +69,36 @@ func OpenCode() Template {
 		// is in plan §11 / docs/auth.md "What's NOT covered".
 		BuildEnv: func() map[string]string {
 			env := map[string]string{}
-			if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-				env["ANTHROPIC_API_KEY"] = key
-			}
-			if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-				env["OPENAI_API_KEY"] = key
+			// Pass through every known provider key env var so opencode's
+			// `{env:NAME}` substitution finds whichever one PrepareSession
+			// references. The provider config below picks one of these.
+			for _, name := range []string{
+				"ANTHROPIC_API_KEY",
+				"OPENAI_API_KEY",
+				"GEMINI_API_KEY",
+				"KIMI_API_KEY",
+				"ZAI_API_KEY",
+				"CEREBRAS_API_KEY",
+				"MINIMAX_API_KEY",
+				"INCEPTION_API_KEY",
+			} {
+				if val := os.Getenv(name); val != "" {
+					env[name] = val
+				}
 			}
 			return env
 		},
 		PrepareSession: func(stageDir string, env map[string]string) error {
-			// Inject provider config via OPENCODE_CONFIG_CONTENT so opencode
-			// doesn't rely on ~/.config/opencode/ or interactive auth.
-			config := map[string]any{
-				"provider": map[string]any{
-					"anthropic": map[string]any{
-						"options": map[string]any{
-							"apiKey": "{env:ANTHROPIC_API_KEY}",
-						},
-					},
-				},
+			// Build OPENCODE_CONFIG_CONTENT for whichever provider the
+			// route resolved to. tmux_handler writes route.Provider into
+			// KILROY_AGENT_PROVIDER before this runs. Default is
+			// anthropic for back-compat with fixtures that don't go
+			// through ResolveAgentRoute.
+			provider := strings.TrimSpace(env["KILROY_AGENT_PROVIDER"])
+			if provider == "" {
+				provider = "anthropic"
 			}
-			data, _ := json.Marshal(config)
-			env["OPENCODE_CONFIG_CONTENT"] = string(data)
+			env["OPENCODE_CONFIG_CONTENT"] = buildOpencodeConfig(provider)
 			return nil
 		},
 		PromptPrefix:     ">",
@@ -84,4 +108,42 @@ func OpenCode() Template {
 		ExitsOnComplete:  true,
 		StartupTimeout:   15 * time.Second,
 	}
+}
+
+// buildOpencodeConfig produces opencode's provider configuration JSON
+// for one provider. Looks up the provider's API spec in providerspec to
+// pick the correct API key env var and base URL. For unknown providers,
+// emits a minimal config with the canonical API key env var pattern.
+func buildOpencodeConfig(provider string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+
+	options := map[string]any{}
+
+	if spec, ok := providerspec.Builtin(provider); ok && spec.API != nil {
+		if env := strings.TrimSpace(spec.API.DefaultAPIKeyEnv); env != "" {
+			options["apiKey"] = "{env:" + env + "}"
+		}
+		if base := strings.TrimSpace(spec.API.DefaultBaseURL); base != "" {
+			options["baseURL"] = base
+		}
+	} else {
+		// Unknown provider: best-effort canonical env var name.
+		options["apiKey"] = "{env:" + strings.ToUpper(provider) + "_API_KEY}"
+	}
+
+	cfg := map[string]any{
+		"provider": map[string]any{
+			provider: map[string]any{
+				"options": options,
+			},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		// Should never fail for plain map[string]any. Fall back to a
+		// minimal hardcoded anthropic block so we don't return a malformed
+		// config.
+		return `{"provider":{"anthropic":{"options":{"apiKey":"{env:ANTHROPIC_API_KEY}"}}}}`
+	}
+	return string(data)
 }

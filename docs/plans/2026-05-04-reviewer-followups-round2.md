@@ -32,11 +32,19 @@ handlers" ask. Vague nodes and unknown `agent_tool=` values now fail
 prelaunch loudly with a clear error naming the offending input.
 
 Lenient corner: unknown `llm_provider=` values (kimi, zai, minimax,
-custom OpenAI-compat endpoints) are deferred to the runtime — they
-resolve via `cfg.LLM.Providers` in the legacy CodergenHandler path.
-Prelaunch accepts them; the dispatcher (which only knows the canonical
-3 SDK drivers) rejects them at execution. This preserves legacy provider
-plugins without weakening the spirit of the reviewer's ask.
+custom OpenAI-compat endpoints) are deferred to the runtime. Prelaunch
+accepts them. The Dispatcher detects `Driver==""` + non-empty `Provider`
+and delegates to codergen (`AgentRouter`), which consults
+`cfg.LLM.Providers` for the backend at execution time.
+**Reviewer-flagged regression** (commit `9c36f40`, after the initial
+push): the original Dispatcher rejected empty-driver routes outright
+with `dispatcher: driver "" has no dispatch mapping`, so production
+runs of custom providers failed before AgentRouter saw them. Package
+tests missed this because `engine.RunWithConfig` uses
+`NewDefaultRegistry`, not the layered Dispatcher. The CLI-level
+regression test in `cmd/kilroy/run_custom_provider_test.go` now
+guards this seam by exec'ing the real binary against an httptest
+fake.
 
 ### Medium severity (output contract)
 
@@ -106,6 +114,38 @@ Updated:
   the JSON run handle instead of grepping `run_id=` / `logs_root=`.
 - `main_exit_codes_test.go::TestRun_PrintsCXDBUI*` — assertions match
   the JSON shape (`"cxdb_ui":"URL"`).
+
+## Reviewer round-2 follow-up: opencode multi-provider routing
+
+Discovered after the initial round-2 push by a worktree worker
+(`worktree-coding-relay`) writing a workflow that exercised mixed
+driver routing on purpose. Two paired bugs the reviewer insisted land
+together (commit `87ae628`):
+
+**F1 — `agent_tool="opencode"` had no provider mapping.** opencode is
+multi-provider; the driver-implies-provider pattern (claude_cli →
+anthropic, codex_cli → openai) breaks for it. ResolveAgentRoute now
+treats opencode specially: requires explicit `llm_provider=`, uses it
+as the route's Provider. Driver=opencode, Backend=BackendCLI.
+
+**F1 corollary — fixed-provider tools fail loudly on mismatched
+explicit providers.** `agent_tool="claude"` + `llm_provider="openai"`
+used to silently win (agent_tool decides). Now produces a clear error
+naming both providers and the word "conflicts" — the route metadata
+can no longer disagree with what the binary uses.
+
+**F2 — opencode template hardcoded anthropic in
+OPENCODE_CONFIG_CONTENT.** Even after F1 routed kimi correctly, the
+launched opencode subprocess only saw an anthropic provider block.
+Template now reads `KILROY_AGENT_PROVIDER` from env (set by
+tmux_handler from the resolved AgentRoute) and emits the matching
+provider config, pulling DefaultBaseURL/DefaultAPIKeyEnv from
+`providerspec.Builtin()`.
+
+8 new tests cover the resolver path (opencode require/accept,
+fixed-provider mismatch) and the template path
+(buildOpencodeConfig/PrepareSession/BuildArgs for kimi/zai/anthropic/
+unknown providers).
 
 ## What's still open from the two reviewer letters
 
