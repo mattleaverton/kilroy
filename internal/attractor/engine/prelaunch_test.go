@@ -1099,3 +1099,56 @@ func TestPrelaunch_Opencode_BinaryMissing_FailsLoudly(t *testing.T) {
 		t.Errorf("expected error to mention opencode binary, got %v", report.Nodes[0].Errors)
 	}
 }
+
+// TestPrelaunchValidationJSON_SchemaVersion_Present asserts that the
+// persisted prelaunch_validation.json carries a non-empty top-level
+// schema_version stamped to the current PreLaunchSchemaVersion. Consumers
+// (CI, automation) rely on this field to branch on report shape changes
+// rather than inferring them from the Go struct.
+func TestPrelaunchValidationJSON_SchemaVersion_Present(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-6",
+	})
+	logsRoot := t.TempDir()
+
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: logsRoot}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+	if report.SchemaVersion != PreLaunchSchemaVersion {
+		t.Errorf("in-memory report.SchemaVersion = %q, want %q", report.SchemaVersion, PreLaunchSchemaVersion)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(logsRoot, "prelaunch_validation.json"))
+	if err != nil {
+		t.Fatalf("read prelaunch_validation.json: %v", err)
+	}
+
+	// Decode as a generic map to assert the JSON tag is exactly
+	// "schema_version" at the top level — not just that the Go field
+	// round-trips.
+	var top map[string]any
+	if err := json.Unmarshal(raw, &top); err != nil {
+		t.Fatalf("decode prelaunch_validation.json: %v", err)
+	}
+	got, ok := top["schema_version"]
+	if !ok {
+		t.Fatalf("prelaunch_validation.json missing top-level \"schema_version\" key; got keys: %v", mapKeys(top))
+	}
+	gotStr, ok := got.(string)
+	if !ok {
+		t.Fatalf("schema_version is %T, want string", got)
+	}
+	if gotStr != PreLaunchSchemaVersion {
+		t.Errorf("schema_version on disk = %q, want %q", gotStr, PreLaunchSchemaVersion)
+	}
+}
+
+func mapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}

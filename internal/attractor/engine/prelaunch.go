@@ -69,15 +69,26 @@ func tomlDecodeBytes(data []byte, dest any) (toml.MetaData, error) {
 	return toml.Decode(string(data), dest)
 }
 
+// PreLaunchSchemaVersion is the semver-ish version stamped at the top of
+// every prelaunch_validation.json so consumers (CI, automation, debug
+// tooling) can branch on shape changes instead of inferring them.
+//
+// Bump policy:
+//   - MAJOR: incompatible removals or renames of existing fields.
+//   - MINOR: additive fields that older consumers can safely ignore.
+//   - PATCH: documentation/comment-only edits to the report shape.
+const PreLaunchSchemaVersion = "1.0.0"
+
 // PreLaunchReport is the structured output of ValidatePreLaunch. Persisted
 // alongside the run as prelaunch_validation.json for after-the-fact
 // inspection (kilroy runs show, kilroy policy explain, etc.).
 type PreLaunchReport struct {
-	GeneratedAt string                 `json:"generated_at"`
-	Package     *PreLaunchPackageCheck `json:"package,omitempty"`
-	Nodes       []PreLaunchNodeCheck   `json:"nodes"`
-	Secrets     []PreLaunchSecretCheck `json:"secrets,omitempty"`
-	Summary     PreLaunchSummary       `json:"summary"`
+	SchemaVersion string                 `json:"schema_version"`
+	GeneratedAt   string                 `json:"generated_at"`
+	Package       *PreLaunchPackageCheck `json:"package,omitempty"`
+	Nodes         []PreLaunchNodeCheck   `json:"nodes"`
+	Secrets       []PreLaunchSecretCheck `json:"secrets,omitempty"`
+	Summary       PreLaunchSummary       `json:"summary"`
 }
 
 // PreLaunchPackageCheck records workflow-package integrity findings —
@@ -168,7 +179,8 @@ type PreLaunchSummary struct {
 // plus one os/exec.LookPath per CLI driver. No LLM calls.
 func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLaunchReport, error) {
 	report := &PreLaunchReport{
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		SchemaVersion: PreLaunchSchemaVersion,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	if g == nil {
 		return report, nil
