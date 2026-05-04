@@ -50,33 +50,39 @@ func (h *TmuxAgentHandler) RequiresProvider() bool { return true }
 // Execute implements engine.Handler. Spawns a CLI tool in a tmux session,
 // waits for completion, captures output, and returns an outcome.
 func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
-	// Class-driven routing first: when the node carries class="...", the
-	// policy resolver picks driver+model and we map driver→tmux tool below.
-	// This is the tmux side of Block 4 Step 4b. Falls through to legacy
-	// stylesheet attributes when no class is set.
-	cls, hasClass, err := engine.ResolveAgentClass(node, exec, h.PolicyDeps)
-	if err != nil {
-		return runtime.Outcome{
-			Status:        runtime.StatusFail,
-			FailureReason: fmt.Sprintf("policy class resolve: %v", err),
-		}, nil
-	}
+	// Resolve via the canonical engine.ResolveAgentRoute — same call the
+	// Dispatcher made when picking this handler. Class-routed nodes read
+	// the prelaunch snapshot via ResolveAgentClass internally; explicit
+	// agent_tool=/llm_provider= nodes derive a Driver directly. The
+	// AgentRoute is the single source of truth for everything below
+	// (driver, model, provider, auth snapshot).
+	//
+	// A resolver error here means the node was vague or the
+	// agent_tool/llm_provider didn't map to a canonical driver. The
+	// Dispatcher and prelaunch both catch this earlier; in direct-call
+	// test paths that bypass them, fall back to a zero AgentRoute and
+	// let resolveToolName below pick a tool from registered templates.
+	route, _ := engine.ResolveAgentRoute(node, exec, h.PolicyDeps)
 
-	// Resolve which CLI tool to use. Prefer the class-resolved driver when
-	// present; otherwise fall back to legacy provider/agent_tool attributes.
+	// Map driver → tmux tool. CLI drivers have a 1:1 mapping; SDK
+	// drivers (anthropic_sdk/openai_sdk/google_sdk) should not have
+	// reached the tmux handler — that's a dispatch bug. Reject loudly
+	// when a class-resolved route points at a non-CLI driver: the
+	// failure_reason names the driver so callers can debug routing.
 	toolName := ""
-	if hasClass {
-		toolName = toolNameForDriver(cls.Driver)
-		if toolName == "" {
+	if route.Driver != "" {
+		toolName = toolNameForDriver(route.Driver)
+		if toolName == "" && route.ClassResult != nil {
 			return runtime.Outcome{
 				Status: runtime.StatusFail,
 				FailureReason: fmt.Sprintf(
 					"policy class %q resolved to driver %q which has no tmux tool mapping; this driver should not have reached the tmux handler — check dispatch routing",
-					cls.Class, cls.Driver),
+					route.Class, route.Driver),
 			}, nil
 		}
 	}
 	if toolName == "" {
+		// Legacy fallback: agent_tool= or first-stylesheet-tool match.
 		toolName = resolveToolName(node)
 	}
 	tmpl := h.Templates.Get(toolName)
@@ -121,8 +127,8 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	stageDir := filepath.Join(exec.LogsRoot, node.ID)
 	_ = os.MkdirAll(stageDir, 0o755)
 	var envScrub []string
-	if hasClass {
-		bindResult, err := materializeCredential(cls, exec, stageDir)
+	if route.ClassResult != nil {
+		bindResult, err := materializeCredential(route, exec, stageDir)
 		if err != nil {
 			return runtime.Outcome{
 				Status:        runtime.StatusFail,
@@ -153,21 +159,20 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 	}
 
 	// Resolve model: class-resolved value wins; otherwise legacy llm_model.
-	modelID := ""
-	if hasClass {
-		modelID = cls.Model
-	}
+	modelID := route.Model
 	if modelID == "" {
 		modelID = strings.TrimSpace(node.Attr("llm_model", ""))
 	}
 
 	// Emit provider_selected event so tmux runs match the API path's surface.
 	if exec != nil && exec.Engine != nil {
-		source := "graph_attrs"
-		provider := strings.TrimSpace(node.Attr("llm_provider", ""))
-		if hasClass {
-			source = "policy_class:" + cls.Class
-			provider = cls.Provider
+		source := route.Source
+		if source == "" {
+			source = "graph_attrs"
+		}
+		provider := route.Provider
+		if provider == "" {
+			provider = strings.TrimSpace(node.Attr("llm_provider", ""))
 		}
 		exec.Engine.AppendProgress(map[string]any{
 			"event":    "provider_selected",
@@ -181,12 +186,9 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 
 	// Build and write the command. Pass auth_method so the template can
 	// adjust args (e.g. claude omits --bare for cli_oauth, which is
-	// incompatible with OAuth). hasClass=false → empty authMethod →
+	// incompatible with OAuth). Non-class routes have empty auth_method →
 	// templates fall back to their default args.
-	authMethod := ""
-	if hasClass {
-		authMethod = cls.Result.AuthMethod()
-	}
+	authMethod := route.AuthMethod()
 	command := tmpl.BuildCommand(prompt, exec.WorktreeDir, modelID, authMethod)
 	// When the template produces structured JSONL output, redirect it to a
 	// known file so the log parser can find it without hunting through
@@ -560,8 +562,11 @@ func shellQuoteSimple(s string) string {
 // Critically, claude_cli's binder returns EnvScrub=["ANTHROPIC_API_KEY"]
 // (and codex_cli scrubs OPENAI_API_KEY) so the CLI uses the logged-in
 // subscription session rather than silently falling through to the env key.
-func materializeCredential(cls engine.ClassResolution, exec *engine.Execution, stageDir string) (engine.BindResult, error) {
-	snap := cls.Result.AuthSnapshot
+func materializeCredential(route engine.AgentRoute, exec *engine.Execution, stageDir string) (engine.BindResult, error) {
+	if route.ClassResult == nil {
+		return engine.BindResult{}, fmt.Errorf("materializeCredential: route has no ClassResult — only class-resolved routes carry an auth snapshot")
+	}
+	snap := route.ClassResult.AuthSnapshot
 	// Construct a resolver so Bind can re-check the source's reachability
 	// (env_var present, or cli_session still ok) at execution time.
 	projectRoot := ""
@@ -576,5 +581,5 @@ func materializeCredential(cls engine.ClassResolution, exec *engine.Execution, s
 	if err != nil {
 		return engine.BindResult{}, err
 	}
-	return engine.Bind(cls.Driver, snap, cred, stageDir)
+	return engine.Bind(route.Driver, snap, cred, stageDir)
 }

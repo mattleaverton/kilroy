@@ -163,54 +163,61 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 	}
 }
 
-// resolveNodeRouteInner resolves the full routing info for a node, including
-// an optional policy.ResolveResult when the node carries a class= attribute.
+// resolveNodeRouteInner resolves the full routing info for a node by
+// delegating to ResolveAgentRoute (the single source of truth for the
+// route decision) and translating the AgentRoute into the local
+// nodeRoute view that runAPI/runCLI consume.
+//
+// For legacy providers (kimi/zai/minimax/custom OpenAI-compat), the
+// resolver returns Backend="" — we fall back to backendForProvider to
+// pick the backend from cfg.LLM.Providers. Only legacy ad-hoc graphs
+// that use llm_provider= without a canonical SDK driver hit this seam.
 func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
-	cls, ok, err := ResolveAgentClass(node, exec, PolicyDeps{Load: r.policyLoad, Resolver: r.policyResolver})
+	route, err := ResolveAgentRoute(node, exec, PolicyDeps{Load: r.policyLoad, Resolver: r.policyResolver})
 	if err != nil {
 		return nodeRoute{}, err
 	}
-	if ok {
-		modelID := cls.Model
-		source := "policy_class:" + cls.Class
 
-		result := cls.Result
-		return nodeRoute{
-			provider:    cls.Provider,
-			model:       modelID,
-			backend:     cls.Backend,
-			source:      source,
-			classResult: &result,
-			className:   cls.Class,
-		}, nil
-	}
-
-	// Fallback: use stylesheet attributes (llm_provider / llm_model).
-	prov := normalizeProviderKey(node.Attr("llm_provider", ""))
-	if prov == "" {
-		return nodeRoute{}, fmt.Errorf("missing llm_provider on node %s", node.ID)
-	}
-	modelID := strings.TrimSpace(node.Attr("llm_model", ""))
+	prov := normalizeProviderKey(route.Provider)
+	modelID := route.Model
 	if modelID == "" {
-		// Best-effort compatibility with stylesheet examples that use "model".
+		// Best-effort compatibility with stylesheet examples that use the
+		// bare attribute "model" instead of "llm_model".
 		modelID = strings.TrimSpace(node.Attr("model", ""))
 	}
 	if modelID == "" {
 		return nodeRoute{}, fmt.Errorf("missing llm_model on node %s", node.ID)
 	}
 
-	source := "graph_attrs"
+	backend := route.Backend
+	if backend == "" {
+		// Legacy non-canonical provider (kimi/zai/minimax/etc.). Pick
+		// backend from cfg.LLM.Providers; fail loudly if no config row.
+		backend = r.backendForProvider(prov)
+		if backend == "" {
+			return nodeRoute{}, fmt.Errorf("no backend configured for provider %s", prov)
+		}
+	}
 
-	be := r.backendForProvider(prov)
-	if be == "" {
-		return nodeRoute{}, fmt.Errorf("no backend configured for provider %s", prov)
+	source := route.Source
+	if source == "" {
+		source = "graph_attrs"
+	} else if !strings.HasPrefix(source, "policy_class:") {
+		// agent_router historically labels the legacy stylesheet path
+		// "graph_attrs" — preserve that for downstream consumers
+		// (provider_selected event, observability tooling) while v2 is
+		// still rolling out. Class-resolved routes keep the
+		// "policy_class:<name>" label.
+		source = "graph_attrs"
 	}
 
 	return nodeRoute{
-		provider: prov,
-		model:    modelID,
-		backend:  be,
-		source:   source,
+		provider:    prov,
+		model:       modelID,
+		backend:     backend,
+		source:      source,
+		classResult: route.ClassResult,
+		className:   route.Class,
 	}, nil
 }
 
