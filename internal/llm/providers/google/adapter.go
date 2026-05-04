@@ -15,6 +15,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/llm"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
 	"github.com/danshapiro/kilroy/internal/providerspec"
@@ -29,7 +30,7 @@ type Adapter struct {
 
 func init() {
 	llm.RegisterEnvAdapterFactory(func() (llm.ProviderAdapter, bool, error) {
-		if strings.TrimSpace(os.Getenv("GEMINI_API_KEY")) == "" && strings.TrimSpace(os.Getenv("GOOGLE_API_KEY")) == "" {
+		if _, _, ok := binding.LookupAPIKeyEnv("google"); !ok {
 			return nil, false, nil
 		}
 		a, err := NewFromEnv()
@@ -41,13 +42,9 @@ func init() {
 }
 
 func NewFromEnv() (*Adapter, error) {
-	key := strings.TrimSpace(os.Getenv("GEMINI_API_KEY"))
-	if key == "" {
-		// Common alias.
-		key = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
-	}
-	if key == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY is required")
+	key, _, ok := binding.LookupAPIKeyEnv("google")
+	if !ok {
+		return nil, fmt.Errorf("GEMINI_API_KEY is required (also accepted: GOOGLE_API_KEY, *_KILROY variants)")
 	}
 	return NewWithProvider("google", key, os.Getenv("GEMINI_BASE_URL")), nil
 }

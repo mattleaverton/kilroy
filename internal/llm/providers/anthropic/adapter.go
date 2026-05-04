@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/llm"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
 	"github.com/danshapiro/kilroy/internal/providerspec"
@@ -26,7 +27,7 @@ type Adapter struct {
 
 func init() {
 	llm.RegisterEnvAdapterFactory(func() (llm.ProviderAdapter, bool, error) {
-		if strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")) == "" {
+		if _, _, ok := binding.LookupAPIKeyEnv("anthropic"); !ok {
 			return nil, false, nil
 		}
 		a, err := NewFromEnv()
@@ -38,9 +39,9 @@ func init() {
 }
 
 func NewFromEnv() (*Adapter, error) {
-	key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
-	if key == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY is required")
+	key, _, ok := binding.LookupAPIKeyEnv("anthropic")
+	if !ok {
+		return nil, fmt.Errorf("ANTHROPIC_API_KEY is required (also accepted: ANTHROPIC_API_KEY_KILROY)")
 	}
 	return NewWithProvider("anthropic", key, os.Getenv("ANTHROPIC_BASE_URL")), nil
 }
