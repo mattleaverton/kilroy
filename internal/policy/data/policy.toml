@@ -374,6 +374,50 @@ description = "Codex CLI on the OpenAI api_key path with stage-isolated auth.jso
     method   = "api_key"
 
 # ══════════════════════════════════════════════════════════════════
+# CLASS: coding_gemini_subscription
+# Single-candidate class for users with a Gemini subscription — routes
+# gemini_cli through the cli_oauth path. The binder scrubs every Google
+# api-key env var (GOOGLE_API_KEY / GEMINI_API_KEY /
+# GOOGLE_GENERATIVE_AI_API_KEY) at execution time so the CLI uses
+# ~/.gemini/oauth_creds.json, not a stray key (silent wrong-billing
+# prevention; mirrors claude_cli and codex_cli patterns).
+# ══════════════════════════════════════════════════════════════════
+[classes.coding_gemini_subscription]
+description = "Gemini CLI via subscription (cli_oauth)."
+
+  [[classes.coding_gemini_subscription.chain]]
+  model_id     = "gemini-2.5-pro"
+  driver       = "gemini_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:elite"]
+    [classes.coding_gemini_subscription.chain.requires]
+    provider = "google"
+    method   = "cli_oauth"
+    tool     = "gemini"
+
+# ══════════════════════════════════════════════════════════════════
+# CLASS: coding_gemini_apikey
+# Single-candidate class for the gemini_cli driver on the Google api_key
+# path. The binder writes the canonical GEMINI_API_KEY env var so the CLI
+# accepts the value regardless of which equivalent name (GOOGLE_API_KEY /
+# GEMINI_API_KEY / GOOGLE_GENERATIVE_AI_API_KEY) the user has configured.
+# Use when an api-key budget is preferred over a subscription.
+# ══════════════════════════════════════════════════════════════════
+[classes.coding_gemini_apikey]
+description = "Gemini CLI on the Google api_key path."
+
+  [[classes.coding_gemini_apikey.chain]]
+  model_id     = "gemini-2.5-pro"
+  driver       = "gemini_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite"]
+    [classes.coding_gemini_apikey.chain.requires]
+    provider = "google"
+    method   = "api_key"
+
+# ══════════════════════════════════════════════════════════════════
 # ALIASES
 # ══════════════════════════════════════════════════════════════════
 [[aliases]]
