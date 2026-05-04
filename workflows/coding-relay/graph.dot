@@ -1,0 +1,138 @@
+// coding-relay: 4-stage iterative coding loop with mixed provider routing.
+//
+// Roles (each iteration):
+//   planner  : anthropic SDK + sonnet 4.6   — picks ONE next sub-task
+//   coder    : opencode + kimi-k2 (CLI)     — implements the sub-task
+//   critic   : codex CLI + gpt-5            — judges work, writes COMPLETE/CONTINUE
+//   status   : agent_class=quick_easy       — refreshes STATUS.md for external readers
+//
+// Pre-coder tool node `stage_context` inlines context_files into INPUT.md.
+// Post-coder tool node `verify_build` captures build output to .kilroy/build-output.txt.
+//
+// Loop bound: loop_max=6 iterations or critic writes COMPLETE to
+// .kilroy/decision.md, whichever comes first.
+//
+// Exercises:
+//   - agents.Dispatcher driver dispatch: anthropic_sdk + opencode + codex_cli + claude_cli (via class)
+//   - auth binder across three providers (anthropic api_key, openai cli_oauth, anthropic cli_oauth)
+//   - class resolver on the status node (`agent_class="quick_easy"`)
+
+digraph coding_relay {
+    graph [
+        inputs="prompt",
+        outputs="result.md",
+        model_stylesheet="
+            * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
+        "
+    ]
+
+    start  [shape=Mdiamond, label="Start"]
+    done   [shape=Msquare,  label="Done"]
+    failed [shape=Msquare,  terminal_status="fail", label="Failed",
+            failure_reason="coding_relay_loop_did_not_complete"]
+
+    // Tool: inline context_files into INPUT.md (engine wrote ## prompt etc.)
+    stage_context [
+        shape=parallelogram,
+        label="stage-context",
+        tool_command="bash .kilroy/package/scripts/stage-context.sh"
+    ]
+
+    // Loop sentinels.
+    loop_begin [
+        shape=trapezium,
+        label="Loop Begin",
+        loop_id="main",
+        loop_max=6,
+        loop_until_file_contains=".kilroy/decision.md:COMPLETE"
+    ]
+
+    loop_end [
+        shape=invtrapezium,
+        label="Loop End",
+        loop_id="main",
+        loop_max=6,
+        loop_until_file_contains=".kilroy/decision.md:COMPLETE"
+    ]
+
+    // Planner: anthropic SDK path (no agent_tool, agent_mode=agent_loop).
+    // Reads spec + latest feedback, picks the single next sub-task.
+    planner [
+        shape=box,
+        label="Planner",
+        agent_mode="agent_loop",
+        llm_provider="anthropic",
+        llm_model="claude-sonnet-4.6",
+        prompt="You are the planner in an iterative coding workflow. Pick ONE narrow next sub-task.\n\nSteps:\n1. Read .kilroy/INPUT.md. The '## prompt' section names the spec file path; read that file in full.\n2. If '## context_files_contents' exists in INPUT.md, that's already-inlined context — skim it.\n3. If .kilroy/feedback/latest.md exists, read it for what the critic said last iteration.\n4. Run: git log --oneline -10\n5. Run: git status -sb\n6. Pick EXACTLY ONE smallest-possible self-contained sub-task. Do NOT bundle features.\n   - No code yet → pick the foundation step ONLY (one file, one type, the bootstrap).\n   - Foundation exists → pick the SINGLE smallest unimplemented feature.\n   - All features done but critic flagged a bug → pick JUST that bug.\n7. Write .kilroy/task.md (under 30 lines). Required sections:\n   - ## What to implement (one thing, narrowly scoped)\n   - ## Acceptance criteria (2-4 bullets, this sub-task only)\n   - ## Files likely affected (best guess)\n   - ## Guardrail (verbatim line: 'Do NOT implement any other features in this iteration. Stop immediately after the scoped sub-task is complete.')\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    // Coder: opencode CLI + kimi-k2.
+    // NOTE: opencode is currently outside kilroy's auth-binder model (see
+    // internal/attractor/agents/templates/opencode.go:36). The template
+    // hard-codes the anthropic provider in OPENCODE_CONFIG_CONTENT, so
+    // routing kimi through here is a known upstream gap that this workflow
+    // is explicitly designed to surface.
+    coder [
+        shape=box,
+        label="Coder",
+        agent_tool="opencode",
+        llm_provider="kimi",
+        llm_model="kimi-k2",
+        prompt="You are the coder in an iterative coding workflow. Implement EXACTLY what .kilroy/task.md asks for, nothing more.\n\nSteps:\n1. Read .kilroy/task.md for this iteration's scoped sub-task and acceptance criteria.\n2. Read .kilroy/INPUT.md to find the spec file path; read it for context.\n3. Implement ONLY what task.md asks for. Stay strictly in scope. The planner schedules; you execute.\n4. Write clean idiomatic code. Targeted changes only — no refactoring of unrelated code.\n5. After your edits, attempt a quick build to confirm syntactic sanity. Don't worry about test failures — verify runs separately. If you can't build, leave a note in the commit message but proceed.\n6. Stage and commit ALL changes with a clear message (e.g. 'feat: add X per task').\n\nIf the task is genuinely already done, write a note to .kilroy/coder-note.md and commit that.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    // Verify build: capture build output for the critic. Always exits 0.
+    verify_build [
+        shape=parallelogram,
+        label="verify-build",
+        tool_command="bash .kilroy/package/scripts/verify-build.sh"
+    ]
+
+    // Critic: codex CLI + gpt-5. Strong judge against spec; writes feedback + decision.
+    critic [
+        shape=box,
+        label="Critic",
+        agent_tool="codex",
+        llm_provider="openai",
+        llm_model="gpt-5",
+        prompt="You are the critic in an iterative coding workflow. Judge the latest commit against the spec.\n\nSteps:\n1. Read .kilroy/task.md for what was supposed to be implemented this iteration.\n2. Read .kilroy/INPUT.md to find the spec path; read the spec.\n3. Run: git log --oneline -5\n4. Run: git show HEAD   (commit message + full diff)\n5. Read .kilroy/build-output.txt for the build outcome.\n6. Compute iteration number:\n   mkdir -p .kilroy/feedback\n   N=$(ls .kilroy/feedback/iter-*.md 2>/dev/null | wc -l | tr -d ' ')\n   ITER=$((N + 1))\n   PADDED=$(printf '%03d' $ITER)\n7. Write .kilroy/feedback/iter-${PADDED}.md AND overwrite .kilroy/feedback/latest.md.\n   Required sections:\n   ## Iteration ${PADDED}\n   ## What changed   (summary of the diff — files, logic)\n   ## Build outcome  (PASS or FAIL, with the failing line if FAIL)\n   ## Against spec\n   - Done: (items completed)\n   - Remaining: (required items not yet implemented)\n   ## Quality notes  (correctness, edge cases, test coverage, drift from task scope)\n   ## Recommendation\n     CONTINUE — required spec items remain OR build is failing OR the implementation has a bug.\n     COMPLETE — ALL required spec items are correctly implemented AND build passes.\n8. Stage and commit the feedback:\n   git add .kilroy/feedback/\n   git commit -m \"critic: iteration ${PADDED} feedback\"\n9. CRITICAL: Write EXACTLY one of these two words to .kilroy/decision.md (no whitespace, no newline):\n   echo -n COMPLETE > .kilroy/decision.md   (only if step 7 said COMPLETE)\n   OR\n   echo -n CONTINUE > .kilroy/decision.md\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    // Status: agent_class="quick_easy" — exercises the class resolver.
+    // Writes STATUS.md every iteration so external readers can poll progress.
+    status_pulse [
+        shape=box,
+        label="Status Pulse",
+        agent_class="quick_easy",
+        prompt="You write STATUS.md for external monitors of this background coding run.\n\nGoal: someone polling STATUS.md from outside this run should be able to tell at a glance:\n- What spec is being worked on\n- Which iteration we're in and how many remain\n- What the most recent task was\n- Whether the build is passing\n- Whether the critic thinks we're stuck or progressing\n- The plain-English progress narrative across iterations so far\n\nSteps:\n1. Read .kilroy/INPUT.md to find the spec path. If you can read the spec file in full, do so for the goal summary.\n2. Read .kilroy/task.md for the current iteration's task.\n3. Read .kilroy/feedback/latest.md for the critic's view.\n4. Read .kilroy/decision.md if it exists.\n5. Run: ls .kilroy/feedback/iter-*.md 2>/dev/null | wc -l   to count completed iterations.\n6. Run: git log --oneline -10\n7. Read .kilroy/build-output.txt for build status.\n8. Overwrite STATUS.md at the workspace root with these sections:\n   # Coding Relay Status\n   _last updated: <ISO 8601 timestamp>_\n\n   ## Goal\n   (1-3 sentences from the spec)\n\n   ## Progress\n   - Iterations completed: N / 6\n   - Most recent task: (one sentence from task.md)\n   - Latest decision: COMPLETE | CONTINUE | (none yet)\n   - Build: PASS | FAIL | (not yet attempted)\n\n   ## Trajectory\n   (3-6 bullets, one per iteration so far, from feedback/iter-*.md — what the critic flagged each iteration)\n\n   ## Stuck signal\n   (one sentence — STUCK if you see no meaningful progress across the last 2 iterations or repeated CONTINUE on the same complaint; PROGRESSING otherwise)\n\nKeep STATUS.md under 60 lines. Be specific — vague status text defeats the purpose.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    // Final report: tool node. Uses kilroy-write-result.sh helper for the
+    // BLOCKED-stub fallback when upstream stages didn't write result.md.
+    // Always runs at end of run regardless of success/failure path.
+    final_report [
+        shape=parallelogram,
+        label="final-report",
+        tool_command="bash .kilroy/package/scripts/final-report.sh",
+        max_retries="0"
+    ]
+
+    // Edges
+    start         -> stage_context
+    stage_context -> loop_begin     [condition="outcome=success"]
+    stage_context -> final_report   [condition="outcome!=success"]
+
+    loop_begin    -> planner
+    planner       -> coder          [condition="outcome=success"]
+    planner       -> final_report   [condition="outcome!=success"]
+    coder         -> verify_build   [condition="outcome=success"]
+    coder         -> final_report   [condition="outcome!=success"]
+    verify_build  -> critic
+    critic        -> status_pulse   [condition="outcome=success"]
+    critic        -> final_report   [condition="outcome!=success"]
+    status_pulse  -> loop_end
+    loop_end      -> final_report
+
+    final_report  -> done           [condition="outcome=success"]
+    final_report  -> failed         [condition="outcome!=success"]
+}
