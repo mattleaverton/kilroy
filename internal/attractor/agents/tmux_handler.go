@@ -249,6 +249,11 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 			ContextUpdates: map[string]any{"failure_class": "transient_infra"},
 		}, nil
 	}
+	// Defensive cleanup: any return between here and the explicit
+	// DestroySession below leaks the session on the kilroy tmux server.
+	// Idempotent — DestroySession on an already-destroyed session is a
+	// no-op error we ignore.
+	defer func() { _ = h.Tmux.DestroySession(sessionName) }()
 
 	// Store session metadata.
 	_ = h.Tmux.SetEnvironment(sessionName, "KILROY_RUN_ID", runID)

@@ -89,6 +89,7 @@ func TestWorkflowsList_JSON_FindsAllPackages(t *testing.T) {
 
 	// JSON is the default per plan §2.2 — no flag needed.
 	cmd := exec.Command(bin, "workflows", "list")
+	cmd.Dir = pkgRoot
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),
@@ -132,6 +133,7 @@ func TestWorkflowsDescribe_HumanOutput_ShowsAllSections(t *testing.T) {
 
 	// --pretty opts into the human view; without it, JSON is default.
 	cmd := exec.Command(bin, "workflows", "describe", "review", "--pretty")
+	cmd.Dir = pkgRoot
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),
@@ -167,6 +169,7 @@ func TestWorkflowsDescribe_JSON_HasJSONFieldNames(t *testing.T) {
 
 	// JSON is the default — no flag needed.
 	cmd := exec.Command(bin, "workflows", "describe", "review")
+	cmd.Dir = pkgRoot
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),
@@ -200,6 +203,7 @@ func TestWorkflowsList_DefaultsToV2_HidesLegacy(t *testing.T) {
 
 	// Default: only v2.
 	cmd := exec.Command(bin, "workflows", "list")
+	cmd.Dir = pkgRoot
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),
@@ -223,6 +227,7 @@ func TestWorkflowsList_DefaultsToV2_HidesLegacy(t *testing.T) {
 
 	// --all: both.
 	cmd = exec.Command(bin, "workflows", "list", "--all")
+	cmd.Dir = pkgRoot
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),

@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agents"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/tmux"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
@@ -171,6 +172,30 @@ func newLayeredRegistry() *engine.HandlerRegistry {
 	reg.Register("wait.human", &workflows.HumanGateHandler{})
 	reg.Register("stack.manager_loop", &workflows.ManagerLoopHandler{})
 	return reg
+}
+
+// sweepStaleTmuxSessionsBeforeRun kills tmux sessions on the kilroy
+// socket whose run_id is in a terminal state. Best-effort: tmux server
+// missing or rundb unavailable both produce a quiet no-op so we don't
+// block the new run.
+func sweepStaleTmuxSessionsBeforeRun(rdb *rundb.DB) {
+	if rdb == nil {
+		return
+	}
+	mgr := tmux.NewManager("kilroy")
+	lookup := func(runID string) (bool, error) {
+		summary, err := rdb.GetRun(runID)
+		if err != nil || summary == nil {
+			return false, err
+		}
+		switch strings.ToLower(strings.TrimSpace(summary.Status)) {
+		case "success", "fail", "canceled", "cancelled", "error":
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
+	_, _ = agents.SweepStaleTmuxSessions(mgr, lookup)
 }
 
 // openRunDB opens the global run database. Returns nil on error (best-effort).
@@ -587,6 +612,12 @@ func attractorRun(args []string) {
 	if rdb != nil {
 		defer rdb.Close()
 	}
+	// Best-effort sweep of stale tmux sessions on the kilroy socket.
+	// Sessions whose run_id is in a terminal state get killed so they
+	// don't accumulate across crashes. Errors are silently swallowed —
+	// this must not block the new run.
+	sweepStaleTmuxSessionsBeforeRun(rdb)
+
 	// Validate required inputs before starting the run.
 	if len(inputs) > 0 || graphDeclaredInputs(dotSource) {
 		g, _, parseErr := engine.Prepare(dotSource)
