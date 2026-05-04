@@ -53,7 +53,7 @@ func TestRunsPrune_OrphansDryRun_OnlyListsTrueOrphans(t *testing.T) {
 	_ = db.InsertRun(rundb.RunRecord{RunID: "running-missing-001", Status: "running", LogsRoot: "/definitely/not/a/real/path/logs-C", StartedAt: time.Now()})
 
 	out := captureStdout(t, func() {
-		if !pruneFromDB(time.Time{}, "", "", "", true /* orphansOnly */, true /* dryRun */) {
+		if !pruneFromDB(time.Time{}, "", "", "", true /* orphansOnly */, false /* includeRunning */, true /* dryRun */) {
 			t.Fatal("pruneFromDB returned false")
 		}
 	})
@@ -93,7 +93,7 @@ func TestRunsPrune_OrphansWet_DeletesOnlyOrphans(t *testing.T) {
 	_ = db.InsertRun(rundb.RunRecord{RunID: "running-missing-002", Status: "running", LogsRoot: "/definitely/not/a/real/path/logs-E", StartedAt: time.Now()})
 
 	_ = captureStdout(t, func() {
-		if !pruneFromDB(time.Time{}, "", "", "", true /* orphansOnly */, false /* dryRun */) {
+		if !pruneFromDB(time.Time{}, "", "", "", true /* orphansOnly */, false /* includeRunning */, false /* dryRun */) {
 			t.Fatal("pruneFromDB returned false")
 		}
 	})
