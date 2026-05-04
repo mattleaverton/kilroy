@@ -774,76 +774,10 @@ digraph G {
 	assertExists(t, filepath.Join(res.LogsRoot, "a", "api_request.json"))
 }
 
-func TestRunWithConfig_APIBackend_ForceModelOverride_UsesForcedModel(t *testing.T) {
-	repo := initTestRepo(t)
-	logsRoot := t.TempDir()
-
-	pinned := writePinnedCatalog(t)
-	cxdbSrv := newCXDBTestServer(t)
-
-	var mu sync.Mutex
-	gotModel := ""
-	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/responses" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		b, _ := io.ReadAll(r.Body)
-		r.Body = io.NopCloser(strings.NewReader(string(b)))
-		var gotReq map[string]any
-		_ = json.Unmarshal(b, &gotReq)
-		mu.Lock()
-		gotModel = strings.TrimSpace(anyToString(gotReq["model"]))
-		mu.Unlock()
-		writeOpenAITextResponse(w, r, "resp_1", "gpt-unknown-force-b", "Hello")
-	}))
-	t.Cleanup(openaiSrv.Close)
-
-	t.Setenv("OPENAI_API_KEY", "k")
-	t.Setenv("OPENAI_BASE_URL", openaiSrv.URL)
-
-	cfg := &RunConfigFile{Version: 1}
-	cfg.Repo.Path = repo
-	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
-	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.LLM.Providers = map[string]ProviderConfig{
-		"openai": {Backend: BackendAPI, Failover: []string{}},
-	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
-	cfg.Git.RunBranchPrefix = "attractor/run"
-
-	dot := []byte(`
-digraph G {
-  graph [goal="test"]
-  start [shape=Mdiamond]
-  exit  [shape=Msquare]
-  a [shape=box, llm_provider=openai, llm_model=gpt-unknown-dot-a, agent_mode=one_shot, auto_status=true, prompt="say hi"]
-  start -> a
-  a -> exit [condition="outcome=success"]
-}
-`)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	res, err := RunWithConfig(ctx, dot, cfg, RunOptions{
-		RunID:       "test-run-api-force-model",
-		LogsRoot:    logsRoot,
-		ForceModels: map[string]string{"openai": "gpt-unknown-force-b"},
-	})
-	if err != nil {
-		t.Fatalf("RunWithConfig: %v", err)
-	}
-
-	assertExists(t, filepath.Join(res.LogsRoot, "a", "api_request.json"))
-
-	mu.Lock()
-	model := gotModel
-	mu.Unlock()
-	if model != "gpt-unknown-force-b" {
-		t.Fatalf("openai request model: got %q want %q", model, "gpt-unknown-force-b")
-	}
-}
+// (Removed) TestRunWithConfig_APIBackend_ForceModelOverride_UsesForcedModel
+// — RunOptions.ForceModels and the --force-model flag are gone. Strict
+// model selection lives in workflow/DOT/policy only. See run_with_config.go
+// agent route resolution.
 
 func TestRunWithConfig_APIBackend_AutoStatusFalse_FailsWhenNoStatusWritten(t *testing.T) {
 	repo := initTestRepo(t)

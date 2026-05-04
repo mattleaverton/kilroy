@@ -94,7 +94,6 @@ func runUsage() {
 	fmt.Fprintln(os.Stderr, "  --label KEY=VALUE               attach labels to the run record (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --validate                      prelaunch-only; don't execute")
 	fmt.Fprintln(os.Stderr, "  --no-cxdb                       skip CXDB streaming")
-	fmt.Fprintln(os.Stderr, "  --force-model <provider=model>  override the resolved model for one provider")
 	fmt.Fprintln(os.Stderr, "  --confirm-stale-build           bypass the dev-build-vs-source-tree check")
 	fmt.Fprintln(os.Stderr, "  --allow-test-shim               permit test_shim provider profile (CI use)")
 	fmt.Fprintln(os.Stderr, "  --config <run.yaml>             explicit run config (advanced; default is auto)")

@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -576,9 +575,6 @@ func TestRunHelp_IncludesPerRunFlags(t *testing.T) {
 	if !strings.Contains(out, "--confirm-stale-build") {
 		t.Fatalf("`kilroy run --help` should include --confirm-stale-build; output:\n%s", out)
 	}
-	if !strings.Contains(out, "--force-model") {
-		t.Fatalf("`kilroy run --help` should include --force-model; output:\n%s", out)
-	}
 }
 
 // TestRun_ValidateFlag_Accepted asserts `kilroy run --graph X --validate`
@@ -825,80 +821,9 @@ func TestRun_StaleBuildConfirmAllowsProceeding(t *testing.T) {
 	}
 }
 
-func TestParseForceModelFlags_NormalizesAndCanonicalizes(t *testing.T) {
-	got, specs, err := parseForceModelFlags([]string{
-		"openai=gpt-5.4",
-		"gemini=gemini-3-pro-preview",
-	})
-	if err != nil {
-		t.Fatalf("parseForceModelFlags: %v", err)
-	}
-	want := map[string]string{
-		"openai": "gpt-5.4",
-		"google": "gemini-3-pro-preview",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("overrides: got %#v want %#v", got, want)
-	}
-	wantSpecs := []string{
-		"google=gemini-3-pro-preview",
-		"openai=gpt-5.4",
-	}
-	if !reflect.DeepEqual(specs, wantSpecs) {
-		t.Fatalf("canonical specs: got %#v want %#v", specs, wantSpecs)
-	}
-}
-
-func TestParseForceModelFlags_AcceptsKimiAndZaiAliases(t *testing.T) {
-	got, specs, err := parseForceModelFlags([]string{
-		"moonshot=kimi-k2.5",
-		"z-ai=glm-4.7",
-	})
-	if err != nil {
-		t.Fatalf("parseForceModelFlags: %v", err)
-	}
-	want := map[string]string{
-		"kimi": "kimi-k2.5",
-		"zai":  "glm-4.7",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("overrides: got %#v want %#v", got, want)
-	}
-	wantSpecs := []string{
-		"kimi=kimi-k2.5",
-		"zai=glm-4.7",
-	}
-	if !reflect.DeepEqual(specs, wantSpecs) {
-		t.Fatalf("canonical specs: got %#v want %#v", specs, wantSpecs)
-	}
-}
-
-func TestParseForceModelFlags_RejectsInvalidShape(t *testing.T) {
-	if _, _, err := parseForceModelFlags([]string{"openai"}); err == nil {
-		t.Fatalf("expected parse error for missing '='")
-	}
-}
-
-func TestParseForceModelFlags_RejectsUnsupportedProvider(t *testing.T) {
-	if _, _, err := parseForceModelFlags([]string{"foo=model"}); err == nil {
-		t.Fatalf("expected parse error for unsupported provider")
-	}
-}
-
-func TestParseForceModelFlags_RejectsDuplicateProvider(t *testing.T) {
-	if _, _, err := parseForceModelFlags([]string{
-		"openai=gpt-5.4",
-		"openai=codex-mini-latest",
-	}); err == nil {
-		t.Fatalf("expected parse error for duplicate provider")
-	}
-	if _, _, err := parseForceModelFlags([]string{
-		"gemini=gemini-3-pro-preview",
-		"google=gemini-3-flash",
-	}); err == nil {
-		t.Fatalf("expected parse error for duplicate provider alias")
-	}
-}
+// (Removed) TestParseForceModelFlags_* — parseForceModelFlags and the
+// --force-model flag are gone. Strict model selection lives in
+// workflow/DOT/policy only.
 
 func TestRun_RealProfileRejectsShimOverride(t *testing.T) {
 	bin := buildKilroyBinary(t)

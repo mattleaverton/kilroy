@@ -19,11 +19,10 @@ import (
 var restartSuffixRE = regexp.MustCompile(`^restart-(\d+)$`)
 
 type manifest struct {
-	RunID         string            `json:"run_id"`
-	RepoPath      string            `json:"repo_path"`
-	RunBranch     string            `json:"run_branch"`
-	RunConfigPath string            `json:"run_config_path"`
-	ForceModels   map[string]string `json:"force_models"`
+	RunID         string `json:"run_id"`
+	RepoPath      string `json:"repo_path"`
+	RunBranch     string `json:"run_branch"`
+	RunConfigPath string `json:"run_config_path"`
 
 	ModelDB struct {
 		OpenRouterModelInfoPath   string `json:"openrouter_model_info_path"`
@@ -223,7 +222,6 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 		WorktreeDir:     filepath.Join(logsRoot, "worktree"),
 		RunBranchPrefix: prefix,
 		RequireClean:    resolveRequireClean(cfg),
-		ForceModels:     normalizeForceModels(copyStringStringMap(m.ForceModels)),
 		GitOps:          ov.GitOps,
 	}
 	if err := opts.applyDefaults(); err != nil {

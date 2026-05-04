@@ -174,17 +174,6 @@ func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (
 		modelID := cls.Model
 		source := "policy_class:" + cls.Class
 
-		// Apply force-model override when the resolved provider matches.
-		if exec != nil && exec.Engine != nil {
-			if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, cls.Provider); forced {
-				if !strings.EqualFold(modelID, forcedModelID) {
-					WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, cls.Provider, forcedModelID, modelID))
-				}
-				modelID = forcedModelID
-				source = "force_model"
-			}
-		}
-
 		result := cls.Result
 		return nodeRoute{
 			provider:    cls.Provider,
@@ -211,15 +200,6 @@ func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (
 	}
 
 	source := "graph_attrs"
-	if exec != nil && exec.Engine != nil {
-		if forcedModelID, forced := forceModelForProvider(exec.Engine.Options.ForceModels, prov); forced {
-			if !strings.EqualFold(modelID, forcedModelID) {
-				WarnEngine(exec, fmt.Sprintf("force-model override applied: node=%s provider=%s model=%s (was %s)", node.ID, prov, forcedModelID, modelID))
-			}
-			modelID = forcedModelID
-			source = "force_model"
-		}
-	}
 
 	be := r.backendForProvider(prov)
 	if be == "" {
@@ -881,15 +861,6 @@ func (r *AgentRouter) withFailoverText(
 ) (string, providerModel, error) {
 	primaryProvider = normalizeProviderKey(primaryProvider)
 	primaryModel = strings.TrimSpace(primaryModel)
-	forceModel := func(provider string) (string, bool) {
-		if execCtx == nil || execCtx.Engine == nil {
-			return "", false
-		}
-		return forceModelForProvider(execCtx.Engine.Options.ForceModels, provider)
-	}
-	if forcedModel, forced := forceModel(primaryProvider); forced {
-		primaryModel = forcedModel
-	}
 
 	available := map[string]bool{}
 	if client != nil {
@@ -911,12 +882,7 @@ func (r *AgentRouter) withFailoverText(
 		if len(available) > 0 && !available[p] {
 			continue
 		}
-		m := ""
-		if forcedModel, forced := forceModel(p); forced {
-			m = forcedModel
-		} else {
-			m = pickFailoverModelFromRuntime(p, r.providerRuntimes, r.catalog, primaryModel)
-		}
+		m := pickFailoverModelFromRuntime(p, r.providerRuntimes, r.catalog, primaryModel)
 		if strings.TrimSpace(m) == "" {
 			continue
 		}

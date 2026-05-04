@@ -54,11 +54,6 @@ type RunOptions struct {
 	// all downstream consumers already nil-check before use.
 	DisableCXDB bool
 
-	// Optional provider-level model overrides (provider -> model id).
-	// When set, the forced model is used for execution and bypasses model-catalog
-	// membership validation for that provider.
-	ForceModels map[string]string
-
 	// Optional global stage timeout cap. When > 0, each stage attempt uses the
 	// smaller positive timeout from node timeout and this global cap.
 	StageTimeout time.Duration
@@ -172,7 +167,6 @@ func (o *RunOptions) applyDefaults() error {
 	} else if *o.MaxLLMRetries < 0 {
 		return fmt.Errorf("max llm retries must be >= 0")
 	}
-	o.ForceModels = normalizeForceModels(o.ForceModels)
 	return nil
 }
 
@@ -1946,9 +1940,6 @@ func (e *Engine) writeManifest(baseSHA string) error {
 	}
 	if ws := e.warningsCopy(); len(ws) > 0 {
 		manifest["warnings"] = ws
-	}
-	if len(e.Options.ForceModels) > 0 {
-		manifest["force_models"] = copyStringStringMap(e.Options.ForceModels)
 	}
 	if len(e.Options.Labels) > 0 {
 		manifest["labels"] = copyStringStringMap(e.Options.Labels)

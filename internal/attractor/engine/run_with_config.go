@@ -229,7 +229,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		opts.RunBranchPrefix = overrides.RunBranchPrefix
 	}
 	opts.AllowTestShim = overrides.AllowTestShim
-	opts.ForceModels = normalizeForceModels(overrides.ForceModels)
 	opts.ProgressSink = overrides.ProgressSink
 	opts.Interviewer = overrides.Interviewer
 	opts.OnEngineReady = overrides.OnEngineReady

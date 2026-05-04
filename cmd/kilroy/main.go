@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 
@@ -229,7 +228,6 @@ func attractorRun(args []string) {
 	var confirmStaleBuild bool
 	var noCXDB bool
 	var skipCLIHeadlessWarning bool
-	var forceModelSpecs []string
 	var inputPath string
 	var promptFile string
 	var inputFileSpecs []string
@@ -251,13 +249,6 @@ func attractorRun(args []string) {
 			noCXDB = true
 		case skipCLIHeadlessWarningFlag:
 			skipCLIHeadlessWarning = true
-		case "--force-model":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(os.Stderr, "--force-model requires a value in the form provider=model")
-				os.Exit(1)
-			}
-			forceModelSpecs = append(forceModelSpecs, args[i])
 		case "--graph":
 			i++
 			if i >= len(args) {
@@ -346,11 +337,6 @@ func attractorRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	forceModels, canonicalForceSpecs, err := parseForceModelFlags(forceModelSpecs)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 
 	// Parse labels.
 	labels := map[string]string{}
@@ -398,6 +384,7 @@ func attractorRun(args []string) {
 	// Load structured inputs.
 	var inputs map[string]any
 	if inputPath != "" {
+		var err error
 		if strings.HasPrefix(strings.TrimSpace(inputPath), "{") {
 			// JSON string passed directly.
 			inputs, err = engine.LoadInputString(inputPath)
@@ -586,9 +573,6 @@ func attractorRun(args []string) {
 			childArgs = append(childArgs, "--label", spec)
 		}
 		childArgs = append(childArgs, skipCLIHeadlessWarningFlag)
-		for _, spec := range canonicalForceSpecs {
-			childArgs = append(childArgs, "--force-model", spec)
-		}
 
 		// Pre-register the run in the DB with status=running so that
 		// `runs list`, `runs show`, and `runs wait --latest --label ...` can
@@ -646,7 +630,6 @@ func attractorRun(args []string) {
 			LogsRoot:      logsRoot,
 			AllowTestShim: allowTestShim,
 			DisableCXDB:   noCXDB,
-			ForceModels:   forceModels,
 			Registry:      newLayeredRegistry(),
 			GitOps:        gitOps,
 			PackageDir: func() string {
@@ -710,7 +693,6 @@ func attractorRun(args []string) {
 		LogsRoot:      logsRoot,
 		AllowTestShim: allowTestShim,
 		DisableCXDB:   noCXDB,
-		ForceModels:   forceModels,
 		Registry:      newLayeredRegistry(),
 		RunDB:         rdb,
 		Inputs:        inputs,
@@ -768,50 +750,8 @@ func attractorRun(args []string) {
 	os.Exit(1)
 }
 
-func parseForceModelFlags(specs []string) (map[string]string, []string, error) {
-	if len(specs) == 0 {
-		return nil, nil, nil
-	}
-	overrides := map[string]string{}
-	for _, raw := range specs {
-		spec := strings.TrimSpace(raw)
-		parts := strings.SplitN(spec, "=", 2)
-		if len(parts) != 2 {
-			return nil, nil, fmt.Errorf("--force-model %q is invalid; expected provider=model", raw)
-		}
-		provider := normalizeRunProviderKey(parts[0])
-		modelID := strings.TrimSpace(parts[1])
-		if !isSupportedForceModelProvider(provider) {
-			return nil, nil, fmt.Errorf("--force-model %q has unsupported provider %q (allowed: %s)", raw, strings.TrimSpace(parts[0]), supportedForceModelProvidersCSV())
-		}
-		if modelID == "" {
-			return nil, nil, fmt.Errorf("--force-model %q has empty model id", raw)
-		}
-		if prev, exists := overrides[provider]; exists {
-			return nil, nil, fmt.Errorf("--force-model provider %q specified multiple times (%q then %q)", provider, prev, modelID)
-		}
-		overrides[provider] = modelID
-	}
-
-	keys := make([]string, 0, len(overrides))
-	for provider := range overrides {
-		keys = append(keys, provider)
-	}
-	sort.Strings(keys)
-	canonicalSpecs := make([]string, 0, len(keys))
-	for _, provider := range keys {
-		canonicalSpecs = append(canonicalSpecs, fmt.Sprintf("%s=%s", provider, overrides[provider]))
-	}
-	return overrides, canonicalSpecs, nil
-}
-
 func normalizeRunProviderKey(provider string) string {
 	return providerspec.CanonicalProviderKey(provider)
-}
-
-func isSupportedForceModelProvider(provider string) bool {
-	_, ok := providerspec.Builtin(provider)
-	return ok
 }
 
 // loadOrBuildConfig loads a config from file, or builds a zero-config default
@@ -890,15 +830,6 @@ func confirmCLIHeadlessWarning(in io.Reader, out io.Writer) bool {
 		return true
 	}
 	return answer == "y" || answer == "yes"
-}
-
-func supportedForceModelProvidersCSV() string {
-	keys := make([]string, 0, len(providerspec.Builtins()))
-	for key := range providerspec.Builtins() {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return strings.Join(keys, ", ")
 }
 
 func attractorValidate(args []string) {

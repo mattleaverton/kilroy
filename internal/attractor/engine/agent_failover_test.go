@@ -287,64 +287,9 @@ func TestAgentRouter_WithFailoverText_FailsOverToDifferentProvider(t *testing.T)
 	}
 }
 
-func TestAgentRouter_WithFailoverText_AppliesForceModelToFailoverProvider(t *testing.T) {
-	cfg := &RunConfigFile{Version: 1}
-	cfg.LLM.Providers = map[string]ProviderConfig{
-		"openai": {Backend: BackendAPI, Failover: []string{"google"}},
-		"google": {Backend: BackendAPI},
-	}
-	catalog := &modeldb.Catalog{
-		Models: map[string]modeldb.ModelEntry{
-			"gemini/gemini-3.1-pro-preview": {Provider: "google", Mode: "chat"},
-		},
-	}
-
-	runtimes, err := resolveProviderRuntimes(cfg)
-	if err != nil {
-		t.Fatalf("resolveProviderRuntimes: %v", err)
-	}
-	r := NewAgentRouterWithRuntimes(cfg, catalog, runtimes)
-	client := llm.NewClient()
-	client.Register(&okAdapter{name: "openai"})
-	client.Register(&okAdapter{name: "google"})
-
-	node := &model.Node{ID: "stage-a"}
-	execCtx := &Execution{
-		Engine: &Engine{
-			Options: RunOptions{
-				ForceModels: map[string]string{"google": "gemini-force-override"},
-			},
-		},
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	txt, used, err := r.withFailoverText(ctx, execCtx, node, client, "openai", "gpt-5.4", func(prov string, mid string) (string, error) {
-		if prov == "openai" {
-			return "", fmt.Errorf("synthetic openai failure")
-		}
-		if prov == "google" {
-			if mid != "gemini-force-override" {
-				return "", fmt.Errorf("unexpected fallback model: %q", mid)
-			}
-			return "ok-from-google-force", nil
-		}
-		return "", fmt.Errorf("unexpected provider: %q", prov)
-	})
-	if err != nil {
-		t.Fatalf("withFailoverText error: %v", err)
-	}
-	if txt != "ok-from-google-force" {
-		t.Fatalf("text: got %q", txt)
-	}
-	if used.Provider != "google" {
-		t.Fatalf("used provider: got %q want %q", used.Provider, "google")
-	}
-	if used.Model != "gemini-force-override" {
-		t.Fatalf("used model: got %q want %q", used.Model, "gemini-force-override")
-	}
-}
+// (Removed) TestAgentRouter_WithFailoverText_AppliesForceModelToFailoverProvider
+// — force-model is gone; failover now picks the provider's default model
+// from runtime config / catalog.
 
 func TestProfileForRuntimeProvider_RoutesByRuntimeProviderAndKeepsFamilyBehavior(t *testing.T) {
 	rt := ProviderRuntime{Key: "zai", ProfileFamily: "openai"}
