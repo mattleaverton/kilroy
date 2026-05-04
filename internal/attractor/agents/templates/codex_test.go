@@ -29,7 +29,7 @@ func writeCodexAuth(t *testing.T, dir, authMode string) string {
 
 // authMethod=cli_oauth → drop --model (subscription-bound).
 func TestCodex_BuildArgs_CLIOAuth_DropsModel(t *testing.T) {
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "cli_oauth")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "cli_oauth", "")
 	if joined := strings.Join(args, " "); strings.Contains(joined, "--model") {
 		t.Fatalf("cli_oauth should drop --model; got args: %v", args)
 	}
@@ -37,7 +37,7 @@ func TestCodex_BuildArgs_CLIOAuth_DropsModel(t *testing.T) {
 
 // authMethod=api_key → keep --model (env-key path supports any model).
 func TestCodex_BuildArgs_APIKey_KeepsModel(t *testing.T) {
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "api_key")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "api_key", "")
 	if joined := strings.Join(args, " "); !strings.Contains(joined, "--model gpt-5.4-nano") {
 		t.Fatalf("api_key should keep --model; got args: %v", args)
 	}
@@ -53,7 +53,7 @@ func TestCodex_BuildArgs_GlobalChatGPT_ButResolvedAPIKey_KeepsModel(t *testing.T
 	t.Cleanup(func() { codexAuthPath = prev })
 	codexAuthPath = writeCodexAuth(t, t.TempDir(), auth.CodexAuthModeChatGPT)
 
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "api_key")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "api_key", "")
 	if joined := strings.Join(args, " "); !strings.Contains(joined, "--model gpt-5.4-nano") {
 		t.Fatalf("explicit api_key must beat global chatgpt — keep --model; got args: %v", args)
 	}
@@ -65,7 +65,7 @@ func TestCodex_BuildArgs_GlobalAPIKey_ButResolvedCLIOAuth_DropsModel(t *testing.
 	t.Cleanup(func() { codexAuthPath = prev })
 	codexAuthPath = writeCodexAuth(t, t.TempDir(), auth.CodexAuthModeAPIKey)
 
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "cli_oauth")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "cli_oauth", "")
 	if joined := strings.Join(args, " "); strings.Contains(joined, "--model") {
 		t.Fatalf("explicit cli_oauth must beat global api_key — drop --model; got args: %v", args)
 	}
@@ -77,7 +77,7 @@ func TestCodex_BuildArgs_LegacyFallback_GlobalChatGPT_DropsModel(t *testing.T) {
 	t.Cleanup(func() { codexAuthPath = prev })
 	codexAuthPath = writeCodexAuth(t, t.TempDir(), auth.CodexAuthModeChatGPT)
 
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "", "")
 	if joined := strings.Join(args, " "); strings.Contains(joined, "--model") {
 		t.Fatalf("legacy fallback with global chatgpt should drop --model; got args: %v", args)
 	}
@@ -89,7 +89,7 @@ func TestCodex_BuildArgs_LegacyFallback_GlobalAPIKey_KeepsModel(t *testing.T) {
 	t.Cleanup(func() { codexAuthPath = prev })
 	codexAuthPath = writeCodexAuth(t, t.TempDir(), auth.CodexAuthModeAPIKey)
 
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4-nano", "", "")
 	if joined := strings.Join(args, " "); !strings.Contains(joined, "--model gpt-5.4-nano") {
 		t.Fatalf("legacy fallback with global api_key should keep --model; got args: %v", args)
 	}
@@ -102,7 +102,7 @@ func TestCodex_BuildArgs_LegacyFallback_AuthFileMissing_KeepsModel(t *testing.T)
 	t.Cleanup(func() { codexAuthPath = prev })
 	codexAuthPath = filepath.Join(t.TempDir(), "absent.json")
 
-	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4", "")
+	args := Codex().BuildArgs("hi", "/tmp/wd", "gpt-5.4", "", "")
 	if joined := strings.Join(args, " "); !strings.Contains(joined, "--model gpt-5.4") {
 		t.Fatalf("missing auth.json with empty authMethod should keep --model; got args: %v", args)
 	}
@@ -115,7 +115,7 @@ func TestCodex_BuildArgs_EmptyModel_NoModelFlag(t *testing.T) {
 	codexAuthPath = writeCodexAuth(t, t.TempDir(), auth.CodexAuthModeChatGPT)
 
 	for _, am := range []string{"", "cli_oauth", "api_key"} {
-		args := Codex().BuildArgs("hi", "/tmp/wd", "", am)
+		args := Codex().BuildArgs("hi", "/tmp/wd", "", am, "")
 		if joined := strings.Join(args, " "); strings.Contains(joined, "--model") {
 			t.Fatalf("authMethod=%q empty model: should never produce --model; got %v", am, args)
 		}

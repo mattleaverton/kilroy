@@ -16,30 +16,30 @@ import (
 // opencode is multi-provider: it picks anthropic / kimi / zai / etc.
 // based on its model arg ("anthropic/claude-...", "kimi/kimi-k2", etc.)
 // and the provider config block embedded via OPENCODE_CONFIG_CONTENT.
-// Both the model prefix and the config block come from the resolved
-// AgentRoute — tmux_handler stashes route.Provider / route.Model under
-// KILROY_AGENT_PROVIDER / KILROY_AGENT_MODEL in env before calling the
-// template's BuildArgs and PrepareSession.
+// The model prefix comes from the resolved AgentRoute.Provider, which
+// tmux_handler passes through to BuildArgs as the `provider` parameter.
+// PrepareSession reads it from KILROY_AGENT_PROVIDER in the child env
+// map (set by tmux_handler) for the OPENCODE_CONFIG_CONTENT block.
 func OpenCode() Template {
 	return Template{
 		Name:       "opencode",
 		Binary:     "opencode",
 		LogLocator: &agentlog.OpenCodeLogLocator{},
-		BuildArgs: func(prompt, workDir, model, _ string) []string {
+		BuildArgs: func(prompt, workDir, model, _, provider string) []string {
 			args := []string{"run", "--format", "json", "--pure"}
 			if model != "" {
 				// opencode takes provider/model (e.g. "anthropic/claude-sonnet-4-5",
-				// "kimi/kimi-k2"). When the resolved provider is in env, use it
-				// for the prefix. Otherwise, default to "anthropic/" so existing
-				// fixtures that don't pass a provider continue to work. Dots are
-				// normalized to dashes — opencode's model registry uses dashes.
+				// "kimi/kimi-k2"). Use the resolved provider for the prefix
+				// when set. Otherwise default to "anthropic/" so legacy
+				// fixtures that don't pass a provider continue to work. Dots
+				// normalize to dashes — opencode's model registry uses dashes.
 				m := strings.ReplaceAll(model, ".", "-")
 				if !strings.Contains(m, "/") {
-					provider := strings.TrimSpace(os.Getenv("KILROY_AGENT_PROVIDER"))
-					if provider == "" {
-						provider = "anthropic"
+					p := strings.TrimSpace(provider)
+					if p == "" {
+						p = "anthropic"
 					}
-					m = provider + "/" + m
+					m = p + "/" + m
 				}
 				args = append(args, "--model", m)
 			}

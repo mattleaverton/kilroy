@@ -91,14 +91,13 @@ func TestOpencodePrepareSession_HonorsKilroyAgentProvider(t *testing.T) {
 	}
 }
 
-// BuildArgs uses KILROY_AGENT_PROVIDER as the model prefix when the
+// BuildArgs uses the provider parameter as the model prefix when the
 // model arg lacks a provider/ prefix, so opencode receives the right
 // "kimi/kimi-k2" or "anthropic/claude-..." form regardless of what the
-// node author wrote.
-func TestOpencodeBuildArgs_UsesProviderPrefixFromEnv(t *testing.T) {
+// node author wrote. tmux_handler passes route.Provider as the 5th arg.
+func TestOpencodeBuildArgs_UsesProviderArg(t *testing.T) {
 	tmpl := OpenCode()
-	t.Setenv("KILROY_AGENT_PROVIDER", "kimi")
-	args := tmpl.BuildArgs("hi", "/tmp/wt", "kimi-k2", "")
+	args := tmpl.BuildArgs("hi", "/tmp/wt", "kimi-k2", "", "kimi")
 	found := false
 	for i, a := range args {
 		if a == "--model" && i+1 < len(args) {
@@ -142,13 +141,11 @@ func TestOpencodeBuildEnv_FallsBackToCanonicalWhenKilroyAbsent(t *testing.T) {
 	}
 }
 
-// Without KILROY_AGENT_PROVIDER, BuildArgs defaults to "anthropic/" —
-// preserves back-compat for fixtures and direct-use callers that don't
-// set the env key.
-func TestOpencodeBuildArgs_DefaultsToAnthropicWhenNoProviderEnv(t *testing.T) {
+// Without an explicit provider arg, BuildArgs defaults to "anthropic/" —
+// preserves back-compat for fixtures and direct-use callers.
+func TestOpencodeBuildArgs_DefaultsToAnthropicWhenNoProvider(t *testing.T) {
 	tmpl := OpenCode()
-	t.Setenv("KILROY_AGENT_PROVIDER", "")
-	args := tmpl.BuildArgs("hi", "/tmp/wt", "claude-sonnet-4-5", "")
+	args := tmpl.BuildArgs("hi", "/tmp/wt", "claude-sonnet-4-5", "", "")
 	for i, a := range args {
 		if a == "--model" && i+1 < len(args) {
 			if args[i+1] != "anthropic/claude-sonnet-4-5" {

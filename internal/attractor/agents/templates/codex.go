@@ -70,7 +70,7 @@ func Codex() Template {
 		Name:       "codex",
 		Binary:     "codex",
 		LogLocator: &agentlog.CodexLogLocator{},
-		BuildArgs: func(prompt, workDir, model, authMethod string) []string {
+		BuildArgs: func(prompt, workDir, model, authMethod, _ string) []string {
 			args := []string{"exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-c", "web_search=\"disabled\""}
 			// Subscription-bound codex restricts the model allowlist; passing
 			// an unsupported model returns 400 from the upstream API. Drop
