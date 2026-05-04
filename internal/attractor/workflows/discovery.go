@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 )
 
 // SearchPaths returns the list of directories where workflow packages live,
@@ -135,35 +137,13 @@ func isWorkflowDir(dir string) bool {
 	return false
 }
 
-// FindProjectRoot walks up from start looking for the first directory
-// containing a .kilroy/ marker. Returns "" if no marker is found before
-// $HOME or filesystem root, mirroring the upward-search rule in
-// docs/plans/2026-05-01-kilroy-v2-final-plan.md §7.2.
+// FindProjectRoot returns the project root resolved by upward search
+// for a .kilroy/ marker, or "" when nothing is found. Thin shim around
+// projectroot.Find for callers that don't need source/error
+// information; if KILROY_PROJECT_ROOT is set but invalid, this returns
+// "" silently. CLI entry points should call projectroot.Find directly
+// to surface the loud-failure semantics from §7.4.
 func FindProjectRoot(start string) string {
-	if start == "" {
-		var err error
-		start, err = os.Getwd()
-		if err != nil {
-			return ""
-		}
-	}
-	abs, err := filepath.Abs(start)
-	if err != nil {
-		abs = start
-	}
-	home, _ := os.UserHomeDir()
-	dir := abs
-	for {
-		if info, err := os.Stat(filepath.Join(dir, ".kilroy")); err == nil && info.IsDir() {
-			return dir
-		}
-		if dir == home {
-			return ""
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
+	root, _, _ := projectroot.Find(start)
+	return root
 }

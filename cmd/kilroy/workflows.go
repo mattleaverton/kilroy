@@ -13,6 +13,7 @@ import (
 
 	"github.com/danshapiro/kilroy/internal/attractor/dot"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
+	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/style"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
@@ -90,7 +91,11 @@ func workflowsList(args []string) {
 	}
 
 	cwd, _ := os.Getwd()
-	projectRoot := workflows.FindProjectRoot(cwd)
+	projectRoot, _, err := projectroot.Find(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kilroy workflows list: %v\n", err)
+		os.Exit(1)
+	}
 
 	found, err := workflows.Discover(projectRoot)
 	if err != nil {
@@ -223,7 +228,11 @@ func workflowsDescribe(args []string) {
 	}
 
 	cwd, _ := os.Getwd()
-	projectRoot := workflows.FindProjectRoot(cwd)
+	projectRoot, _, err := projectroot.Find(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kilroy workflows describe: %v\n", err)
+		os.Exit(1)
+	}
 
 	d, err := workflows.Find(name, projectRoot)
 	if err != nil {
@@ -414,7 +423,11 @@ func workflowsValidate(args []string) {
 	}
 
 	cwd, _ := os.Getwd()
-	projectRoot := workflows.FindProjectRoot(cwd)
+	projectRoot, _, err := projectroot.Find(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kilroy workflows validate: %v\n", err)
+		os.Exit(1)
+	}
 
 	d, err := workflows.Find(name, projectRoot)
 	if err != nil {

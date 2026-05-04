@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
 )
 
@@ -53,7 +54,11 @@ func runCmd(args []string) {
 	rest := args[1:]
 
 	cwd, _ := os.Getwd()
-	projectRoot := workflows.FindProjectRoot(cwd)
+	projectRoot, _, err := projectroot.Find(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kilroy run: %v\n", err)
+		os.Exit(1)
+	}
 
 	pkg, err := workflows.Find(name, projectRoot)
 	if err != nil {
