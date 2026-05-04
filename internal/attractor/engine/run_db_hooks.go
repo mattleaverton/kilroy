@@ -285,7 +285,8 @@ func (e *Engine) rundbRecordProviderIfAgent(nodeID string, attempt int) {
 	provider := node.Attrs["llm_provider"]
 	model := node.Attrs["llm_model"]
 	agentTool := node.Attrs["agent_tool"]
-	if provider == "" && model == "" && agentTool == "" {
+	classAttr := node.Attrs[PolicyClassAttr]
+	if provider == "" && model == "" && agentTool == "" && classAttr == "" {
 		return
 	}
 	backend := agentTool
@@ -295,6 +296,21 @@ func (e *Engine) rundbRecordProviderIfAgent(nodeID string, attempt int) {
 	if backend == "" {
 		backend = "cli"
 	}
+
+	// Class-routed nodes: prefer the resolved route from the prelaunch
+	// snapshot. The policy chain can resolve to a provider/model/backend
+	// that differs entirely from the static stylesheet defaults — record
+	// what actually executed, not what the attrs say. Non-class nodes
+	// keep the legacy static-attr deduction; the deferred-to-runtime case
+	// (snapshot absent or Driver unset) also falls back to legacy.
+	if classAttr != "" {
+		if route, ok, err := LoadPreLaunchAgentRoute(e.LogsRoot, nodeID); err == nil && ok && route.Driver != "" {
+			provider = route.Provider
+			model = route.Model
+			backend = string(route.Backend)
+		}
+	}
+
 	if err := e.RunDB.RecordProviderSelection(
 		e.Options.RunID, nodeID, attempt, provider, model, backend,
 	); err != nil {
