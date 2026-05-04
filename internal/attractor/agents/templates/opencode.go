@@ -29,16 +29,25 @@ func OpenCode() Template {
 			args := []string{"run", "--format", "json", "--pure"}
 			if model != "" {
 				// opencode takes provider/model (e.g. "anthropic/claude-sonnet-4-5",
-				// "kimi/kimi-k2"). Use the resolved provider for the prefix
-				// when set. Otherwise default to "anthropic/" so legacy
-				// fixtures that don't pass a provider continue to work. Dots
-				// normalize to dashes — opencode's model registry uses dashes.
-				m := strings.ReplaceAll(model, ".", "-")
+				// "kimi/kimi-k2.5"). Use the resolved provider for the prefix
+				// when set. Otherwise default to "anthropic/" so legacy fixtures
+				// that don't pass a provider continue to work.
+				//
+				// Dot-to-dash normalization is anthropic-only: anthropic's
+				// catalog stores model ids with dots (claude-sonnet-4.6) but
+				// the Claude CLI / API expect dashes. Other providers (kimi,
+				// zai, moonshot) ship model ids with literal dots in the name
+				// (kimi-k2.5) — normalizing breaks them. Pass through verbatim
+				// for non-anthropic providers.
+				p := strings.TrimSpace(provider)
+				if p == "" {
+					p = "anthropic"
+				}
+				m := model
+				if strings.EqualFold(p, "anthropic") {
+					m = strings.ReplaceAll(m, ".", "-")
+				}
 				if !strings.Contains(m, "/") {
-					p := strings.TrimSpace(provider)
-					if p == "" {
-						p = "anthropic"
-					}
 					m = p + "/" + m
 				}
 				args = append(args, "--model", m)
@@ -156,7 +165,6 @@ func buildOpencodeConfig(provider, model string) string {
 	if env := strings.TrimSpace(spec.API.DefaultAPIKeyEnv); env != "" {
 		options["apiKey"] = "{env:" + env + "}"
 	}
-	baseURL := strings.TrimSpace(spec.API.DefaultBaseURL)
 	// "Custom" = not a native opencode provider. Heuristic: the spec's
 	// ProfileFamily disagrees with the provider key (e.g. kimi/zai/cerebras
 	// all live under "openai" family). Native providers (anthropic, openai,
@@ -174,12 +182,6 @@ func buildOpencodeConfig(provider, model string) string {
 		switch spec.API.Protocol {
 		case providerspec.ProtocolAnthropicMessages:
 			npm = "@ai-sdk/anthropic"
-			// @ai-sdk/anthropic appends /messages to the baseURL, so the
-			// caller's baseURL must end at /v1. providerspec's DefaultBaseURL
-			// is the API host root; append /v1 when it isn't already there.
-			if baseURL != "" && !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
-				baseURL = strings.TrimRight(baseURL, "/") + "/v1"
-			}
 		case providerspec.ProtocolOpenAIChatCompletions:
 			npm = "@ai-sdk/openai-compatible"
 		case providerspec.ProtocolOpenAIResponses:
@@ -189,11 +191,51 @@ func buildOpencodeConfig(provider, model string) string {
 		}
 	}
 
-	if baseURL != "" {
-		options["baseURL"] = baseURL
+	// baseURL: opencode's @ai-sdk packages all expect baseURL to be
+	// "<host>/<path-prefix>" — they append the protocol-specific endpoint
+	// suffix (/messages, /chat/completions, /responses, etc.). Compute
+	// the prefix by stripping the suffix from DefaultPath. Examples:
+	//   kimi anthropic_messages: path /v1/messages → prefix /v1
+	//   zai openai_chat_completions: path /api/coding/paas/v4/chat/completions
+	//                                → prefix /api/coding/paas/v4
+	//   moonshot openai_chat_completions: path /v1/chat/completions → prefix /v1
+	if base := strings.TrimSpace(spec.API.DefaultBaseURL); base != "" {
+		options["baseURL"] = composeOpencodeBaseURL(base, spec.API.DefaultPath, spec.API.Protocol)
 	}
 	displayName := strings.ToTitle(provider[:1]) + provider[1:]
 	return marshalOpencodeConfig(provider, options, npm, displayName, model)
+}
+
+// composeOpencodeBaseURL combines DefaultBaseURL with the path prefix
+// portion of DefaultPath (everything before the protocol-specific
+// endpoint suffix). The opencode @ai-sdk packages append the suffix
+// themselves, so passing the full DefaultPath would produce
+// double-suffixed URLs like "/v1/messages/messages".
+func composeOpencodeBaseURL(base, path string, protocol providerspec.APIProtocol) string {
+	host := strings.TrimRight(strings.TrimSpace(base), "/")
+	prefix := strings.TrimSpace(path)
+	if prefix == "" {
+		return host
+	}
+	suffix := ""
+	switch protocol {
+	case providerspec.ProtocolAnthropicMessages:
+		suffix = "/messages"
+	case providerspec.ProtocolOpenAIChatCompletions:
+		suffix = "/chat/completions"
+	case providerspec.ProtocolOpenAIResponses:
+		suffix = "/responses"
+	}
+	if suffix != "" && strings.HasSuffix(prefix, suffix) {
+		prefix = strings.TrimSuffix(prefix, suffix)
+	}
+	if prefix == "" || prefix == "/" {
+		return host
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	return host + prefix
 }
 
 // marshalOpencodeConfig emits the JSON config block for one provider.

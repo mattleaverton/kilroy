@@ -88,7 +88,11 @@ func TestBuiltinCerebrasDefaultsToOpenAICompatAPI(t *testing.T) {
 	}
 }
 
-func TestBuiltinKimiDefaultsToCodingAnthropicAPI(t *testing.T) {
+func TestBuiltinKimiDefaultsToMoonshotOpenAICompat(t *testing.T) {
+	// Moonshot's general-purpose API at api.moonshot.ai speaks
+	// OpenAI-compatible chat completions. This is the endpoint most
+	// users have a key for. The separate "Kimi Coding CLI" product at
+	// api.kimi.com/coding requires its own key and isn't the default.
 	spec, ok := Builtin("kimi")
 	if !ok {
 		t.Fatalf("expected kimi builtin")
@@ -96,11 +100,14 @@ func TestBuiltinKimiDefaultsToCodingAnthropicAPI(t *testing.T) {
 	if spec.API == nil {
 		t.Fatalf("expected kimi api spec")
 	}
-	if got := spec.API.Protocol; got != ProtocolAnthropicMessages {
-		t.Fatalf("kimi protocol: got %q want %q", got, ProtocolAnthropicMessages)
+	if got := spec.API.Protocol; got != ProtocolOpenAIChatCompletions {
+		t.Fatalf("kimi protocol: got %q want %q", got, ProtocolOpenAIChatCompletions)
 	}
-	if got := spec.API.DefaultBaseURL; got != "https://api.kimi.com/coding" {
-		t.Fatalf("kimi base url: got %q want %q", got, "https://api.kimi.com/coding")
+	if got := spec.API.DefaultBaseURL; got != "https://api.moonshot.ai" {
+		t.Fatalf("kimi base url: got %q want %q", got, "https://api.moonshot.ai")
+	}
+	if got := spec.API.DefaultPath; got != "/v1/chat/completions" {
+		t.Fatalf("kimi path: got %q want %q", got, "/v1/chat/completions")
 	}
 	if got := spec.API.DefaultAPIKeyEnv; got != "KIMI_API_KEY" {
 		t.Fatalf("kimi api_key_env: got %q want %q", got, "KIMI_API_KEY")

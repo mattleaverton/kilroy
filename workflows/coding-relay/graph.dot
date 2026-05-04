@@ -77,7 +77,7 @@ digraph coding_relay {
         label="Coder",
         agent_tool="opencode",
         llm_provider="kimi",
-        llm_model="kimi-k2",
+        llm_model="kimi-k2.5",
         prompt="You are the coder in an iterative coding workflow. Implement EXACTLY what .kilroy/task.md asks for, nothing more.\n\nSteps:\n1. Read .kilroy/task.md for this iteration's scoped sub-task and acceptance criteria.\n2. Read .kilroy/INPUT.md to find the spec file path; read it for context.\n3. Implement ONLY what task.md asks for. Stay strictly in scope. The planner schedules; you execute.\n4. Write clean idiomatic code. Targeted changes only — no refactoring of unrelated code.\n5. After your edits, attempt a quick build to confirm syntactic sanity. Don't worry about test failures — verify runs separately. If you can't build, leave a note in the commit message but proceed.\n6. Stage and commit ALL changes with a clear message (e.g. 'feat: add X per task').\n\nIf the task is genuinely already done, write a note to .kilroy/coder-note.md and commit that.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
     ]
 

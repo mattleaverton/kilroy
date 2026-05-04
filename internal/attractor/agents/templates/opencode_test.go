@@ -35,11 +35,12 @@ func TestBuildOpencodeConfig_Anthropic_NativeMinimalShape(t *testing.T) {
 }
 
 func TestBuildOpencodeConfig_Kimi_FullCustomDeclaration(t *testing.T) {
-	// Kimi is anthropic_messages-protocol but not a native opencode
-	// provider — kilroy must emit the FULL custom-provider declaration
-	// (npm + name + options + models). Without this, opencode rejects
-	// the launch with ProviderModelNotFoundError.
-	cfg := buildOpencodeConfig("kimi", "kimi-k2")
+	// Kimi defaults to Moonshot's general-purpose API at api.moonshot.ai
+	// (OpenAI-compatible chat completions). It's a kilroy-custom
+	// provider (not natively known by opencode), so we emit the full
+	// declaration: npm + name + options + models. Without this,
+	// opencode rejects the launch with ProviderModelNotFoundError.
+	cfg := buildOpencodeConfig("kimi", "kimi-k2.5")
 	var got map[string]any
 	if err := json.Unmarshal([]byte(cfg), &got); err != nil {
 		t.Fatalf("decode: %v\n%s", err, cfg)
@@ -49,29 +50,33 @@ func TestBuildOpencodeConfig_Kimi_FullCustomDeclaration(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected provider.kimi block; got %s", cfg)
 	}
-	if block["npm"] != "@ai-sdk/anthropic" {
-		t.Errorf("npm: got %v want @ai-sdk/anthropic (kimi speaks anthropic_messages)", block["npm"])
+	if block["npm"] != "@ai-sdk/openai-compatible" {
+		t.Errorf("npm: got %v want @ai-sdk/openai-compatible (kimi speaks openai_chat_completions on moonshot.ai)", block["npm"])
 	}
 	opts := block["options"].(map[string]any)
 	if opts["apiKey"] != "{env:KIMI_API_KEY}" {
 		t.Errorf("apiKey: got %v", opts["apiKey"])
 	}
-	// baseURL must end at /v1 because @ai-sdk/anthropic appends /messages itself.
-	wantBase := "https://api.kimi.com/coding/v1"
+	// baseURL: host + path-prefix (everything before /chat/completions).
+	wantBase := "https://api.moonshot.ai/v1"
 	if opts["baseURL"] != wantBase {
-		t.Errorf("baseURL: got %v want %s (must include /v1 suffix)", opts["baseURL"], wantBase)
+		t.Errorf("baseURL: got %v want %s (host + path prefix, suffix stripped)", opts["baseURL"], wantBase)
 	}
 	models, ok := block["models"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected models map for custom provider; got %s", cfg)
 	}
-	if _, ok := models["kimi-k2"]; !ok {
-		t.Errorf("models map should declare kimi-k2; got %s", cfg)
+	// Model id passes through verbatim — kimi-k2.5 has a literal dot.
+	if _, ok := models["kimi-k2.5"]; !ok {
+		t.Errorf("models map should declare kimi-k2.5 verbatim (no dot-to-dash for non-anthropic); got %s", cfg)
 	}
 }
 
 func TestBuildOpencodeConfig_Zai_OpenAICompatibleNPM(t *testing.T) {
 	// Z.ai speaks openai_chat_completions — npm package differs.
+	// baseURL must strip the /chat/completions suffix from
+	// DefaultPath; Z.ai has a non-standard prefix
+	// (/api/coding/paas/v4) which composeOpencodeBaseURL preserves.
 	cfg := buildOpencodeConfig("zai", "glm-4.6")
 	var got map[string]any
 	if err := json.Unmarshal([]byte(cfg), &got); err != nil {
@@ -84,6 +89,10 @@ func TestBuildOpencodeConfig_Zai_OpenAICompatibleNPM(t *testing.T) {
 	opts := block["options"].(map[string]any)
 	if opts["apiKey"] != "{env:ZAI_API_KEY}" {
 		t.Errorf("apiKey: got %v", opts["apiKey"])
+	}
+	wantBase := "https://api.z.ai/api/coding/paas/v4"
+	if opts["baseURL"] != wantBase {
+		t.Errorf("baseURL: got %v want %s (host + path prefix, /chat/completions stripped)", opts["baseURL"], wantBase)
 	}
 }
 
@@ -111,7 +120,7 @@ func TestOpencodePrepareSession_HonorsKilroyAgentProviderAndModel(t *testing.T) 
 
 	envKimi := map[string]string{
 		"KILROY_AGENT_PROVIDER": "kimi",
-		"KILROY_AGENT_MODEL":    "kimi-k2",
+		"KILROY_AGENT_MODEL":    "kimi-k2.5",
 	}
 	if err := tmpl.PrepareSession(stage, envKimi); err != nil {
 		t.Fatalf("PrepareSession: %v", err)
@@ -120,11 +129,11 @@ func TestOpencodePrepareSession_HonorsKilroyAgentProviderAndModel(t *testing.T) 
 	if !strings.Contains(cfg, `"kimi"`) {
 		t.Errorf("expected kimi block; got %s", cfg)
 	}
-	if !strings.Contains(cfg, `"kimi-k2"`) {
-		t.Errorf("expected kimi-k2 in models block; got %s", cfg)
+	if !strings.Contains(cfg, `"kimi-k2.5"`) {
+		t.Errorf("expected kimi-k2.5 in models block (literal dot, no normalization); got %s", cfg)
 	}
-	if !strings.Contains(cfg, "@ai-sdk/anthropic") {
-		t.Errorf("expected @ai-sdk/anthropic npm package for kimi; got %s", cfg)
+	if !strings.Contains(cfg, "@ai-sdk/openai-compatible") {
+		t.Errorf("expected @ai-sdk/openai-compatible npm package for kimi (moonshot.ai is openai-compat); got %s", cfg)
 	}
 
 	envEmpty := map[string]string{}
@@ -138,22 +147,39 @@ func TestOpencodePrepareSession_HonorsKilroyAgentProviderAndModel(t *testing.T) 
 
 // BuildArgs uses the provider parameter as the model prefix when the
 // model arg lacks a provider/ prefix, so opencode receives the right
-// "kimi/kimi-k2" or "anthropic/claude-..." form regardless of what the
-// node author wrote. tmux_handler passes route.Provider as the 5th arg.
-func TestOpencodeBuildArgs_UsesProviderArg(t *testing.T) {
+// "kimi/kimi-k2.5" or "anthropic/claude-..." form regardless of what
+// the node author wrote. tmux_handler passes route.Provider as the 5th
+// arg. Dots in non-anthropic model ids pass through verbatim — kimi
+// ships kimi-k2.5 as the literal model name on Moonshot.
+func TestOpencodeBuildArgs_KimiModelPassesThroughVerbatim(t *testing.T) {
 	tmpl := OpenCode()
-	args := tmpl.BuildArgs("hi", "/tmp/wt", "kimi-k2", "", "kimi")
+	args := tmpl.BuildArgs("hi", "/tmp/wt", "kimi-k2.5", "", "kimi")
 	found := false
 	for i, a := range args {
 		if a == "--model" && i+1 < len(args) {
-			if args[i+1] != "kimi/kimi-k2" {
-				t.Errorf("model arg: got %q want kimi/kimi-k2", args[i+1])
+			if args[i+1] != "kimi/kimi-k2.5" {
+				t.Errorf("model arg: got %q want kimi/kimi-k2.5 (no dot-to-dash for non-anthropic)", args[i+1])
 			}
 			found = true
 		}
 	}
 	if !found {
 		t.Fatalf("expected --model arg in %v", args)
+	}
+}
+
+// Anthropic models still get dot→dash normalization because the
+// anthropic API and Claude CLI expect dashes (claude-sonnet-4-6) but
+// kilroy's catalog stores dotted ids (claude-sonnet-4.6).
+func TestOpencodeBuildArgs_AnthropicNormalizesDotsToDashes(t *testing.T) {
+	tmpl := OpenCode()
+	args := tmpl.BuildArgs("hi", "/tmp/wt", "claude-sonnet-4.6", "", "anthropic")
+	for i, a := range args {
+		if a == "--model" && i+1 < len(args) {
+			if args[i+1] != "anthropic/claude-sonnet-4-6" {
+				t.Errorf("model arg: got %q want anthropic/claude-sonnet-4-6 (dot→dash for anthropic)", args[i+1])
+			}
+		}
 	}
 }
 
