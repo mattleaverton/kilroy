@@ -395,7 +395,7 @@ func sortedNodeIDs(g *model.Graph) []string {
 // isCLIDriver reports whether driver runs as a local CLI subprocess.
 func isCLIDriver(driver string) bool {
 	switch driver {
-	case "claude_cli", "codex_cli", "gemini_cli":
+	case "claude_cli", "codex_cli", "gemini_cli", "opencode":
 		return true
 	}
 	return false
@@ -446,6 +446,8 @@ func cliBinaryForDriver(driver string) string {
 		return "codex"
 	case "gemini_cli":
 		return "gemini"
+	case "opencode":
+		return "opencode"
 	}
 	return ""
 }

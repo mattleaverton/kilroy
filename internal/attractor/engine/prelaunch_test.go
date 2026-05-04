@@ -857,3 +857,50 @@ func emptyResolver(_ *testing.T) func(string) (*binding.Resolver, error) {
 	r := binding.NewResolver(&binding.Config{}, testDetectionView{})
 	return func(string) (*binding.Resolver, error) { return r, nil }
 }
+
+// TestIsCLIDriver_Opencode_Recognized confirms opencode is included in
+// the CLI-driver set so prelaunch runs the binary-presence + capability
+// probe for it (matching claude_cli / codex_cli / gemini_cli).
+func TestIsCLIDriver_Opencode_Recognized(t *testing.T) {
+	if !isCLIDriver("opencode") {
+		t.Fatalf("isCLIDriver(\"opencode\") = false, want true")
+	}
+	if got := cliBinaryForDriver("opencode"); got != "opencode" {
+		t.Errorf("cliBinaryForDriver(\"opencode\") = %q, want \"opencode\"", got)
+	}
+}
+
+// TestPrelaunch_Opencode_BinaryMissing_FailsLoudly verifies that when an
+// opencode-driven node hits prelaunch and the opencode binary is not on
+// PATH, validation fails with a structured per-node error — same shape
+// as the existing claude_cli binary-missing case.
+func TestPrelaunch_Opencode_BinaryMissing_FailsLoudly(t *testing.T) {
+	// Empty PATH so exec.LookPath cannot find the opencode binary.
+	t.Setenv("PATH", "")
+
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_tool":   "opencode",
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-5",
+	})
+
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected error when opencode binary is missing from PATH")
+	}
+	if _, ok := err.(*PreLaunchError); !ok {
+		t.Errorf("error type = %T, want *PreLaunchError", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed node, got %+v", report.Nodes)
+	}
+	if report.Nodes[0].ResolvedDriver != "opencode" {
+		t.Errorf("resolved_driver = %q, want opencode", report.Nodes[0].ResolvedDriver)
+	}
+	if report.Nodes[0].BinaryFound == nil || *report.Nodes[0].BinaryFound {
+		t.Errorf("BinaryFound = %v, want false", report.Nodes[0].BinaryFound)
+	}
+	if !anyError(report.Nodes[0].Errors, "opencode") {
+		t.Errorf("expected error to mention opencode binary, got %v", report.Nodes[0].Errors)
+	}
+}
