@@ -10,13 +10,21 @@ shared helper, validator + docs aligned, and the Step-5 strict-routing
 change that was deferred earlier now landed with all 11 broken tests
 migrated cleanly.
 
-12 commits this push, all green: `go test -short ./internal/...
+17 commits this push, all green: `go test -short ./internal/...
 ./cmd/kilroy/` is 40/40 packages, vet + gofmt clean. The branch
-should be ready for the next mileage campaign.
+should be ready for the next mileage campaign. End-to-end smoke run
+of `build-test` (no LLM, exercises dispatcher + F11) passed —
+status=success, build=pass, test=pass, 243s — confirming the F11
+KILROY_* env-leak fix in real conditions.
 
 ## Commits in this push
 
 ```
+65b80b5 chore: refresh stale --tmux comment in tmux_handler_class_test
+730a61d chore: refresh stale comment referencing deleted --validate path
+2d4a338 chore: delete dead force_model.go
+ab84d0e feat(cli): --wait flag for kilroy run (canonical-surface item)
+f13f207 docs(plans): v2 architecture closure status doc (this file)
 78235ab feat(engine): strict edge routing — failed outcome with no matching edge → FinalFail
 1f96308 docs(skills): align using-kilroy + investigating-kilroy-runs with v2 surface
 181f1d5 docs(AGENTS,README): align with v2 architecture closure
@@ -70,7 +78,7 @@ eb0c5b4 feat(agents): unified Dispatcher + delete --tmux from CLI surface
 | Delete --prompt-file | **Done** (replaced by `--input-file prompt=PATH`) |
 | Delete inline JSON in --input | **Done** (file paths only; clear error on `{...}`) |
 | Delete direct provider/model/backend/auth flags | **Already absent** (no such flags existed) |
-| Add --wait flag | **Not added** — `kilroy runs wait <id>` is the existing async-handle wait surface; --wait would be a synchronous-launch shorthand. Skipped to avoid scope creep; can land later. |
+| Add --wait flag | **Done** (`ab84d0e`) — `kilroy run --detach --wait` launches detached and blocks via the `runs wait` polling loop on the just-printed run_id. Useful for CI: one command, one exit code. |
 | Add --pretty flag | **Already default** for `kilroy run` (it prints text); explicitly added as no-op alias for `runs list` (513ea06) |
 
 Advanced/internal flags retained: `--graph`, `--package`, `--workspace`,
