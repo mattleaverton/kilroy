@@ -271,6 +271,11 @@ default_class = "hard_coding"
 	)
 	g := graphWithAgentNode(t, "stage", map[string]string{
 		"tool_command": "bash .kilroy/package/scripts/stage.sh",
+		// Non-class route — must resolve. Without this the node would
+		// fail prelaunch route validation before reaching the package
+		// check, masking what the test is actually verifying.
+		"llm_provider": "openai",
+		"llm_model":    "gpt-5",
 	})
 	report, err := ValidatePreLaunch(g, RunOptions{
 		LogsRoot:   t.TempDir(),
@@ -571,6 +576,61 @@ func TestValidatePreLaunch_CLIDriver_BinaryBroken_Fails(t *testing.T) {
 	}
 	if !anyError(report.Nodes[0].Errors, "does not respond to --help") {
 		t.Errorf("expected capability-probe error, got %v", report.Nodes[0].Errors)
+	}
+}
+
+// Reviewer regression: a non-class agent node with an unknown
+// agent_tool= must fail prelaunch loudly. Before the unified-resolver
+// change, prelaunch silently marked every non-class node as OK and the
+// dispatcher would only catch the typo at execution time.
+func TestValidatePreLaunch_NonClass_UnknownAgentTool_FailsLoudly(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_tool":   "made-up-tool",
+		"llm_provider": "openai",
+		"llm_model":    "gpt-5",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail for unknown agent_tool=made-up-tool")
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed node, got %+v", report.Nodes)
+	}
+	if !anyError(report.Nodes[0].Errors, "made-up-tool") {
+		t.Errorf("error should name the unknown tool; got %v", report.Nodes[0].Errors)
+	}
+}
+
+// Unknown llm_provider= (kimi, zai, custom OpenAI-compat endpoints) is
+// deferred to the runtime — prelaunch accepts these as OK because they
+// resolve through cfg.LLM.Providers in agent_router. The dispatcher
+// catches the empty-driver case at execution time. This isn't a
+// reviewer-flagged hole; documenting the deferred-validation seam so
+// future tightenings don't accidentally regress legacy provider plugins.
+func TestValidatePreLaunch_NonClass_UnknownLLMProvider_DefersToRuntime(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "kimi",
+		"llm_model":    "kimi-k2.5",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("expected lenient pass for legacy provider, got err: %v", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "ok" {
+		t.Fatalf("expected one ok node, got %+v", report.Nodes)
+	}
+}
+
+// Reviewer regression: a fully vague agent node — no agent_class, no
+// agent_tool, no llm_provider+llm_model — fails prelaunch loudly.
+func TestValidatePreLaunch_NonClass_VagueNode_FailsLoudly(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail for vague node")
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed node, got %+v", report.Nodes)
 	}
 }
 

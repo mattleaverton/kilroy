@@ -26,6 +26,41 @@ import (
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
+// buildPreLaunchDeps wraps PolicyDeps to give the prelaunch loop one
+// resolver shared across nodes. Without this, every class node would
+// trigger a fresh auth.ListAll scan via DefaultBindingResolver.
+//
+// The wrapped resolver also pins the project root to the source
+// workspace (not the not-yet-created worktree) so prelaunch and
+// execution agree about the project's auth.toml chain.
+func buildPreLaunchDeps(opts RunOptions, deps PolicyDeps) PolicyDeps {
+	base := deps.Resolver
+	if base == nil {
+		base = DefaultBindingResolver
+	}
+	var (
+		cached    *binding.Resolver
+		cachedErr error
+		loaded    bool
+	)
+	resolver := func(projectRoot string) (*binding.Resolver, error) {
+		if loaded {
+			return cached, cachedErr
+		}
+		root := strings.TrimSpace(opts.Workspace)
+		if root == "" {
+			root = strings.TrimSpace(opts.RepoPath)
+		}
+		if root == "" {
+			root = projectRoot
+		}
+		cached, cachedErr = base(root)
+		loaded = true
+		return cached, cachedErr
+	}
+	return PolicyDeps{Load: deps.Load, Resolver: resolver}
+}
+
 // tomlDecodeBytes is a tiny indirection so unit tests can swap in a fake
 // decoder if they ever need to. Today it's just a pass-through.
 func tomlDecodeBytes(data []byte, dest any) (toml.MetaData, error) {
@@ -119,22 +154,13 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 	}
 
 	reg := NewDefaultRegistry()
-	// Snapshot policy data + machine state once so every node sees a
-	// consistent view (especially for runs with many nodes).
-	var policyData *policy.Data
-	loadFn := deps.Load
-	if loadFn == nil {
-		loadFn = policy.Load
-	}
-	resolverFactory := deps.Resolver
-	if resolverFactory == nil {
-		resolverFactory = DefaultBindingResolver
-	}
-	// Snapshot the auth detector once for both the binding resolver and the
-	// secrets validator below.
-	var authList auth.ListOutput
-	var authResolver *binding.Resolver
-	var authLoaded bool
+
+	// Wrap deps so the binding resolver is built lazily and cached
+	// across nodes — keeps the auth-state scan to once per prelaunch.
+	// Also pins the project root to the source workspace (not the
+	// not-yet-created worktree) so prelaunch and execution agree about
+	// the project's auth.toml chain.
+	cachedDeps := buildPreLaunchDeps(opts, deps)
 
 	// Per-node frozen snapshots. Plan §5: prelaunch is the authoritative
 	// snapshot; execution reads from it via LoadPreLaunchSnapshot rather
@@ -153,101 +179,53 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		}
 		check := PreLaunchNodeCheck{NodeID: id}
 
-		className := strings.TrimSpace(n.Attr(PolicyClassAttr, ""))
-		if className == "" {
-			// No agent_class= attribute — node uses legacy stylesheet
-			// routing (llm_provider/llm_model). Mark ok and move on;
-			// validating that without an LLM probe isn't possible.
-			check.Status = "ok"
-			report.Nodes = append(report.Nodes, check)
-			report.Summary.OK++
-			continue
-		}
-		check.Class = className
-
-		// Lazy-load policy + machine state on the first class-bearing node.
-		if policyData == nil {
-			d, err := loadFn()
-			if err != nil {
-				check.Status = "fail"
-				check.Errors = append(check.Errors, fmt.Sprintf("policy load: %v", err))
-				report.Nodes = append(report.Nodes, check)
-				report.Summary.Fail++
-				_ = writePreLaunchReport(opts.LogsRoot, report)
-				return report, fmt.Errorf("prelaunch: policy load: %w", err)
-			}
-			policyData = d
-		}
-		if !authLoaded {
-			authList = auth.ListAll("", auth.DefaultDetectors())
-			// Use the source workspace (not the not-yet-created worktree)
-			// as the project root for auth.toml lookup. The worktree is a
-			// copy of the workspace, so .kilroy/auth.toml is identical;
-			// using the workspace at prelaunch time means prelaunch and
-			// execution agree about the project chain set.
-			projectRoot := strings.TrimSpace(opts.Workspace)
-			if projectRoot == "" {
-				projectRoot = strings.TrimSpace(opts.RepoPath)
-			}
-			r, err := resolverFactory(projectRoot)
-			if err != nil {
-				check.Status = "fail"
-				check.Errors = append(check.Errors, fmt.Sprintf("auth resolver: %v", err))
-				report.Nodes = append(report.Nodes, check)
-				report.Summary.Fail++
-				_ = writePreLaunchReport(opts.LogsRoot, report)
-				return report, fmt.Errorf("prelaunch: auth resolver: %w", err)
-			}
-			authResolver = r
-			authLoaded = true
-		}
-
-		res, err := policy.Resolve(policy.ResolveRequest{
-			ClassID:    className,
-			NodeID:     id,
-			WorkflowID: g.Name,
-		}, policyData, authResolver)
+		// One resolver, every node — class-bearing nodes go through the
+		// policy chain (with snapshot freeze); non-class nodes resolve
+		// agent_tool=/llm_provider= to the same canonical driver set.
+		// Vague nodes (no agent_class, no agent_tool, no
+		// llm_provider+llm_model) fail loudly here.
+		route, err := ResolveAgentRoute(n, nil, cachedDeps)
 		if err != nil {
-			// Unknown agent_class= names are typos. They fail loudly —
-			// the policy surface is non-overloaded (use plain `class=`
-			// for stylesheet selectors). Other errors (no viable
-			// candidate — class IS in policy but no auth on this
-			// machine) are also hard fails.
 			check.Status = "fail"
-			check.Errors = append(check.Errors, fmt.Sprintf("agent_class %q: %v", className, err))
+			check.Errors = append(check.Errors, err.Error())
 			report.Nodes = append(report.Nodes, check)
 			report.Summary.Fail++
 			continue
 		}
 
-		check.ResolvedModel = res.ModelID
-		check.ResolvedDriver = res.Driver
-		check.AuthMethod = res.AuthMethod()
-		check.AuthSource = res.AuthSource()
+		check.Class = route.Class
+		check.ResolvedModel = route.Model
+		check.ResolvedDriver = route.Driver
+		check.AuthMethod = route.AuthMethod()
+		check.AuthSource = route.AuthSource()
 
-		// Freeze the per-node resolution. Execution will read this rather
-		// than re-running policy.Resolve, so config/env drift between
-		// prelaunch and node execution cannot silently change the route.
-		frozenSnapshots[id] = resolveResultToSnap(className, res)
+		// Freeze the per-node resolution. Execution will read this
+		// rather than re-running policy.Resolve, so config/env drift
+		// between prelaunch and node execution cannot silently change
+		// the route. Only class-resolved nodes carry a snapshot; non-
+		// class routes derive everything from DOT attrs at execution.
+		if route.ClassResult != nil {
+			frozenSnapshots[id] = resolveResultToSnap(route.Class, *route.ClassResult)
+		}
 
 		// CLI drivers need their binary on PATH AND need to be executable
 		// (not a corrupt download, wrong arch, etc.). SDK drivers don't —
 		// the HTTP client handles the request, no binary involved.
-		if isCLIDriver(res.Driver) {
-			binaryName := cliBinaryForDriver(res.Driver)
+		if isCLIDriver(route.Driver) {
+			binaryName := cliBinaryForDriver(route.Driver)
 			binaryPath, lookErr := exec.LookPath(binaryName)
 			found := lookErr == nil
 			check.BinaryFound = &found
 			if !found {
 				check.Status = "fail"
-				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %q not found on PATH (required by driver %s)", binaryName, res.Driver))
+				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %q not found on PATH (required by driver %s)", binaryName, route.Driver))
 				report.Nodes = append(report.Nodes, check)
 				report.Summary.Fail++
 				continue
 			}
 			if probeErr := probeCLIBinary(binaryPath); probeErr != nil {
 				check.Status = "fail"
-				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %s does not respond to --help (required by driver %s): %v", binaryPath, res.Driver, probeErr))
+				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %s does not respond to --help (required by driver %s): %v", binaryPath, route.Driver, probeErr))
 				report.Nodes = append(report.Nodes, check)
 				report.Summary.Fail++
 				continue
@@ -259,14 +237,11 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		report.Summary.OK++
 	}
 
-	// Per-secret checks against the workflow's [secrets].needs list. If we
-	// haven't loaded the auth list yet (no class-bearing nodes triggered
-	// it), do so now so secrets can be validated independently.
+	// Per-secret checks against the workflow's [secrets].needs list.
+	// Independent scan from the binding resolver — secrets validate
+	// against `kilroy auth list` state directly.
 	if len(opts.RequiredSecrets) > 0 {
-		if !authLoaded {
-			authList = auth.ListAll("", auth.DefaultDetectors())
-			authLoaded = true
-		}
+		authList := auth.ListAll("", auth.DefaultDetectors())
 		secretChecks := validateSecrets(opts.RequiredSecrets, authList)
 		report.Secrets = secretChecks
 		for _, sc := range secretChecks {
