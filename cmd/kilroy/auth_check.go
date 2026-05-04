@@ -9,11 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/auth"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/version"
@@ -26,11 +26,15 @@ import (
 // loadAuthConfig loads the merged user/project auth config via the
 // canonical binding.LoadConfig path (which respects XDG_CONFIG_HOME).
 // projectRoot is the directory that contains .kilroy/; pass "" to
-// auto-detect via findProjectRoot(). Returns *binding.ErrNoConfig when
-// neither file exists.
+// auto-detect via projectroot.Find (honors KILROY_PROJECT_ROOT).
+// Returns *binding.ErrNoConfig when neither file exists.
 func loadAuthConfig(projectRoot string) (*binding.Config, error) {
 	if projectRoot == "" {
-		projectRoot = findProjectRoot()
+		root, _, findErr := projectroot.Find("")
+		if findErr != nil {
+			return nil, findErr
+		}
+		projectRoot = root
 	}
 	cfg, err := binding.LoadConfig(projectRoot)
 	if err != nil {
@@ -90,25 +94,6 @@ func mergeAuthConfigs(user, project *binding.Config) *binding.Config {
 		merged.Chains[k] = v
 	}
 	return merged
-}
-
-// findProjectRoot walks up from cwd looking for a .kilroy/ directory.
-// Returns "" when none is found.
-func findProjectRoot() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".kilroy")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

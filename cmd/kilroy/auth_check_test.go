@@ -180,6 +180,81 @@ func TestAuthCheck_NoConfig_ExitsOne(t *testing.T) {
 	}
 }
 
+// TestAuthCheck_HonorsKilroyProjectRootEnv verifies that the project-level
+// auth.toml at $KILROY_PROJECT_ROOT/.kilroy/auth.toml is loaded even when
+// cwd is unrelated. Regression test for the duplicate findProjectRoot
+// walker that ignored KILROY_PROJECT_ROOT (P1.14).
+func TestAuthCheck_HonorsKilroyProjectRootEnv(t *testing.T) {
+	bin := buildTestBinary(t)
+
+	// Project root pointed to by KILROY_PROJECT_ROOT carries a binding
+	// keyed on a marker env var. If the env var override is honored, the
+	// chain resolves and "ok" appears against this binding.
+	projectRoot := t.TempDir()
+	kilroyDir := filepath.Join(projectRoot, ".kilroy")
+	if err := os.MkdirAll(kilroyDir, 0o755); err != nil {
+		t.Fatalf("mkdir project .kilroy: %v", err)
+	}
+	projectTOML := `
+[bindings]
+"openai/api_key" = "envroot_openai"
+
+[chains.envroot_openai]
+requires = { provider = "openai", method = "api_key" }
+sources = [
+  { kind = "env_var", name = "KILROY_TEST_ENVROOT_KEY" },
+]
+`
+	if err := os.WriteFile(filepath.Join(kilroyDir, "auth.toml"), []byte(projectTOML), 0o644); err != nil {
+		t.Fatalf("write project auth.toml: %v", err)
+	}
+
+	// Empty HOME — no user-level auth.toml. cwd is set to this same dir so
+	// the upward walker (without env-var support) terminates without
+	// finding any .kilroy/ marker.
+	tmpHome := t.TempDir()
+
+	cmd := exec.Command(bin, "auth", "check", "--json")
+	cmd.Dir = tmpHome
+	cmd.Env = envWithout(
+		[]string{"HOME", "XDG_CONFIG_HOME", "KILROY_PROJECT_ROOT", "KILROY_TEST_ENVROOT_KEY"},
+		"HOME="+tmpHome,
+		"XDG_CONFIG_HOME="+filepath.Join(tmpHome, ".config"),
+		"KILROY_PROJECT_ROOT="+projectRoot,
+		"KILROY_TEST_ENVROOT_KEY=present-value",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("expected exit 0 with env-var project root, got: %v\noutput: %s", err, out)
+	}
+
+	var result struct {
+		Checks []struct {
+			BindingKey string `json:"binding_key"`
+			ChainName  string `json:"chain_name"`
+			Status     string `json:"status"`
+		} `json:"checks"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, out)
+	}
+	var found bool
+	for _, c := range result.Checks {
+		if c.BindingKey == "openai/api_key" {
+			found = true
+			if c.ChainName != "envroot_openai" {
+				t.Errorf("chain_name = %q, want envroot_openai (project layer not loaded?)", c.ChainName)
+			}
+			if c.Status != "ok" {
+				t.Errorf("status = %q, want ok", c.Status)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected binding 'openai/api_key' from project layer in checks, got: %+v", result.Checks)
+	}
+}
+
 // TestAuthCheck_JSON verifies that --json produces parseable output with
 // the expected shape when all checks pass.
 func TestAuthCheck_JSON(t *testing.T) {
