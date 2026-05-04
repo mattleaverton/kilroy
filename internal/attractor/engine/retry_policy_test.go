@@ -73,13 +73,15 @@ digraph G {
   graph [goal="test", default_max_retry=5]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
+  failed [shape=Msquare, terminal_status="fail"]
   t [
     shape=parallelogram,
     max_retries=0,
     tool_command="echo fail; exit 1"
   ]
   start -> t
-  t -> exit [condition="outcome=success"]
+  t -> exit   [condition="outcome=success"]
+  t -> failed [condition="outcome!=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

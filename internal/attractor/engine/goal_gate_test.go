@@ -88,6 +88,7 @@ digraph G {
   ]
   start -> gate
   gate -> exit [condition="outcome=success"]
+  gate -> exit [condition="outcome!=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

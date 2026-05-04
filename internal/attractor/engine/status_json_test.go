@@ -24,9 +24,11 @@ digraph G {
   graph [goal="test"]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
+  failed [shape=Msquare, terminal_status="fail"]
   t [shape=parallelogram, tool_command="echo nope; exit 1"]
   start -> t
-  t -> exit [condition="outcome=success"]
+  t -> exit   [condition="outcome=success"]
+  t -> failed [condition="outcome!=success"]
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

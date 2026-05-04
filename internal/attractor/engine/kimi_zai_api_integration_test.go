@@ -71,9 +71,11 @@ func TestKimiCodingAndZai_APIIntegration(t *testing.T) {
 digraph G {
   start [shape=Mdiamond]
   exit  [shape=Msquare]
+  failed [shape=Msquare, terminal_status="fail"]
   a [shape=box, llm_provider=%s, llm_model=%s, agent_mode=one_shot, auto_status=true, prompt="say hi"]
   start -> a
-  a -> exit [condition="outcome=success"]
+  a -> exit   [condition="outcome=success"]
+  a -> failed [condition="outcome!=success"]
 }
 `, provider, model))
 

@@ -2575,6 +2575,17 @@ func selectAllEligibleEdgesWithMeta(g *model.Graph, from string, out runtime.Out
 	// all_conditional_edges ERROR promotion).
 	fmt.Fprintf(os.Stderr, `{"event":"step5_all_conditional_fallback","node":%q,"edges_considered":%d,"outcome":%q}`+"\n",
 		from, len(edges), string(out.Status))
+
+	// Strict routing: a failed/retry outcome with no matching edge is
+	// a graph-design bug — the workflow didn't model the failure path.
+	// Returning nil triggers the engine's "no nextHop + StatusFail →
+	// FinalFail" branch instead of silently routing through whatever
+	// edge happens to be available. Successful outcomes keep the
+	// legacy fallback so unconditioned success-path graphs still
+	// terminate cleanly.
+	if out.Status == runtime.StatusFail || out.Status == runtime.StatusRetry {
+		return nil, meta, nil
+	}
 	meta.Method = "fallback"
 	return edges, meta, nil
 }

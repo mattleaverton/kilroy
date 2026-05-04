@@ -698,9 +698,11 @@ digraph G {
   graph [goal="test"]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
+  failed [shape=Msquare, terminal_status="fail"]
   a [shape=box, llm_provider=openai, llm_model=gpt-5.2, reasoning_effort=low, auto_status=true, prompt="say hi"]
   start -> a
-  a -> exit [condition="outcome=success"]
+  a -> exit   [condition="outcome=success"]
+  a -> failed [condition="outcome!=success"]
 }
 `)
 
