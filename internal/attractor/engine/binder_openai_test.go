@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/danshapiro/kilroy/internal/auth"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
@@ -52,8 +53,8 @@ func TestBindCodexCLI_EnvVar(t *testing.T) {
 	if authObj["OPENAI_API_KEY"] != "sk-test-openai-abc123" {
 		t.Errorf("auth.json OPENAI_API_KEY = %q, want %q", authObj["OPENAI_API_KEY"], "sk-test-openai-abc123")
 	}
-	if authObj["auth_mode"] != "apikey" {
-		t.Errorf("auth.json auth_mode = %q, want %q", authObj["auth_mode"], "apikey")
+	if authObj["auth_mode"] != auth.CodexAuthModeAPIKey {
+		t.Errorf("auth.json auth_mode = %q, want %q", authObj["auth_mode"], auth.CodexAuthModeAPIKey)
 	}
 
 	// CODEX_HOME must point to <stageDir>/.codex.

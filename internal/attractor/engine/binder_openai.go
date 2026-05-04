@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/danshapiro/kilroy/internal/auth"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
@@ -32,7 +33,7 @@ func BindCodexCLI(snap binding.Snapshot, cred binding.Credential, stageDir strin
 		authPath := filepath.Join(codexHome, "auth.json")
 		authPayload := map[string]string{
 			"OPENAI_API_KEY": cred.Value,
-			"auth_mode":      "apikey",
+			"auth_mode":      auth.CodexAuthModeAPIKey,
 		}
 		data, err := json.Marshal(authPayload)
 		if err != nil {

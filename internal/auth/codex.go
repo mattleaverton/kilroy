@@ -17,6 +17,17 @@ var codexAuthPath = func() string {
 	return filepath.Join(home, ".codex", "auth.json")
 }()
 
+// CodexAuthMode values are the canonical codex CLI auth_mode field values
+// (verified against codex-cli 0.128.0: rejects unknown variants with
+// "expected one of `apikey`, `chatgpt`, `chatgptAuthTokens`,
+// `agentIdentity`"). These are codex's own spellings — distinct from
+// kilroy's authentication method strings (binding.MethodAPIKey =
+// "api_key", with underscore).
+const (
+	CodexAuthModeChatGPT = "chatgpt"
+	CodexAuthModeAPIKey  = "apikey"
+)
+
 // CodexDetector discovers credentials for the OpenAI Codex CLI.
 type CodexDetector struct{}
 
@@ -109,9 +120,9 @@ func parseCodexAuth(data []byte, filePath string) Entry {
 	}
 
 	switch f.AuthMode {
-	case "chatgpt":
+	case CodexAuthModeChatGPT:
 		return parseCodexChatGPT(f, filePath)
-	case "api_key":
+	case CodexAuthModeAPIKey:
 		return parseCodexAPIKey(f, filePath)
 	default:
 		return Entry{

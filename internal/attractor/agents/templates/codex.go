@@ -8,15 +8,15 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agents/agentlog"
+	"github.com/danshapiro/kilroy/internal/auth"
 )
 
 // codexAuthPath is the location of the codex CLI's auth.json (overridable
 // in tests). Codex distinguishes its login modes via the "auth_mode"
 // field: "chatgpt" (subscription login, restricted model allowlist) vs
-// "api_key" (free choice). When mode is "chatgpt" passing --model with
-// an unsupported value (e.g. gpt-5.4-nano) yields a 400 from the
-// upstream API. The template detects this and drops --model so codex
-// can pick a supported default.
+// "apikey" (free choice). When the resolved auth method indicates a
+// subscription login, passing --model with a non-allowlisted value
+// (e.g. gpt-5.4-nano) yields a 400 from the upstream API.
 var codexAuthPath = func() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -25,10 +25,29 @@ var codexAuthPath = func() string {
 	return filepath.Join(home, ".codex", "auth.json")
 }()
 
-// codexAuthModeIsChatGPT reports whether the codex CLI's local auth is
-// in subscription ("chatgpt") mode, in which case the model allowlist
-// is restricted and --model should be omitted.
-func codexAuthModeIsChatGPT() bool {
+// codexShouldDropModel decides whether to omit --model from the codex
+// invocation, given the kilroy-resolved authMethod. The resolved
+// authMethod is authoritative when non-empty:
+//
+//   - "api_key"   → keep --model. Codex was bound to an env-var key
+//     (binder writes auth.json with "auth_mode":"apikey")
+//     and the api_key path supports any model.
+//   - "cli_oauth" → drop --model. The user is logged in to codex via
+//     subscription, which restricts the model allowlist.
+//
+// The empty case ("") is the legacy stylesheet path with no policy
+// resolution. As a fallback, peek at the user's global ~/.codex/auth.json
+// to detect chatgpt mode. Without this, legacy graphs that pin a model
+// would silently 400 on subscription-bound codex.
+func codexShouldDropModel(authMethod string) bool {
+	switch authMethod {
+	case "api_key":
+		return false
+	case "cli_oauth":
+		return true
+	}
+	// Legacy fallback only — no resolved method means we don't know;
+	// inspect global state.
 	if codexAuthPath == "" {
 		return false
 	}
@@ -42,7 +61,7 @@ func codexAuthModeIsChatGPT() bool {
 	if err := json.Unmarshal(data, &f); err != nil {
 		return false
 	}
-	return f.AuthMode == "chatgpt"
+	return f.AuthMode == auth.CodexAuthModeChatGPT
 }
 
 // Codex returns an invocation template for OpenAI Codex CLI (exec mode).
@@ -51,13 +70,13 @@ func Codex() Template {
 		Name:       "codex",
 		Binary:     "codex",
 		LogLocator: &agentlog.CodexLogLocator{},
-		BuildArgs: func(prompt, workDir, model, _ string) []string {
+		BuildArgs: func(prompt, workDir, model, authMethod string) []string {
 			args := []string{"exec", "--sandbox", "workspace-write", "--skip-git-repo-check", "--json", "-c", "web_search=\"disabled\""}
-			// chatgpt-mode codex restricts the model allowlist; passing an
-			// unsupported model returns 400 from the upstream API. Drop
-			// --model in that case so codex picks a supported default.
-			// api_key mode honors the request as-is.
-			if model != "" && !codexAuthModeIsChatGPT() {
+			// Subscription-bound codex restricts the model allowlist; passing
+			// an unsupported model returns 400 from the upstream API. Drop
+			// --model in that case so codex picks a supported default. The
+			// resolved authMethod is authoritative — see codexShouldDropModel.
+			if model != "" && !codexShouldDropModel(authMethod) {
 				args = append(args, "--model", model)
 			}
 			if workDir != "" {
