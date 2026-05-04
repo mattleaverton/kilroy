@@ -115,6 +115,38 @@ Updated:
 - `main_exit_codes_test.go::TestRun_PrintsCXDBUI*` — assertions match
   the JSON shape (`"cxdb_ui":"URL"`).
 
+## Reviewer round-2 follow-up: opencode multi-provider routing
+
+Discovered after the initial round-2 push by a worktree worker
+(`worktree-coding-relay`) writing a workflow that exercised mixed
+driver routing on purpose. Two paired bugs the reviewer insisted land
+together (commit `87ae628`):
+
+**F1 — `agent_tool="opencode"` had no provider mapping.** opencode is
+multi-provider; the driver-implies-provider pattern (claude_cli →
+anthropic, codex_cli → openai) breaks for it. ResolveAgentRoute now
+treats opencode specially: requires explicit `llm_provider=`, uses it
+as the route's Provider. Driver=opencode, Backend=BackendCLI.
+
+**F1 corollary — fixed-provider tools fail loudly on mismatched
+explicit providers.** `agent_tool="claude"` + `llm_provider="openai"`
+used to silently win (agent_tool decides). Now produces a clear error
+naming both providers and the word "conflicts" — the route metadata
+can no longer disagree with what the binary uses.
+
+**F2 — opencode template hardcoded anthropic in
+OPENCODE_CONFIG_CONTENT.** Even after F1 routed kimi correctly, the
+launched opencode subprocess only saw an anthropic provider block.
+Template now reads `KILROY_AGENT_PROVIDER` from env (set by
+tmux_handler from the resolved AgentRoute) and emits the matching
+provider config, pulling DefaultBaseURL/DefaultAPIKeyEnv from
+`providerspec.Builtin()`.
+
+8 new tests cover the resolver path (opencode require/accept,
+fixed-provider mismatch) and the template path
+(buildOpencodeConfig/PrepareSession/BuildArgs for kimi/zai/anthropic/
+unknown providers).
+
 ## What's still open from the two reviewer letters
 
 1. **Async-default flip**: `--detach` becomes the default, `--sync`
