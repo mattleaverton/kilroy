@@ -86,7 +86,7 @@ To build a reliable picture of run state:
 
 Always inspect `graph.dot` first so status is interpreted in graph context.
 
-Validate-only runs (`--validate`) are expected to write `prelaunch_validation.json` and skip execution artifacts (`manifest.json`, `checkpoint.json`, `final.json`, `worktree/`).
+Pre-launch validation runs (`kilroy workflows validate <name>`) are expected to write `prelaunch_validation.json` and skip execution artifacts (`manifest.json`, `checkpoint.json`, `final.json`, `worktree/`).
 
 1. `manifest.json`: run identity, graph name, repo, worktree, `started_at`.
 2. `live.json`: most recent event.

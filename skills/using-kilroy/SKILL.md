@@ -19,31 +19,46 @@ Kilroy is a local-first Attractor runner:
 Use these exact command forms:
 
 ```text
-kilroy run [<workflow-name>] [--validate] [--detach] [--tmux] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--force-model <provider=model>] [--graph <file.dot>] [--package <dir>] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>] [--input <json-or-path>] [--prompt-file <path>] [--label KEY=VALUE]
+kilroy run <workflow-name> [--input-file KEY=PATH ...] [--input <path>] [--label KEY=VALUE] [--detach] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>]
+kilroy run --graph <file.dot> [--config <run.yaml>] [...]   # advanced ad-hoc graph mode
+kilroy run --package <dir>    [--config <run.yaml>] [...]   # advanced ad-hoc package mode
 kilroy resume --logs-root <dir>
 kilroy resume --cxdb <http_base_url> --context-id <id>
 kilroy resume --run-branch <attractor/run/...> [--repo <path>]
 kilroy status [--logs-root <dir> | --latest] [--json] [--follow|-f] [--cxdb] [--raw] [--watch] [--interval <sec>]
 kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
-kilroy runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]
-kilroy runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]
-kilroy runs prune [--before YYYY-MM-DD] [--older-than DURATION] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]
-kilroy validate --graph <file.dot>
+kilroy runs list   [--json|--pretty] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
+kilroy runs show   (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]
+kilroy runs wait   (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]
+kilroy runs prune  [--before YYYY-MM-DD] [--older-than DURATION] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]
+kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
+kilroy validate --graph <file.dot>            # static DOT validation
 kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] [--repo <path>] [--max-turns <n>] [--no-validate] <requirements>
+kilroy auth list | check | init | suggest-fix
+kilroy policy list | show <class> | resolve <class> | explain <run-id>
 kilroy serve [--addr <host:port>]
 ```
 
 ### Run flags you may not have seen before
 
-- `--package <dir>` — load a workflow package (a directory with `workflow.toml`, `graph.dot`, `scripts/`, `prompts/`). Applies label defaults, validates inputs, materializes scripts into the worktree. Prefer packages over bare graphs for anything reusable.
-- `--tmux` — execute each agent CLI invocation inside a detached tmux session. Required for headless runs that use the Claude/Codex/Gemini CLIs. Combine with `--detach` for fire-and-forget operation.
-- `--input <json-or-path>` — structured inputs for the graph. Pass a JSON literal (`--input '{"key":"value"}'`) or a path to a JSON/YAML file. Values become `KILROY_INPUT_KEY` env vars for tool nodes, `$input.key` placeholders in agent prompts, and sections in `.kilroy/INPUT.md`. Required inputs are declared via the graph's `inputs="key1,key2"` attribute.
-- `--prompt-file <path>` — read the file contents verbatim and assign them to the `prompt` input key. Overrides any `prompt` already set via `--input`. Use this instead of inlining multi-line text in a JSON blob — no escaping, no quoting, no newline hazards.
-- `--no-cxdb` — skip the content-addressed event store. Applied automatically when no `--config` is supplied (the default config doesn't set up cxdb). Explicit in production configs.
-- `--skip-cli-headless-warning` — bypass the interactive CLI-backend confirmation prompt. Applied automatically when stdin isn't a terminal (detached runs, pipes, agent-driven invocations).
-- `--label KEY=VALUE` — attach a label to the run. Repeatable. Labels are stored in the run DB and used by `runs list --label` and `runs prune --label`. Always tag detached runs so you can find them later.
-- `--workspace <dir>` — override the workspace dir (default: cwd). If it's a git repo, the engine creates a dedicated run branch + worktree; otherwise it runs in plain-directory mode.
+- `kilroy run <workflow-name>` — the canonical form. Names resolve via filesystem discovery: `KILROY_WORKFLOW_PATHS` > `<project-root>/.kilroy/workflows/` > `$XDG_CONFIG_HOME/kilroy/workflows/`. The named workflow is materialized into the run's worktree at `.kilroy/package/`.
+- `--graph <file.dot>` / `--package <dir>` — advanced ad-hoc modes. Use these only when you don't have a packaged workflow yet.
+- `--input <path>` — structured inputs for the graph. Pass a path to a JSON or YAML file. (Inline JSON like `--input '{"k":"v"}'` is no longer accepted — write a file and pass its path.) Values become `KILROY_INPUT_KEY` env vars for tool nodes, `$input.key` placeholders in agent prompts, and sections in `.kilroy/INPUT.md`. Required inputs are declared via the workflow manifest's `[inputs.<name>] required = true`.
+- `--input-file KEY=PATH` — read the file verbatim and assign it to the input key. Repeatable. The canonical way to inject multi-line text (prompts, specs, issue descriptions) without quoting or escaping. Replaces the old narrow `--prompt-file`.
+- `--no-cxdb` — skip the content-addressed event store. Applied automatically when no `--config` is supplied.
+- `--skip-cli-headless-warning` — bypass the interactive CLI-backend confirmation prompt. Applied automatically when stdin isn't a terminal.
+- `--label KEY=VALUE` — attach a label to the run. Repeatable. Used by `runs list --label` and `runs prune --label`. Always tag detached runs so you can find them later.
+- `--workspace <dir>` — override the workspace dir (default: cwd). If it's a git repo, the engine creates a dedicated run branch + worktree.
+
+There is **no `--tmux` flag**. Driver dispatch is decided by the resolved
+`agent_class` (or explicit `agent_tool=` / `llm_provider=`) — CLI drivers
+(claude_cli, codex_cli, gemini_cli, opencode) automatically use tmux;
+SDK drivers (anthropic_sdk, openai_sdk, google_sdk) use the HTTP API
+path. Workflows control their routing intent in DOT and policy.
+
+There is **no `--force-model` flag**. Strict model selection lives in
+workflow/DOT/policy. If the chosen model is wrong, fix the workflow
+or policy.
 
 ## Workflow
 
@@ -67,11 +82,14 @@ kilroy validate --graph pipeline.dot
 kilroy run --graph pipeline.dot --config run.yaml
 ```
 
-Optional validate-only check (validates everything, no stage execution):
+Optional pre-launch validation (validates everything, no stage execution):
 
 ```bash
-kilroy run --graph pipeline.dot --config run.yaml --validate
+kilroy workflows validate <workflow-name>
 ```
+
+This runs the same DOT + package + class + auth + binary checks a real
+launch does, minus execution. JSON by default; `--pretty` for human output.
 
 5. If interrupted, resume from the most convenient source:
 
