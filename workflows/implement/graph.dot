@@ -16,13 +16,18 @@ digraph implement {
     verify        [shape=parallelogram, label="verify",
                    tool_command="bash .kilroy/package/scripts/verify.sh"]
     summary       [shape=parallelogram, label="summary",
-                   tool_command="bash .kilroy/package/scripts/summary.sh"]
+                   tool_command="bash .kilroy/package/scripts/summary.sh",
+                   max_retries="0"]
     done          [shape=Msquare, label="Done"]
+    failed        [shape=Msquare, terminal_status="fail", label="Failed",
+                   failure_reason="agent_did_not_write_result"]
 
     // Failure paths route through `summary` so the run captures what
-    // happened in result.md before terminating. summary always succeeds
-    // (it synthesizes a BLOCKED: result.md when the agent didn't
-    // produce one), so its terminal edge can be unconditioned.
+    // happened in result.md before terminating. summary itself fails
+    // (exit 1, status=fail) when it had to synthesize a BLOCKED stub
+    // because the agent didn't write result.md — and the failed
+    // terminal then records FinalFail at the run level, so dashboards
+    // can trust final.json.status.
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
     stage_context -> summary        [condition="outcome!=success"]
@@ -31,4 +36,5 @@ digraph implement {
     verify        -> summary        [condition="outcome=success"]
     verify        -> agent          [condition="outcome!=success", label="retry once"]
     summary       -> done            [condition="outcome=success"]
+    summary       -> failed          [condition="outcome!=success"]
 }

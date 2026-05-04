@@ -735,26 +735,40 @@ func (e *Engine) runLoop(ctx context.Context, current string, completed []string
 			}
 			e.lastCheckpointSHA = sha
 			e.cxdbCheckpointSaved(ctx, node.ID, out.Status, sha)
-			completionTurnID, err := e.cxdbRunCompleted(ctx, sha)
-			if err != nil {
-				return nil, err
+			finalStatus := terminalFinalStatus(node)
+			var failureReason string
+			if finalStatus == runtime.FinalFail {
+				failureReason = "reached fail terminal " + node.ID
+				if reason := strings.TrimSpace(node.Attr("failure_reason", "")); reason != "" {
+					failureReason = reason
+				}
+			}
+			var completionTurnID string
+			if finalStatus == runtime.FinalSuccess {
+				completionTurnID, err = e.cxdbRunCompleted(ctx, sha)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				completionTurnID, _ = e.cxdbRunFailed(ctx, node.ID, sha, failureReason)
 			}
 			final := runtime.FinalOutcome{
 				Timestamp:         time.Now().UTC(),
-				Status:            runtime.FinalSuccess,
+				Status:            finalStatus,
 				RunID:             e.Options.RunID,
 				FinalGitCommitSHA: sha,
 				CXDBContextID:     cxdbContextID(e.CXDB),
 				CXDBHeadTurnID:    completionTurnID,
+				FailureReason:     failureReason,
 			}
 			e.persistTerminalOutcome(ctx, final)
-			e.rundbRecordRunComplete(runtime.FinalSuccess, "", sha)
+			e.rundbRecordRunComplete(finalStatus, failureReason, sha)
 			return &Result{
 				RunID:          e.Options.RunID,
 				LogsRoot:       e.LogsRoot,
 				WorktreeDir:    e.WorktreeDir,
 				RunBranch:      e.RunBranch,
-				FinalStatus:    runtime.FinalSuccess,
+				FinalStatus:    finalStatus,
 				FinalCommitSHA: sha,
 				Warnings:       e.warningsCopy(),
 			}, nil
@@ -2334,7 +2348,24 @@ func expandBaseSHA(g *model.Graph, baseSHA string) {
 }
 
 func isTerminal(n *model.Node) bool {
-	return n != nil && (n.Shape() == "Msquare" || n.Shape() == "doublecircle" || strings.EqualFold(n.ID, "exit") || strings.EqualFold(n.ID, "end"))
+	return n != nil && (n.Shape() == "Msquare" || n.Shape() == "doublecircle" || n.Shape() == "Mcircle" || strings.EqualFold(n.ID, "exit") || strings.EqualFold(n.ID, "end"))
+}
+
+// terminalFinalStatus returns the FinalStatus the engine should record when
+// the run reaches the given terminal. Default is FinalSuccess; the node
+// can opt in to FinalFail by setting terminal_status="fail" (the canonical
+// attribute) or by using shape=Mcircle (a visual shorthand).
+func terminalFinalStatus(n *model.Node) runtime.FinalStatus {
+	if n == nil {
+		return runtime.FinalSuccess
+	}
+	if strings.EqualFold(n.Attr("terminal_status", ""), "fail") {
+		return runtime.FinalFail
+	}
+	if n.Shape() == "Mcircle" {
+		return runtime.FinalFail
+	}
+	return runtime.FinalSuccess
 }
 
 func checkGoalGates(g *model.Graph, outcomes map[string]runtime.Outcome) (bool, string) {

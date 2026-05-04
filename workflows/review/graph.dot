@@ -14,18 +14,22 @@ digraph review {
                    prompt="You are working in a kilroy worktree on a code review. Code changes are NOT expected; this is a read-only review. Do not run git commit. Your task is in .kilroy/INPUT.md under the ## target section, and the diff to review is in .kilroy/diff.patch. If a ## checklist section is present, the path points at a review checklist to apply. If a ## context_files section is present, those paths point at files the user wants you to read for context. If a ## scope_directive section is present, treat it as a hard guardrail. Do NOT run go test ./... — too noisy; use go test <package> -run <pattern> only for targeted spot-checks if you need to confirm a finding. Time-cap your work: if a single line of analysis is not converging within ~15 minutes, write what you have to result.md with a BLOCKED: prefix and stop. Output: write result.md (Summary, Findings with severity, Verdict: MERGE | MERGE-FIX | FIX-MERGE | REJECT, Open questions) and review.json (a JSON array of findings, each with severity, file, line, message). When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
                    outputs="result.md,review.json"]
     summary       [shape=parallelogram, label="summary",
-                   tool_command="bash .kilroy/package/scripts/summary.sh"]
+                   tool_command="bash .kilroy/package/scripts/summary.sh",
+                   max_retries="0"]
     done          [shape=Msquare, label="Done"]
+    failed        [shape=Msquare, terminal_status="fail", label="Failed",
+                   failure_reason="agent_did_not_write_result"]
 
     // Failure paths route through `summary` so the run captures what
-    // happened in result.md before terminating. summary always
-    // succeeds: it synthesizes a BLOCKED: result.md and an empty
-    // review.json when the agent didn't produce them. Because both
-    // success and failure from `agent` route to `summary`, the edge is
-    // unconditional — no branching downstream of the agent.
+    // happened in result.md before terminating. summary fails (exit 1)
+    // when it had to synthesize a BLOCKED stub; the failed terminal
+    // then records FinalFail at the run level so dashboards can trust
+    // final.json. review.json defaults to []; result.md gets the
+    // synthesized BLOCKED stub on agent failure.
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
     stage_context -> summary        [condition="outcome!=success"]
     agent         -> summary
     summary       -> done            [condition="outcome=success"]
+    summary       -> failed          [condition="outcome!=success"]
 }

@@ -7,8 +7,17 @@
 # forgot result.md, or did nothing.
 set -uo pipefail
 STATUS="${KILROY_STAGE_STATUS_PATH:-/dev/null}"
+synthesized=0
+
+# Re-entrancy: if an earlier attempt already synthesized result.md, the
+# "(synthesized)" marker on line 1 lets us preserve the fail outcome on
+# retry instead of silently succeeding because the file now exists.
+if [ -f result.md ] && head -n 1 result.md 2>/dev/null | grep -q '(synthesized)'; then
+    synthesized=1
+fi
 
 if [ ! -f result.md ]; then
+    synthesized=1
     {
         echo "# implement workflow result (synthesized)"
         echo
@@ -76,5 +85,9 @@ if [ ! -f result.md ]; then
             echo '```'
         fi
     } > result.md
+fi
+if [ "$synthesized" -eq 1 ]; then
+    printf '{"status":"fail","failure_reason":"agent_did_not_write_result"}\n' > "$STATUS"
+    exit 1
 fi
 echo '{"status":"success"}' > "$STATUS"

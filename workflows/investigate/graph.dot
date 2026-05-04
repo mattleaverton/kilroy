@@ -14,16 +14,21 @@ digraph investigate {
                    prompt="You are a research agent in a kilroy worktree. Your task is in .kilroy/INPUT.md under the ## question section. If a ## context_files section is present, those paths point at files to read for context. If a ## urls section is present, fetch and analyze those URLs. If a ## scope_directive section is present, treat it as a hard guardrail. Investigate thoroughly: read source material, follow chains of reasoning, distinguish what you know from what you're inferring. Time-cap: if a single line of inquiry is not converging within ~30 minutes, write what you have and stop. Do not modify any code files — write only result.md at the workspace root. Required structure: TL;DR (2-3 sentences answering the question directly), Findings (numbered, with evidence and citations to context files or URLs), Open questions (what would change the answer if you knew it), Methodology (one paragraph on what you did and what you didn't). When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
                    outputs="result.md"]
     summary       [shape=parallelogram, label="summary",
-                   tool_command="bash .kilroy/package/scripts/summary.sh"]
+                   tool_command="bash .kilroy/package/scripts/summary.sh",
+                   max_retries="0"]
     done          [shape=Msquare, label="Done"]
+    failed        [shape=Msquare, terminal_status="fail", label="Failed",
+                   failure_reason="agent_did_not_write_result"]
 
     // No verify or diff stage — investigate is read-only research; the
-    // only artifact is result.md. summary synthesizes a BLOCKED: result.md
-    // when the agent didn't produce one.
+    // only artifact is result.md. summary fails (exit 1) when it had
+    // to synthesize a BLOCKED stub; the failed terminal then records
+    // FinalFail at the run level so dashboards can trust final.json.
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
     stage_context -> summary        [condition="outcome!=success"]
     agent         -> summary        [condition="outcome=success"]
     agent         -> summary        [condition="outcome!=success"]
     summary       -> done            [condition="outcome=success"]
+    summary       -> failed          [condition="outcome!=success"]
 }

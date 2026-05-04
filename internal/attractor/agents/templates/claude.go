@@ -12,10 +12,14 @@ import (
 //
 // --bare is auth-method-aware: it's incompatible with OAuth (the flag
 // explicitly disables OAuth and keychain reads — see `claude --help`).
-// For cli_oauth, we omit it so claude can read its OAuth session. For
-// api_key (or unknown), we keep it for the headless-isolation
-// properties (skip hooks, plugins, CLAUDE.md, etc.) — it requires
-// ANTHROPIC_API_KEY to be set, which the api_key binder materializes.
+// For cli_oauth, we omit it so claude can read its OAuth session.
+//
+// Today claude_cli always resolves to cli_oauth (BindClaudeCLI requires
+// SourceCLISession), so the api_key branch below is dormant. It exists
+// for forward compatibility — if a future api_key binder for claude_cli
+// lands, --bare's headless isolation properties (skip hooks, plugins,
+// CLAUDE.md) become reachable again with ANTHROPIC_API_KEY materialized
+// in the child env.
 func Claude() Template {
 	return Template{
 		Name:       "claude",

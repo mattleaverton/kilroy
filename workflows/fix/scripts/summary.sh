@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -uo pipefail
 STATUS="${KILROY_STAGE_STATUS_PATH:-/dev/null}"
+synthesized=0
+# Re-entrancy: see implement/scripts/summary.sh for rationale.
+if [ -f result.md ] && head -n 1 result.md 2>/dev/null | grep -q '(synthesized)'; then
+    synthesized=1
+fi
 if [ ! -f result.md ]; then
+    synthesized=1
     {
         echo "# fix workflow result (synthesized)"
         echo
@@ -31,4 +37,8 @@ fi
 # Ensure fix.patch exists even if diff stage was skipped, so the
 # declared output contract holds.
 [ -f fix.patch ] || : > fix.patch
+if [ "$synthesized" -eq 1 ]; then
+    printf '{"status":"fail","failure_reason":"agent_did_not_write_result"}\n' > "$STATUS"
+    exit 1
+fi
 echo '{"status":"success"}' > "$STATUS"

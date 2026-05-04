@@ -18,12 +18,17 @@ digraph fix {
     diff          [shape=parallelogram, label="diff",
                    tool_command="bash .kilroy/package/scripts/diff.sh"]
     summary       [shape=parallelogram, label="summary",
-                   tool_command="bash .kilroy/package/scripts/summary.sh"]
+                   tool_command="bash .kilroy/package/scripts/summary.sh",
+                   max_retries="0"]
     done          [shape=Msquare, label="Done"]
+    failed        [shape=Msquare, terminal_status="fail", label="Failed",
+                   failure_reason="agent_did_not_write_result"]
 
     // Failure paths route through `summary` so the run captures what
-    // happened in result.md before terminating. summary always succeeds.
-    // diff runs on success; it captures the worktree diff for fix.patch
+    // happened in result.md before terminating. summary fails (exit 1,
+    // status=fail) when it had to synthesize a BLOCKED stub; the
+    // failed terminal then records FinalFail at the run level. diff
+    // runs on success; it captures the worktree diff for fix.patch
     // and is permitted to be empty (agent declined to change anything).
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
@@ -36,4 +41,5 @@ digraph fix {
     // so route unconditionally to summary.
     diff          -> summary
     summary       -> done            [condition="outcome=success"]
+    summary       -> failed          [condition="outcome!=success"]
 }
