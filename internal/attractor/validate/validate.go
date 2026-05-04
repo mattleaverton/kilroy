@@ -97,6 +97,7 @@ func ValidateWithOptions(g *model.Graph, opts ValidateOptions, extraRules ...Lin
 	diags = append(diags, lintNoNestedConcurrentRegions(g)...)
 	diags = append(diags, lintNoLoopsInConcurrentRegions(g)...)
 	diags = append(diags, lintTerminalConditionEdge(g)...)
+	diags = append(diags, lintTerminalStatusValue(g)...)
 
 	// Run custom lint rules (spec §7.3: extra_rules appended after built-in rules).
 	for _, rule := range extraRules {
@@ -147,7 +148,7 @@ func lintExitNode(g *model.Graph) []Diagnostic {
 		if n == nil {
 			continue
 		}
-		if n.Shape() == "Msquare" || n.Shape() == "doublecircle" || strings.EqualFold(id, "exit") || strings.EqualFold(id, "end") {
+		if n.Shape() == "Msquare" || n.Shape() == "doublecircle" || n.Shape() == "Mcircle" || strings.EqualFold(id, "exit") || strings.EqualFold(id, "end") {
 			ids = append(ids, id)
 		}
 	}
@@ -232,11 +233,39 @@ func findExitNodeID(g *model.Graph) string {
 	return ""
 }
 
+// lintTerminalStatusValue restricts the terminal_status= attribute on
+// terminal nodes to "success" (default) or "fail". The engine reads this
+// attribute to decide whether reaching the terminal records FinalSuccess
+// or FinalFail. An unrecognized value would silently be treated as
+// success — surface the typo at validation time instead.
+func lintTerminalStatusValue(g *model.Graph) []Diagnostic {
+	var diags []Diagnostic
+	for id, n := range g.Nodes {
+		if n == nil {
+			continue
+		}
+		v := strings.TrimSpace(n.Attr("terminal_status", ""))
+		if v == "" {
+			continue
+		}
+		if !strings.EqualFold(v, "success") && !strings.EqualFold(v, "fail") {
+			diags = append(diags, Diagnostic{
+				Rule:     "terminal_status_value",
+				Severity: SeverityError,
+				NodeID:   id,
+				Message:  fmt.Sprintf("node %q: terminal_status=%q is not recognized; must be \"success\" or \"fail\"", id, v),
+				Fix:      "set terminal_status=\"fail\" (records FinalFail at run level) or remove the attribute (default behavior is FinalSuccess)",
+			})
+		}
+	}
+	return diags
+}
+
 func findAllExitNodeIDs(g *model.Graph) []string {
 	var ids []string
 	seen := map[string]bool{}
 	for id, n := range g.Nodes {
-		if n != nil && (n.Shape() == "Msquare" || n.Shape() == "doublecircle") {
+		if n != nil && (n.Shape() == "Msquare" || n.Shape() == "doublecircle" || n.Shape() == "Mcircle") {
 			if !seen[id] {
 				ids = append(ids, id)
 				seen[id] = true

@@ -1883,3 +1883,62 @@ digraph G {
 	diags := Validate(g)
 	assertNoRule(t, diags, "custom_outcome_coverage")
 }
+
+// --- Tests for terminal_status_value and Mcircle terminal recognition ---
+
+func TestValidate_TerminalStatusValue_RejectsUnknown(t *testing.T) {
+	g, err := dot.Parse([]byte(`
+digraph G {
+  start  [shape=Mdiamond]
+  exit   [shape=Msquare]
+  failed [shape=Msquare, terminal_status="failure"]
+  start -> exit
+  start -> failed
+}
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	assertHasRule(t, diags, "terminal_status_value", SeverityError)
+}
+
+func TestValidate_TerminalStatusValue_AcceptsFailAndSuccess(t *testing.T) {
+	g, err := dot.Parse([]byte(`
+digraph G {
+  start [shape=Mdiamond]
+  exit  [shape=Msquare, terminal_status="success"]
+  fail  [shape=Msquare, terminal_status="fail"]
+  start -> exit
+  start -> fail
+}
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for _, d := range Validate(g) {
+		if d.Rule == "terminal_status_value" {
+			t.Fatalf("unexpected terminal_status_value diag: %+v", d)
+		}
+	}
+}
+
+func TestValidate_McircleShape_RecognizedAsTerminal(t *testing.T) {
+	// A graph where the only terminal is shape=Mcircle. With the
+	// validator change to include Mcircle, terminal_node should NOT fire.
+	g, err := dot.Parse([]byte(`
+digraph G {
+  start  [shape=Mdiamond]
+  failed [shape=Mcircle]
+  start -> failed
+}
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for _, d := range Validate(g) {
+		if d.Rule == "terminal_node" {
+			t.Fatalf("Mcircle should be recognized as a terminal, got terminal_node diag: %+v", d)
+		}
+	}
+}
