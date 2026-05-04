@@ -88,6 +88,7 @@ func runUsage() {
 	fmt.Fprintln(os.Stderr, "  --graph <file.dot>              direct mode: ad-hoc graph (alternative to <workflow-name>)")
 	fmt.Fprintln(os.Stderr, "  --package <dir>                 direct mode: ad-hoc package (alternative to <workflow-name>)")
 	fmt.Fprintln(os.Stderr, "  --detach                        background the run; print run_id + logs_root")
+	fmt.Fprintln(os.Stderr, "  --wait                          (with --detach) block until the run reaches a terminal state")
 	fmt.Fprintln(os.Stderr, "  --workspace <dir>               source repo (default: cwd)")
 	fmt.Fprintln(os.Stderr, "  --input <path>                  inputs map (file path; JSON or YAML)")
 	fmt.Fprintln(os.Stderr, "  --input-file KEY=PATH           file contents → inputs[KEY] (repeatable)")

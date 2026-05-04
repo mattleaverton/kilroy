@@ -248,6 +248,7 @@ func attractorRun(args []string) {
 	var runID string
 	var logsRoot string
 	var detach bool
+	var waitForRun bool
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
@@ -262,6 +263,8 @@ func attractorRun(args []string) {
 		switch args[i] {
 		case "--detach":
 			detach = true
+		case "--wait":
+			waitForRun = true
 		case "--allow-test-shim":
 			allowTestShim = true
 		case "--confirm-stale-build":
@@ -585,6 +588,13 @@ func attractorRun(args []string) {
 			os.Exit(1)
 		}
 		fmt.Printf("detached=true\nlogs_root=%s\npid_file=%s\n", logsRoot, filepath.Join(logsRoot, "run.pid"))
+		// --wait: launch async (detach), then block until the run
+		// reaches a terminal state. Useful for CI: one command does
+		// "launch a long-running detached job and surface its outcome
+		// as my exit code." Reuses runs wait's polling loop.
+		if waitForRun {
+			attractorRunsWait([]string{runID})
+		}
 		os.Exit(0)
 	}
 

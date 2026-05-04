@@ -115,3 +115,19 @@ func TestRunSurface_InputFileRequiresKEYEqualsPATH(t *testing.T) {
 		t.Fatalf("kilroy run --input-file (no value): should fail")
 	}
 }
+
+// --wait is documented in run --help and accepted at parse time.
+// (Behavior — block until terminal — is exercised by `kilroy runs wait`
+// tests; --wait is just a launch-time alias that calls into that path
+// after a detached launch returns.)
+func TestRunSurface_WaitFlag_DocumentedAndAccepted(t *testing.T) {
+	bin := buildKilroyBinary(t)
+
+	code, out := runKilroy(t, bin, "run", "--help")
+	if code != 0 {
+		t.Fatalf("kilroy run --help: exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "--wait") {
+		t.Fatalf("kilroy run --help should mention --wait:\n%s", out)
+	}
+}
