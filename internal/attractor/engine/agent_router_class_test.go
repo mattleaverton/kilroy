@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -148,6 +149,51 @@ func TestAgentRouter_NoClass_FallsBackToStylesheet(t *testing.T) {
 	}
 	if source != "graph_attrs" {
 		t.Errorf("source = %q, want %q", source, "graph_attrs")
+	}
+}
+
+func TestAgentRouter_DispatcherResolvedSDKRoute_NotDowngradedByCfg(t *testing.T) {
+	cfg := &RunConfigFile{}
+	cfg.LLM.Providers = map[string]ProviderConfig{
+		"anthropic": {Backend: BackendCLI},
+	}
+	runtimes := map[string]ProviderRuntime{
+		"anthropic": {Key: "anthropic", Backend: BackendCLI},
+	}
+	router := NewAgentRouterWithRuntimes(cfg, nil, runtimes)
+
+	node := model.NewNode("sdk-node")
+	node.Attrs["llm_provider"] = "anthropic"
+	node.Attrs["llm_model"] = "claude-test"
+
+	resolved, err := ResolveAgentRoute(node, nil, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ResolveAgentRoute: %v", err)
+	}
+	ctx := ContextWithResolvedAgentRoute(context.Background(), resolved)
+
+	prov, mdl, backend, source, err := func() (string, string, BackendKind, string, error) {
+		route, err := router.resolveNodeRouteForRun(ctx, node, nil)
+		if err != nil {
+			return "", "", "", "", err
+		}
+		return route.provider, route.model, route.backend, route.source, nil
+	}()
+	if err != nil {
+		t.Fatalf("resolveNodeRouteForRun: unexpected error: %v", err)
+	}
+
+	if prov != "anthropic" {
+		t.Errorf("provider = %q, want %q", prov, "anthropic")
+	}
+	if mdl != "claude-test" {
+		t.Errorf("model = %q, want %q", mdl, "claude-test")
+	}
+	if backend != BackendAPI {
+		t.Errorf("backend = %q, want %q; dispatcher-resolved SDK routes must not be downgraded by cfg defaults", backend, BackendAPI)
+	}
+	if source != "llm_provider=anthropic" {
+		t.Errorf("source = %q, want %q", source, "llm_provider=anthropic")
 	}
 }
 

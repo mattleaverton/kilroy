@@ -6,6 +6,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -43,6 +44,33 @@ type AgentRoute struct {
 	// they don't go through the auth chain at resolution time, so there
 	// is no snapshot to carry.
 	ClassResult *policy.ResolveResult
+}
+
+type resolvedAgentRouteContextKey struct{}
+
+// ContextWithResolvedAgentRoute carries the dispatcher's already-resolved
+// route to downstream handlers. This keeps the dispatcher as the authoritative
+// route decision while preserving legacy direct CodergenHandler behavior when
+// no dispatcher is involved.
+func ContextWithResolvedAgentRoute(ctx context.Context, route AgentRoute) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, resolvedAgentRouteContextKey{}, route)
+}
+
+func resolvedAgentRouteFromContext(ctx context.Context, nodeID string) (AgentRoute, bool) {
+	if ctx == nil {
+		return AgentRoute{}, false
+	}
+	route, ok := ctx.Value(resolvedAgentRouteContextKey{}).(AgentRoute)
+	if !ok {
+		return AgentRoute{}, false
+	}
+	if strings.TrimSpace(nodeID) != "" && route.NodeID != "" && route.NodeID != nodeID {
+		return AgentRoute{}, false
+	}
+	return route, true
 }
 
 // AuthMethod returns the auth method ("api_key" | "cli_oauth" | "") from

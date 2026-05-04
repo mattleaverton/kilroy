@@ -52,9 +52,9 @@ func (d *Dispatcher) RequiresProvider() bool { return true }
 // Execute routes the node to the appropriate handler based on the
 // resolved driver. The full AgentRoute (provider/model/driver/backend
 // plus auth snapshot when class-resolved) is computed once here via
-// engine.ResolveAgentRoute and emitted on progress.ndjson; downstream
-// handlers re-resolve from the frozen prelaunch snapshot, which means
-// they always agree with the dispatcher's decision.
+// engine.ResolveAgentRoute and emitted on progress.ndjson; API handlers
+// receive that route through context, keeping the dispatcher as the
+// authoritative decision for the execution path.
 //
 // A node that resolves to no usable driver — or to one without a
 // dispatch mapping — is a deterministic failure. Prelaunch should have
@@ -88,7 +88,7 @@ func (d *Dispatcher) Execute(ctx context.Context, exec *engine.Execution, node *
 	case dispatchCLI:
 		return d.tmux().Execute(ctx, exec, node)
 	case dispatchAPI:
-		return d.codergen().Execute(ctx, exec, node)
+		return d.codergen().Execute(engine.ContextWithResolvedAgentRoute(ctx, route), exec, node)
 	default:
 		// Empty driver with a non-empty Provider is the deferred-to-
 		// runtime case: custom or non-canonical providers (kimi, zai,
@@ -99,7 +99,7 @@ func (d *Dispatcher) Execute(ctx context.Context, exec *engine.Execution, node *
 		// no entry, surfacing a clear "no backend configured" error
 		// rather than the cryptic "no dispatch mapping".
 		if route.Driver == "" && strings.TrimSpace(route.Provider) != "" {
-			return d.codergen().Execute(ctx, exec, node)
+			return d.codergen().Execute(engine.ContextWithResolvedAgentRoute(ctx, route), exec, node)
 		}
 		return runtime.Outcome{
 			Status: runtime.StatusFail,

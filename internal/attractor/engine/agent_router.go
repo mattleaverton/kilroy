@@ -93,7 +93,7 @@ func cloneProviderRuntimeMap(in map[string]ProviderRuntime) map[string]ProviderR
 func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
 	_ = r.catalog // used later for context window + pricing metadata
 
-	route, err := r.resolveNodeRouteInner(node, exec)
+	route, err := r.resolveNodeRouteForRun(ctx, node, exec)
 	if err != nil {
 		return "", nil, err
 	}
@@ -104,11 +104,12 @@ func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node
 	selectionSource := route.source
 
 	// CLI-only model override: force CLI backend when a model is marked
-	// CLI-only in the registry.
+	// CLI-only in the registry. Relabel any non-class source so the
+	// observability event makes the override visible.
 	if isCLIOnlyModel(modelID) && backend != BackendCLI {
 		WarnEngine(exec, fmt.Sprintf("cli-only model override: node=%s model=%s backend=%s->cli", node.ID, modelID, backend))
 		backend = BackendCLI
-		if selectionSource == "graph_attrs" {
+		if !strings.HasPrefix(selectionSource, "policy_class:") {
 			selectionSource = "cli_only_override"
 		}
 	}
@@ -168,20 +169,37 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 // route decision) and translating the AgentRoute into the local
 // nodeRoute view that runAPI/runCLI consume.
 //
-// Backend selection precedence:
+// Backend selection precedence for direct CodergenHandler calls:
 //
 //  1. Class-resolved: route.Backend (from policy driver mapping) wins
 //     unconditionally — class routing is authoritative.
 //  2. Legacy llm_provider= path: cfg.LLM.Providers[<prov>].Backend
-//     wins. This preserves the run-config override behavior tests
-//     rely on (e.g. forcing BackendCLI for openai via cfg). Falls back
-//     to route.Backend if cfg has no entry, then to a hard error.
+//     wins. This preserves the older run-config override behavior for
+//     callers that bypass the agent Dispatcher.
+//
+// Dispatcher-routed calls carry their already-resolved AgentRoute through
+// context, and resolveNodeRouteForRun preserves that route unless the route
+// has no backend (the custom-provider case that still needs run config).
+func (r *AgentRouter) resolveNodeRouteForRun(ctx context.Context, node *model.Node, exec *Execution) (nodeRoute, error) {
+	nodeID := ""
+	if node != nil {
+		nodeID = node.ID
+	}
+	if route, ok := resolvedAgentRouteFromContext(ctx, nodeID); ok {
+		return r.nodeRouteFromAgentRoute(node, route, true)
+	}
+	return r.resolveNodeRouteInner(node, exec)
+}
+
 func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
 	route, err := ResolveAgentRoute(node, exec, PolicyDeps{Load: r.policyLoad, Resolver: r.policyResolver})
 	if err != nil {
 		return nodeRoute{}, err
 	}
+	return r.nodeRouteFromAgentRoute(node, route, false)
+}
 
+func (r *AgentRouter) nodeRouteFromAgentRoute(node *model.Node, route AgentRoute, preserveResolved bool) (nodeRoute, error) {
 	prov := normalizeProviderKey(route.Provider)
 	modelID := route.Model
 	if modelID == "" {
@@ -194,7 +212,7 @@ func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (
 	}
 
 	backend := route.Backend
-	if route.ClassResult == nil {
+	if route.ClassResult == nil && (!preserveResolved || backend == "") {
 		// Non-class routes: cfg.LLM.Providers override wins. Catches
 		// the test fixture pattern of declaring
 		// `cfg.LLM.Providers["openai"].Backend = BackendCLI` to force
@@ -212,7 +230,7 @@ func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (
 	source := route.Source
 	if source == "" {
 		source = "graph_attrs"
-	} else if !strings.HasPrefix(source, "policy_class:") {
+	} else if !preserveResolved && !strings.HasPrefix(source, "policy_class:") {
 		// agent_router historically labels the legacy stylesheet path
 		// "graph_attrs" — preserve that for downstream consumers
 		// (provider_selected event, observability tooling) while v2 is
