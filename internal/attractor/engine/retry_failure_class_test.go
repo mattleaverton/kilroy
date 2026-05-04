@@ -190,7 +190,7 @@ type apiErrorBackend struct {
 	err error
 }
 
-func (b *apiErrorBackend) Run(_ context.Context, _ *Execution, _ *model.Node, _ string) (string, *runtime.Outcome, error) {
+func (b *apiErrorBackend) Run(_ context.Context, _ *Execution, _ *model.Node, _ string, _ AgentRoute) (string, *runtime.Outcome, error) {
 	return "", nil, b.err
 }
 

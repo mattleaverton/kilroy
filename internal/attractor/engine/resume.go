@@ -143,6 +143,7 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 	var startup *CXDBStartupInfo
 	var inputInferer InputReferenceInferer
 	var inputInfererInitWarning string
+	var providerRuntimes map[string]ProviderRuntime
 	if cfg != nil {
 		// Resume MUST use the run's snapshotted catalog.
 		snapshotPath := firstExistingPath(
@@ -157,16 +158,16 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 			return nil, err
 		}
 		catalog = cat
+		providerRuntimes, err = resolveProviderRuntimes(cfg)
+		if err != nil {
+			return nil, err
+		}
 		backend, err = newResumeAgentBackend(cfg, catalog)
 		if err != nil {
 			return nil, err
 		}
 		if cfg.Inputs.Materialize.InferWithLLM != nil && *cfg.Inputs.Materialize.InferWithLLM {
-			runtimes, rtErr := resolveProviderRuntimes(cfg)
-			if rtErr != nil {
-				return nil, rtErr
-			}
-			inferer, inferErr := newInputReferenceInfererFromRuntimes(runtimes)
+			inferer, inferErr := newInputReferenceInfererFromRuntimes(providerRuntimes)
 			if inferErr != nil {
 				inputInfererInitWarning = fmt.Sprintf("input reference inferer init failed on resume (scanner-only fallback): %v", inferErr)
 			} else {
@@ -216,13 +217,14 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 
 	prefix := deriveRunBranchPrefix(m, cfg)
 	opts := RunOptions{
-		RepoPath:        m.RepoPath,
-		RunID:           m.RunID,
-		LogsRoot:        logsRoot,
-		WorktreeDir:     filepath.Join(logsRoot, "worktree"),
-		RunBranchPrefix: prefix,
-		RequireClean:    resolveRequireClean(cfg),
-		GitOps:          ov.GitOps,
+		RepoPath:         m.RepoPath,
+		RunID:            m.RunID,
+		LogsRoot:         logsRoot,
+		WorktreeDir:      filepath.Join(logsRoot, "worktree"),
+		RunBranchPrefix:  prefix,
+		RequireClean:     resolveRequireClean(cfg),
+		GitOps:           ov.GitOps,
+		ProviderRuntimes: cloneProviderRuntimeMap(providerRuntimes),
 	}
 	if err := opts.applyDefaults(); err != nil {
 		return nil, err

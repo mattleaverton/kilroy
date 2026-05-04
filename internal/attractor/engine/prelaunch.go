@@ -58,7 +58,7 @@ func buildPreLaunchDeps(opts RunOptions, deps PolicyDeps) PolicyDeps {
 		loaded = true
 		return cached, cachedErr
 	}
-	return PolicyDeps{Load: deps.Load, Resolver: resolver}
+	return PolicyDeps{Load: deps.Load, Resolver: resolver, ProviderRuntimes: deps.ProviderRuntimes}
 }
 
 // tomlDecodeBytes is a tiny indirection so unit tests can swap in a fake
@@ -199,14 +199,10 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		check.AuthMethod = route.AuthMethod()
 		check.AuthSource = route.AuthSource()
 
-		// Freeze the per-node resolution. Execution will read this
-		// rather than re-running policy.Resolve, so config/env drift
-		// between prelaunch and node execution cannot silently change
-		// the route. Only class-resolved nodes carry a snapshot; non-
-		// class routes derive everything from DOT attrs at execution.
-		if route.ClassResult != nil {
-			frozenSnapshots[id] = resolveResultToSnap(route.Class, *route.ClassResult)
-		}
+		// Freeze the per-node route. Execution reads this rather than
+		// re-resolving from policy, DOT attrs, or config, so drift between
+		// prelaunch and node execution cannot silently change the route.
+		frozenSnapshots[id] = agentRouteToSnap(route)
 
 		// CLI drivers need their binary on PATH AND need to be executable
 		// (not a corrupt download, wrong arch, etc.). SDK drivers don't —

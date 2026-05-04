@@ -124,6 +124,11 @@ type RunOptions struct {
 	// is not satisfied by a healthy auth entry on this machine.
 	RequiredSecrets []string
 
+	// ProviderRuntimes are the pre-resolved provider backend/runtime records
+	// from run config. Route resolution consumes these before execution so
+	// handlers do not reinterpret backend selection later.
+	ProviderRuntimes map[string]ProviderRuntime
+
 	// CLI arguments used to launch this run. Captured from os.Args.
 	Invocation []string
 }
@@ -1262,6 +1267,14 @@ func (e *Engine) executeNode(ctx context.Context, node *model.Node) (runtime.Out
 	}
 
 	h := e.Registry.Resolve(node)
+	execCtx := &Execution{
+		Graph:       e.Graph,
+		Context:     e.Context,
+		LogsRoot:    e.LogsRoot,
+		WorktreeDir: e.WorktreeDir,
+		Engine:      e,
+		Artifacts:   e.Artifacts,
+	}
 	stageDir := filepath.Join(e.LogsRoot, node.ID)
 	if err := os.MkdirAll(stageDir, 0o755); err != nil {
 		return runtime.Outcome{Status: runtime.StatusFail, FailureReason: err.Error()}, err
@@ -1294,14 +1307,24 @@ func (e *Engine) executeNode(ctx context.Context, node *model.Node) (runtime.Out
 			}
 		}()
 
-		out, err = h.Execute(ctx, &Execution{
-			Graph:       e.Graph,
-			Context:     e.Context,
-			LogsRoot:    e.LogsRoot,
-			WorktreeDir: e.WorktreeDir,
-			Engine:      e,
-			Artifacts:   e.Artifacts,
-		}, node)
+		if rh, ok := h.(AgentRouteHandler); ok {
+			deps := PolicyDeps{}
+			if depProvider, ok := h.(AgentRoutePolicyDepsProvider); ok {
+				deps = depProvider.AgentRoutePolicyDeps()
+			}
+			if deps.ProviderRuntimes == nil {
+				deps.ProviderRuntimes = e.Options.ProviderRuntimes
+			}
+			route, routeErr := ResolveAgentRoute(node, execCtx, deps)
+			if routeErr != nil {
+				out = AgentRouteFailureOutcome(routeErr)
+				err = nil
+				return
+			}
+			out, err = rh.ExecuteAgent(ctx, execCtx, node, route)
+			return
+		}
+		out, err = h.Execute(ctx, execCtx, node)
 	}()
 	if err != nil {
 		// Preserve any metadata (failure_class, failure_signature) the handler

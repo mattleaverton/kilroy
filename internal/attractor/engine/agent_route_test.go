@@ -121,6 +121,33 @@ func TestResolveAgentRoute_LLMProvider_SDK(t *testing.T) {
 	}
 }
 
+func TestResolveAgentRoute_ProviderRuntimeCLI_FirstClassRoute(t *testing.T) {
+	node := &model.Node{
+		ID: "implement",
+		Attrs: map[string]string{
+			"llm_provider": "openai",
+			"llm_model":    "gpt-5.4",
+		},
+	}
+	r, err := ResolveAgentRoute(node, nil, PolicyDeps{
+		ProviderRuntimes: map[string]ProviderRuntime{
+			"openai": {Key: "openai", Backend: BackendCLI},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if r.Driver != "codex_cli" {
+		t.Fatalf("driver: got %q want codex_cli", r.Driver)
+	}
+	if r.Backend != BackendCLI {
+		t.Fatalf("backend: got %q want %q", r.Backend, BackendCLI)
+	}
+	if r.Provider != "openai" {
+		t.Fatalf("provider: got %q want openai", r.Provider)
+	}
+}
+
 func TestResolveAgentRoute_VagueNode_FailsLoudly(t *testing.T) {
 	node := &model.Node{ID: "vague", Attrs: map[string]string{}}
 	if _, err := ResolveAgentRoute(node, nil, PolicyDeps{}); err == nil {
@@ -142,12 +169,9 @@ func TestResolveAgentRoute_UnknownAgentTool_FailsLoudly(t *testing.T) {
 	}
 }
 
-// Unknown llm_provider= names (kimi, zai, minimax, custom OpenAI-compat
-// endpoints, etc.) are deferred to the runtime — they're routed via
-// cfg.LLM.Providers in the legacy CodergenHandler path. ResolveAgentRoute
-// returns an AgentRoute with Driver="" so the dispatcher can reject it
-// while non-dispatcher paths can still resolve through run-config.
-func TestResolveAgentRoute_UnknownLLMProvider_DefersToRuntime(t *testing.T) {
+// Built-in OpenAI-compatible providers are first-class API routes. They must
+// not resolve to Driver="" and leave dispatch to reinterpret the provider.
+func TestResolveAgentRoute_OpenAICompatProvider_FirstClassRoute(t *testing.T) {
 	node := &model.Node{
 		ID: "weird",
 		Attrs: map[string]string{
@@ -159,14 +183,37 @@ func TestResolveAgentRoute_UnknownLLMProvider_DefersToRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unknown provider should not error at resolve time: %v", err)
 	}
-	if r.Driver != "" {
-		t.Fatalf("unknown provider should yield empty driver (deferred), got %q", r.Driver)
+	if r.Driver != "openai_compat_api" {
+		t.Fatalf("driver: got %q want openai_compat_api", r.Driver)
 	}
 	if r.Provider != "kimi" {
 		t.Fatalf("provider field should preserve raw name, got %q", r.Provider)
 	}
+	if r.Backend != BackendAPI {
+		t.Fatalf("backend: got %q want %q", r.Backend, BackendAPI)
+	}
 	if r.Source != "llm_provider=kimi" {
 		t.Fatalf("source: got %q", r.Source)
+	}
+}
+
+func TestResolveAgentRoute_AdHocProviderWithoutSpec_RemainsUnresolved(t *testing.T) {
+	node := &model.Node{
+		ID: "adhoc",
+		Attrs: map[string]string{
+			"llm_provider": "local-openai-compatible",
+			"llm_model":    "local-model",
+		},
+	}
+	r, err := ResolveAgentRoute(node, nil, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ad-hoc provider should not error at route parse time: %v", err)
+	}
+	if r.Driver != "" {
+		t.Fatalf("ad-hoc provider without a loaded provider spec should remain explicit-unresolved, got driver %q", r.Driver)
+	}
+	if r.Provider != "local-openai-compatible" {
+		t.Fatalf("provider = %q, want local-openai-compatible", r.Provider)
 	}
 }
 

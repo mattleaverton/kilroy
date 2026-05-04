@@ -90,10 +90,10 @@ func cloneProviderRuntimeMap(in map[string]ProviderRuntime) map[string]ProviderR
 	return out
 }
 
-func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string, resolved AgentRoute) (string, *runtime.Outcome, error) {
 	_ = r.catalog // used later for context window + pricing metadata
 
-	route, err := r.resolveNodeRouteForRun(ctx, node, exec)
+	route, err := r.nodeRouteFromAgentRoute(node, resolved, true)
 	if err != nil {
 		return "", nil, err
 	}
@@ -176,21 +176,6 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 //  2. Legacy llm_provider= path: cfg.LLM.Providers[<prov>].Backend
 //     wins. This preserves the older run-config override behavior for
 //     callers that bypass the agent Dispatcher.
-//
-// Dispatcher-routed calls carry their already-resolved AgentRoute through
-// context, and resolveNodeRouteForRun preserves that route unless the route
-// has no backend (the custom-provider case that still needs run config).
-func (r *AgentRouter) resolveNodeRouteForRun(ctx context.Context, node *model.Node, exec *Execution) (nodeRoute, error) {
-	nodeID := ""
-	if node != nil {
-		nodeID = node.ID
-	}
-	if route, ok := resolvedAgentRouteFromContext(ctx, nodeID); ok {
-		return r.nodeRouteFromAgentRoute(node, route, true)
-	}
-	return r.resolveNodeRouteInner(node, exec)
-}
-
 func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
 	route, err := ResolveAgentRoute(node, exec, PolicyDeps{Load: r.policyLoad, Resolver: r.policyResolver})
 	if err != nil {
@@ -213,12 +198,10 @@ func (r *AgentRouter) nodeRouteFromAgentRoute(node *model.Node, route AgentRoute
 
 	backend := route.Backend
 	if route.ClassResult == nil && (!preserveResolved || backend == "") {
-		// Non-class routes: cfg.LLM.Providers override wins. Catches
-		// the test fixture pattern of declaring
-		// `cfg.LLM.Providers["openai"].Backend = BackendCLI` to force
-		// the CLI path for canonical providers, plus legacy
-		// non-canonical providers (kimi/zai/minimax/custom
-		// OpenAI-compat) that ResolveAgentRoute leaves Backend="".
+		// Legacy direct CodergenHandler/router calls may still arrive
+		// without a fully preserved route. In that narrow path, consult
+		// provider config here so old unit fixtures keep working while
+		// normal engine/dispatcher execution supplies an explicit route.
 		if cfgBe := r.backendForProvider(prov); cfgBe != "" {
 			backend = cfgBe
 		}

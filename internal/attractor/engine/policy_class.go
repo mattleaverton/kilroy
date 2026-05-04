@@ -23,8 +23,9 @@ import (
 // Zero values mean "use production defaults" (policy.Load + auth detection
 // against the user/project auth.toml). Tests inject stubs.
 type PolicyDeps struct {
-	Load     func() (*policy.Data, error)
-	Resolver func(projectRoot string) (*binding.Resolver, error)
+	Load             func() (*policy.Data, error)
+	Resolver         func(projectRoot string) (*binding.Resolver, error)
+	ProviderRuntimes map[string]ProviderRuntime
 }
 
 // ClassResolution is the outcome of resolving a node's class= attribute.

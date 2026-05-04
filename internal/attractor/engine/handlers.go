@@ -35,6 +35,21 @@ type Handler interface {
 	Execute(ctx context.Context, exec *Execution, node *model.Node) (runtime.Outcome, error)
 }
 
+// AgentRouteHandler is implemented by agent handlers that execute an already
+// resolved AgentRoute. The engine and dispatcher resolve routes above this
+// boundary; implementations execute the supplied route rather than deriving
+// provider/model/backend/auth from node attributes.
+type AgentRouteHandler interface {
+	ExecuteAgent(ctx context.Context, exec *Execution, node *model.Node, route AgentRoute) (runtime.Outcome, error)
+}
+
+// AgentRoutePolicyDepsProvider lets route-aware handlers expose their resolver
+// test dependencies to the engine when the engine resolves an AgentRoute before
+// invoking ExecuteAgent.
+type AgentRoutePolicyDepsProvider interface {
+	AgentRoutePolicyDeps() PolicyDeps
+}
+
 // FidelityAwareHandler is an optional interface that handlers implement to
 // declare they use fidelity/thread resolution (e.g., LLM session continuity).
 // The engine resolves fidelity and thread keys only for handlers that
@@ -276,15 +291,16 @@ func (h *ConditionalHandler) Execute(ctx context.Context, exec *Execution, node 
 }
 
 type AgentBackend interface {
-	Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error)
+	Run(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error)
 }
 
 type SimulatedAgentBackend struct{}
 
-func (b *SimulatedAgentBackend) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+func (b *SimulatedAgentBackend) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 	_ = ctx
 	_ = exec
 	_ = prompt
+	_ = route
 	out := runtime.Outcome{Status: runtime.StatusSuccess, Notes: "simulated agent completed"}
 	return "[Simulated] Response for stage: " + node.ID, &out, nil
 }
@@ -506,6 +522,14 @@ func BuildWorktreeContextPreamble(worktreeDir string) string {
 }
 
 func (h *CodergenHandler) Execute(ctx context.Context, exec *Execution, node *model.Node) (runtime.Outcome, error) {
+	route, err := ResolveAgentRoute(node, exec, PolicyDeps{})
+	if err != nil {
+		return AgentRouteFailureOutcome(err), nil
+	}
+	return h.ExecuteAgent(ctx, exec, node, route)
+}
+
+func (h *CodergenHandler) ExecuteAgent(ctx context.Context, exec *Execution, node *model.Node, route AgentRoute) (runtime.Outcome, error) {
 	stageDir := filepath.Join(exec.LogsRoot, node.ID)
 	stageStatusPath := filepath.Join(stageDir, "status.json")
 	contract := StageStatusContract{}
@@ -653,7 +677,7 @@ func (h *CodergenHandler) Execute(ctx context.Context, exec *Execution, node *mo
 	if backend == nil {
 		backend = &SimulatedAgentBackend{}
 	}
-	resp, out, err := backend.Run(ctx, exec, node, promptText)
+	resp, out, err := backend.Run(ctx, exec, node, promptText, route)
 	if err != nil {
 		fc, sig := ClassifyAPIError(err)
 		// Spec §4.5: set semantically correct status based on failure classification.

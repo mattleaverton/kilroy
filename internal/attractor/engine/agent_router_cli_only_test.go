@@ -52,7 +52,11 @@ func TestCLIOnlyModelOverride_SwitchesBackendAndWarns(t *testing.T) {
 	// Run will likely fail (no real CLI binary), but the override should fire
 	// first. We don't check the error — runCLI may return a failure outcome
 	// instead of an error.
-	_, _, _ = router.Run(ctx, exec, node, "test prompt")
+	route, err := ResolveAgentRoute(node, exec, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ResolveAgentRoute: %v", err)
+	}
+	_, _, _ = router.Run(ctx, exec, node, "test prompt", route)
 
 	// Verify the CLI-only override warning was emitted.
 	found := false
@@ -91,7 +95,11 @@ func TestCLIOnlyModelOverride_RegularModelNoOverride(t *testing.T) {
 	defer cancel()
 
 	// Run will fail (no API client), but no CLI-only override should fire.
-	_, _, _ = router.Run(ctx, exec, node, "test prompt")
+	route, err := ResolveAgentRoute(node, exec, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ResolveAgentRoute: %v", err)
+	}
+	_, _, _ = router.Run(ctx, exec, node, "test prompt", route)
 
 	for _, w := range eng.Warnings {
 		if strings.Contains(w, "cli-only model override") {

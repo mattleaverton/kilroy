@@ -18,11 +18,13 @@ import (
 type recordingHandler struct {
 	label   string
 	called  bool
+	route   engine.AgentRoute
 	outcome runtime.Outcome
 }
 
-func (r *recordingHandler) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
+func (r *recordingHandler) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
 	r.called = true
+	r.route = route
 	return r.outcome, nil
 }
 
@@ -79,6 +81,12 @@ func TestDispatcher_ExecuteRoutesSDKToCodergen(t *testing.T) {
 	if out.Notes != "codergen fired" {
 		t.Fatalf("outcome from wrong handler: %+v", out)
 	}
+	if cg.route.Driver != "openai_sdk" {
+		t.Fatalf("codergen route driver = %q, want openai_sdk", cg.route.Driver)
+	}
+	if cg.route.Backend != engine.BackendAPI {
+		t.Fatalf("codergen route backend = %q, want api", cg.route.Backend)
+	}
 }
 
 // Test 3: a mixed-intent invocation — call dispatch twice with
@@ -108,13 +116,10 @@ func TestDispatcher_ExecuteMixedRouting(t *testing.T) {
 	}
 }
 
-// Test 5 (reviewer regression): an llm_provider=<custom> node where the
-// provider isn't one of the canonical SDK drivers (kimi/zai/minimax/etc.)
-// resolves with Driver="" and Provider!="". The dispatcher must delegate
-// to codergen — agent_router will then pick the backend from
-// cfg.LLM.Providers at execution time. Without this delegation, runs with
-// custom providers fail at dispatch with "no dispatch mapping" before
-// run-config-aware routing has a chance to kick in.
+// Test 5 (reviewer regression): an llm_provider=<known OpenAI-compatible>
+// node routes through an explicit API driver. Empty Driver="" is not a
+// dispatch contract; known custom providers should arrive at codergen with a
+// first-class route.
 func TestDispatcher_ExecuteCustomProvider_DelegatesToCodergen(t *testing.T) {
 	tmux := &recordingHandler{label: "tmux"}
 	cg := &recordingHandler{label: "codergen", outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "codergen handled custom"}}
@@ -135,10 +140,19 @@ func TestDispatcher_ExecuteCustomProvider_DelegatesToCodergen(t *testing.T) {
 		t.Fatalf("tmux handler must not be invoked for custom provider")
 	}
 	if !cg.called {
-		t.Fatalf("codergen handler must be invoked for custom provider with empty Driver (got out=%+v)", out)
+		t.Fatalf("codergen handler must be invoked for custom provider (got out=%+v)", out)
 	}
 	if out.Status != runtime.StatusSuccess {
 		t.Fatalf("expected delegated codergen success; got %+v", out)
+	}
+	if cg.route.Driver != "openai_compat_api" {
+		t.Fatalf("custom provider route driver = %q, want openai_compat_api", cg.route.Driver)
+	}
+	if cg.route.Provider != "minimax" {
+		t.Fatalf("custom provider route provider = %q, want minimax", cg.route.Provider)
+	}
+	if cg.route.Backend != engine.BackendAPI {
+		t.Fatalf("custom provider route backend = %q, want api", cg.route.Backend)
 	}
 }
 

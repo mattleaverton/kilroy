@@ -1,7 +1,7 @@
 // Reviewer regression: when cfg.LLM.Providers declares a non-canonical
 // provider (kimi/zai/minimax/custom OpenAI-compat endpoint), `kilroy run`
 // must route through the dispatcher → codergen → AgentRouter chain
-// without choking on Driver="" at dispatch. Package tests previously
+// with an explicit API route. Package tests previously
 // missed this because they instantiate engine.RunWithConfig directly,
 // bypassing the layered registry the CLI installs. This test exec's the
 // real kilroy binary.
@@ -92,8 +92,8 @@ func TestRun_CustomProvider_DispatcherDelegatesToCodergen(t *testing.T) {
 	}
 
 	// agent_router (codergen) must have made HTTP calls to our fake
-	// server — proving the empty-driver route was delegated to it
-	// rather than rejected at dispatch.
+	// server, proving the resolved OpenAI-compatible API route reached
+	// execution rather than being rejected at dispatch.
 	mu.Lock()
 	gotHits := hits
 	mu.Unlock()

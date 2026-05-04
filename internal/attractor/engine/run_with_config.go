@@ -206,10 +206,11 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	}
 
 	opts := RunOptions{
-		RepoPath:        cfg.Repo.Path,
-		RunBranchPrefix: cfg.Git.RunBranchPrefix,
-		StageTimeout:    durationFromOptionalMSOrDisabled(cfg.RuntimePolicy.StageTimeoutMS),
-		StallTimeout:    durationFromOptionalMSOrDisabled(cfg.RuntimePolicy.StallTimeoutMS),
+		RepoPath:         cfg.Repo.Path,
+		RunBranchPrefix:  cfg.Git.RunBranchPrefix,
+		StageTimeout:     durationFromOptionalMSOrDisabled(cfg.RuntimePolicy.StageTimeoutMS),
+		StallTimeout:     durationFromOptionalMSOrDisabled(cfg.RuntimePolicy.StallTimeoutMS),
+		ProviderRuntimes: cloneProviderRuntimeMap(runtimes),
 		StallCheckInterval: durationFromOptionalMSOrDisabled(
 			cfg.RuntimePolicy.StallCheckIntervalMS,
 		),
@@ -340,7 +341,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	// runProviderCLIPreflight machinery (catalog gates, real LLM prompt
 	// probes) was removed; everything that mattered moved here, and the
 	// rest was either obsolete under v2 routing or noisy and expensive.
-	if _, err := ValidatePreLaunch(g, opts, PolicyDeps{}); err != nil {
+	if _, err := ValidatePreLaunch(g, opts, PolicyDeps{ProviderRuntimes: cloneProviderRuntimeMap(runtimes)}); err != nil {
 		return nil, err
 	}
 

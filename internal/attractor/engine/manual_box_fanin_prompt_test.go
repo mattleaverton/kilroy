@@ -18,9 +18,10 @@ type promptCaptureBackend struct {
 	prompts map[string]string
 }
 
-func (b *promptCaptureBackend) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+func (b *promptCaptureBackend) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 	_ = ctx
 	_ = exec
+	_ = route
 	b.mu.Lock()
 	if b.prompts == nil {
 		b.prompts = map[string]string{}

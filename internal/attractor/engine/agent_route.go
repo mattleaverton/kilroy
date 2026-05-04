@@ -6,12 +6,13 @@
 package engine
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
+	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/policy"
+	"github.com/danshapiro/kilroy/internal/providerspec"
 )
 
 // AgentRoute is the complete routing decision for an agent node. Resolved
@@ -46,33 +47,6 @@ type AgentRoute struct {
 	ClassResult *policy.ResolveResult
 }
 
-type resolvedAgentRouteContextKey struct{}
-
-// ContextWithResolvedAgentRoute carries the dispatcher's already-resolved
-// route to downstream handlers. This keeps the dispatcher as the authoritative
-// route decision while preserving legacy direct CodergenHandler behavior when
-// no dispatcher is involved.
-func ContextWithResolvedAgentRoute(ctx context.Context, route AgentRoute) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, resolvedAgentRouteContextKey{}, route)
-}
-
-func resolvedAgentRouteFromContext(ctx context.Context, nodeID string) (AgentRoute, bool) {
-	if ctx == nil {
-		return AgentRoute{}, false
-	}
-	route, ok := ctx.Value(resolvedAgentRouteContextKey{}).(AgentRoute)
-	if !ok {
-		return AgentRoute{}, false
-	}
-	if strings.TrimSpace(nodeID) != "" && route.NodeID != "" && route.NodeID != nodeID {
-		return AgentRoute{}, false
-	}
-	return route, true
-}
-
 // AuthMethod returns the auth method ("api_key" | "cli_oauth" | "") from
 // the underlying ClassResult, or "" for non-class routes.
 func (r AgentRoute) AuthMethod() string {
@@ -97,6 +71,21 @@ func (r AgentRoute) IsCLI() bool { return r.Backend == BackendCLI }
 // IsAPI reports whether the route runs through the HTTP/SDK path.
 func (r AgentRoute) IsAPI() bool { return r.Backend == BackendAPI }
 
+func AgentRouteFailureOutcome(err error) runtime.Outcome {
+	reason := "agent route: unresolved"
+	if err != nil {
+		reason = fmt.Sprintf("agent route: %v", err)
+	}
+	return runtime.Outcome{
+		Status:        runtime.StatusFail,
+		FailureReason: reason,
+		Meta:          map[string]any{"failure_class": "deterministic"},
+		ContextUpdates: map[string]any{
+			"failure_class": "deterministic",
+		},
+	}
+}
+
 // ResolveAgentRoute is the canonical entry point for turning an agent
 // node into a routing decision. Used by:
 //
@@ -110,6 +99,16 @@ func (r AgentRoute) IsAPI() bool { return r.Backend == BackendAPI }
 func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (AgentRoute, error) {
 	if node == nil {
 		return AgentRoute{}, fmt.Errorf("nil node")
+	}
+
+	if route, ok, err := LoadPreLaunchAgentRouteForExec(exec, node.ID); err != nil {
+		return AgentRoute{}, err
+	} else if ok {
+		if route.ClassResult != nil {
+			emitResolutionEvents(exec, node.ID, route.Class, *route.ClassResult)
+			persistResolution(exec, node.ID, route.Class, *route.ClassResult)
+		}
+		return route, nil
 	}
 
 	cls, hasClass, err := ResolveAgentClass(node, exec, deps)
@@ -185,20 +184,7 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 	provider := strings.TrimSpace(node.Attr("llm_provider", ""))
 	modelID := strings.TrimSpace(node.Attr("llm_model", ""))
 	if provider != "" && modelID != "" {
-		driver := DriverForSDKProvider(provider)
-		canonProv := provider
-		backend := BackendKind("")
-		if driver != "" {
-			canonProv, backend = providerAndBackendForDriver(driver)
-		}
-		// Unknown providers (kimi, zai, minimax, custom OpenAI-compat
-		// endpoints, etc.) are routed via run-config rather than a
-		// canonical driver. The Dispatcher detects Driver=="" with a
-		// non-empty Provider and delegates to codergen
-		// (CodergenHandler/AgentRouter) which resolves them through
-		// cfg.LLM.Providers. Prelaunch stays lenient — typos surface
-		// at execution-time backend lookup; real config-driven
-		// providers continue to work.
+		canonProv, driver, backend := routeForProvider(provider, deps.ProviderRuntimes)
 		return AgentRoute{
 			NodeID:   node.ID,
 			Source:   "llm_provider=" + provider,
@@ -210,6 +196,87 @@ func ResolveAgentRoute(node *model.Node, exec *Execution, deps PolicyDeps) (Agen
 	}
 
 	return AgentRoute{}, fmt.Errorf("agent node %q has no agent_class=, agent_tool=, or llm_provider+llm_model — cannot resolve route", node.ID)
+}
+
+// routeForProvider turns an explicit llm_provider into a provider/driver/backend
+// tuple. Run-config provider runtimes are resolver input here, not a handler
+// fallback later.
+func routeForProvider(provider string, runtimes map[string]ProviderRuntime) (string, string, BackendKind) {
+	canonProv := providerspec.CanonicalProviderKey(provider)
+	if canonProv == "" {
+		canonProv = strings.TrimSpace(provider)
+	}
+	if rt, ok := providerRuntimeForRoute(canonProv, runtimes); ok {
+		switch rt.Backend {
+		case BackendCLI:
+			if driver := cliDriverForProvider(canonProv); driver != "" {
+				return canonProv, driver, BackendCLI
+			}
+			return canonProv, "", BackendCLI
+		case BackendAPI:
+			if driver := DriverForSDKProvider(canonProv); driver != "" {
+				return canonProv, driver, BackendAPI
+			}
+			if driver := driverForAPIProtocol(rt.API.Protocol); driver != "" {
+				return canonProv, driver, BackendAPI
+			}
+			return canonProv, "", BackendAPI
+		}
+	}
+	if driver := DriverForSDKProvider(canonProv); driver != "" {
+		prov, backend := providerAndBackendForDriver(driver)
+		return prov, driver, backend
+	}
+	if spec, ok := providerspec.Builtin(canonProv); ok && spec.API != nil {
+		return canonProv, driverForAPIProtocol(spec.API.Protocol), BackendAPI
+	}
+	return canonProv, "", ""
+}
+
+func providerRuntimeForRoute(provider string, runtimes map[string]ProviderRuntime) (ProviderRuntime, bool) {
+	key := providerspec.CanonicalProviderKey(provider)
+	if key == "" {
+		return ProviderRuntime{}, false
+	}
+	if rt, ok := runtimes[key]; ok {
+		return rt, true
+	}
+	for raw, rt := range runtimes {
+		if providerspec.CanonicalProviderKey(raw) == key {
+			return rt, true
+		}
+	}
+	return ProviderRuntime{}, false
+}
+
+func cliDriverForProvider(provider string) string {
+	switch providerspec.CanonicalProviderKey(provider) {
+	case "anthropic":
+		return "claude_cli"
+	case "openai":
+		return "codex_cli"
+	case "google":
+		return "gemini_cli"
+	default:
+		return ""
+	}
+}
+
+func driverForAPIProtocol(protocol providerspec.APIProtocol) string {
+	switch protocol {
+	case providerspec.ProtocolOpenAIChatCompletions:
+		return "openai_compat_api"
+	case providerspec.ProtocolOpenAIResponses:
+		return "openai_sdk"
+	case providerspec.ProtocolAnthropicMessages:
+		return "anthropic_sdk"
+	case providerspec.ProtocolGoogleGenerateContent:
+		return "google_sdk"
+	case providerspec.ProtocolCodexAppServer:
+		return "codex_app_server_api"
+	default:
+		return ""
+	}
 }
 
 // DriverForAgentTool maps the agent_tool= attribute value to a CLI driver.

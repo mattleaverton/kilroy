@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -170,10 +169,8 @@ func TestAgentRouter_DispatcherResolvedSDKRoute_NotDowngradedByCfg(t *testing.T)
 	if err != nil {
 		t.Fatalf("ResolveAgentRoute: %v", err)
 	}
-	ctx := ContextWithResolvedAgentRoute(context.Background(), resolved)
-
 	prov, mdl, backend, source, err := func() (string, string, BackendKind, string, error) {
-		route, err := router.resolveNodeRouteForRun(ctx, node, nil)
+		route, err := router.nodeRouteFromAgentRoute(node, resolved, true)
 		if err != nil {
 			return "", "", "", "", err
 		}

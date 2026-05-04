@@ -67,6 +67,16 @@ func fakeAgentTemplate(scriptPath string) templates.Template {
 	}
 }
 
+func fakeAgentRoute(nodeID string) engine.AgentRoute {
+	return engine.AgentRoute{
+		NodeID:   nodeID,
+		Source:   "test:fake-agent",
+		Provider: "test",
+		Model:    "fake-model",
+		Backend:  engine.BackendCLI,
+	}
+}
+
 func TestTmuxAgentHandler_FakeAgent_SuccessfulExecution(t *testing.T) {
 	scriptDir := t.TempDir()
 	script := writeFakeAgent(t, scriptDir, "FAKE_AGENT_OUTPUT_OK", 0)
@@ -104,7 +114,7 @@ func TestTmuxAgentHandler_FakeAgent_SuccessfulExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	outcome, err := handler.Execute(ctx, exec, node)
+	outcome, err := handler.ExecuteAgent(ctx, exec, node, fakeAgentRoute(node.ID))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -176,7 +186,7 @@ func TestTmuxAgentHandler_FakeAgent_FailedExecution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	outcome, err := handler.Execute(ctx, execCtx, node)
+	outcome, err := handler.ExecuteAgent(ctx, execCtx, node, fakeAgentRoute(node.ID))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
@@ -225,7 +235,7 @@ func TestTmuxAgentHandler_FakeAgent_WorksInWorkDir(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	outcome, err := handler.Execute(ctx, execCtx, node)
+	outcome, err := handler.ExecuteAgent(ctx, execCtx, node, fakeAgentRoute(node.ID))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

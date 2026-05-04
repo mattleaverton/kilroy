@@ -49,7 +49,7 @@ digraph G {
 
 	var callCount atomic.Int32
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			n := callCount.Add(1)
 			if node.ID == "work" && n == 1 {
 				return "fail", &runtime.Outcome{Status: runtime.StatusFail, FailureReason: "temporary network error: connection reset by peer"}, nil
@@ -146,7 +146,7 @@ digraph G {
 
 	workCallsByLogsRoot := map[string]int{}
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			if node.ID != "work" {
 				return "ok", &runtime.Outcome{Status: runtime.StatusSuccess}, nil
 			}
@@ -250,7 +250,7 @@ digraph G {
 	defer cancel()
 
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			return "fail", &runtime.Outcome{Status: runtime.StatusFail, FailureReason: "temporary upstream failure: 503 service unavailable"}, nil
 		},
 	}
@@ -310,7 +310,7 @@ digraph G {
 	defer cancel()
 
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			return "fail", &runtime.Outcome{Status: runtime.StatusFail, FailureReason: "temporary network error: connection reset by peer"}, nil
 		},
 	}
@@ -399,7 +399,7 @@ digraph G {
 	defer cancel()
 
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			return "fail", &runtime.Outcome{Status: runtime.StatusFail, FailureReason: "compile error: missing symbol TraceGlyph"}, nil
 		},
 	}
@@ -477,7 +477,7 @@ digraph G {
 	defer cancel()
 
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			return "fail", &runtime.Outcome{Status: runtime.StatusFail, FailureReason: "temporary network error: connection reset by peer"}, nil
 		},
 	}
@@ -586,7 +586,7 @@ digraph G {
 
 	var callCount atomic.Int64
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			callCount.Add(1)
 			if node.ID == "impl" {
 				return "ok", &runtime.Outcome{Status: runtime.StatusSuccess}, nil
@@ -739,11 +739,11 @@ func progressIntValue(v any) int {
 
 // countingBackend is a test backend with a configurable function.
 type countingBackend struct {
-	fn func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error)
+	fn func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error)
 }
 
-func (b *countingBackend) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
-	return b.fn(ctx, exec, node, prompt)
+func (b *countingBackend) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
+	return b.fn(ctx, exec, node, prompt, route)
 }
 
 func TestLoopRestart_PersistsContextKeys(t *testing.T) {
@@ -779,7 +779,7 @@ digraph G {
 	var observedCompletedFeatures string
 	var observedIterationCount any
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			if node.ID != "work" {
 				return "ok", &runtime.Outcome{Status: runtime.StatusSuccess}, nil
 			}
@@ -881,7 +881,7 @@ digraph G {
 
 	var callCount atomic.Int32
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			if node.ID != "work" {
 				return "ok", &runtime.Outcome{Status: runtime.StatusSuccess}, nil
 			}

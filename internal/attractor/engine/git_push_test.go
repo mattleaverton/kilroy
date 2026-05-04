@@ -100,7 +100,7 @@ digraph G {
 
 	var callCount atomic.Int32
 	backend := &countingBackend{
-		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string) (string, *runtime.Outcome, error) {
+		fn: func(ctx context.Context, exec *Execution, node *model.Node, prompt string, route AgentRoute) (string, *runtime.Outcome, error) {
 			n := callCount.Add(1)
 			if node.ID == "work" && n == 1 {
 				return "fail", &runtime.Outcome{Status: runtime.StatusFail, FailureReason: "transient_infra: connection reset"}, nil

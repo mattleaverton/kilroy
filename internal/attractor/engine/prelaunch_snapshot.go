@@ -41,6 +41,10 @@ type preLaunchSnapshotStore struct {
 // frozen snapshot: the policy.ResolveResult fields plus the auth Snapshot
 // (for binder Bind at execution time).
 type preLaunchNodeSnap struct {
+	Source   string      `json:"source,omitempty"`
+	Provider string      `json:"provider,omitempty"`
+	Backend  BackendKind `json:"backend,omitempty"`
+
 	ClassName     string `json:"class_name"`
 	ModelID       string `json:"model_id"`
 	Driver        string `json:"driver"`
@@ -154,6 +158,118 @@ func LoadPreLaunchSnapshot(logsRoot, nodeID string) (*policy.ResolveResult, bool
 	return snapToResolveResult(snap), true, nil
 }
 
+func LoadPreLaunchAgentRouteForExec(exec *Execution, nodeID string) (AgentRoute, bool, error) {
+	logsRoot := ""
+	if exec != nil {
+		logsRoot = strings.TrimSpace(exec.LogsRoot)
+		if logsRoot == "" && exec.Engine != nil {
+			logsRoot = strings.TrimSpace(exec.Engine.LogsRoot)
+		}
+	}
+	return LoadPreLaunchAgentRoute(logsRoot, nodeID)
+}
+
+func LoadPreLaunchAgentRoute(logsRoot, nodeID string) (AgentRoute, bool, error) {
+	logsRoot = strings.TrimSpace(logsRoot)
+	nodeID = strings.TrimSpace(nodeID)
+	if logsRoot == "" || nodeID == "" {
+		return AgentRoute{}, false, nil
+	}
+	exists, err := preLaunchSnapshotsFileExists(logsRoot)
+	if err != nil {
+		return AgentRoute{}, false, fmt.Errorf("stat prelaunch snapshots: %w", err)
+	}
+	if !exists {
+		return AgentRoute{}, false, nil
+	}
+	path := filepath.Join(logsRoot, preLaunchSnapshotsFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return AgentRoute{}, false, fmt.Errorf("read %s: %w", path, err)
+	}
+	var store preLaunchSnapshotStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return AgentRoute{}, false, fmt.Errorf("parse %s: %w", path, err)
+	}
+	snap, ok := store.Snapshots[nodeID]
+	if !ok {
+		return AgentRoute{}, false, fmt.Errorf(
+			"prelaunch_snapshots.json exists but has no entry for node %q — snapshot integrity broken; do not silently re-resolve",
+			nodeID,
+		)
+	}
+	route, err := snapToAgentRoute(nodeID, snap)
+	if err != nil {
+		return AgentRoute{}, false, err
+	}
+	return route, true, nil
+}
+
+func agentRouteToSnap(route AgentRoute) preLaunchNodeSnap {
+	if route.ClassResult != nil {
+		snap := resolveResultToSnap(route.Class, *route.ClassResult)
+		snap.Source = route.Source
+		snap.Provider = route.Provider
+		snap.Backend = route.Backend
+		return snap
+	}
+	return preLaunchNodeSnap{
+		Source:   route.Source,
+		Provider: route.Provider,
+		ModelID:  route.Model,
+		Driver:   route.Driver,
+		Backend:  route.Backend,
+	}
+}
+
+func snapToAgentRoute(nodeID string, snap preLaunchNodeSnap) (AgentRoute, error) {
+	backend := snap.Backend
+	provider := strings.TrimSpace(snap.Provider)
+	if backend == "" && snap.Driver != "" {
+		if p, be := providerAndBackendForDriver(snap.Driver); be != "" {
+			backend = be
+			if provider == "" {
+				provider = p
+			}
+		}
+	}
+	if provider == "" {
+		provider, _ = providerAndBackendForDriver(snap.Driver)
+	}
+	if snap.ClassName != "" {
+		res := snapToResolveResult(snap)
+		if provider == "" {
+			return AgentRoute{}, fmt.Errorf("prelaunch snapshot has unknown driver %q", snap.Driver)
+		}
+		source := strings.TrimSpace(snap.Source)
+		if source == "" {
+			source = "policy_class:" + snap.ClassName
+		}
+		return AgentRoute{
+			NodeID:      nodeID,
+			Source:      source,
+			Class:       snap.ClassName,
+			Provider:    provider,
+			Model:       snap.ModelID,
+			Driver:      snap.Driver,
+			Backend:     backend,
+			ClassResult: res,
+		}, nil
+	}
+	source := strings.TrimSpace(snap.Source)
+	if source == "" && provider != "" {
+		source = "llm_provider=" + provider
+	}
+	return AgentRoute{
+		NodeID:   nodeID,
+		Source:   source,
+		Provider: provider,
+		Model:    snap.ModelID,
+		Driver:   snap.Driver,
+		Backend:  backend,
+	}, nil
+}
+
 // resolveResultToSnap converts a policy.ResolveResult into the on-disk
 // frozen-snapshot shape.
 func resolveResultToSnap(className string, res policy.ResolveResult) preLaunchNodeSnap {
@@ -173,6 +289,7 @@ func resolveResultToSnap(className string, res policy.ResolveResult) preLaunchNo
 		resolvedAt = res.ResolvedAt.UTC().Format(time.RFC3339Nano)
 	}
 	return preLaunchNodeSnap{
+		Source:        "policy_class:" + className,
 		ClassName:     className,
 		ModelID:       res.ModelID,
 		Driver:        res.Driver,

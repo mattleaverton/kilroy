@@ -601,13 +601,10 @@ func TestValidatePreLaunch_NonClass_UnknownAgentTool_FailsLoudly(t *testing.T) {
 	}
 }
 
-// Unknown llm_provider= (kimi, zai, custom OpenAI-compat endpoints) is
-// deferred to the runtime — prelaunch accepts these as OK because they
-// resolve through cfg.LLM.Providers in agent_router. The dispatcher
-// catches the empty-driver case at execution time. This isn't a
-// reviewer-flagged hole; documenting the deferred-validation seam so
-// future tightenings don't accidentally regress legacy provider plugins.
-func TestValidatePreLaunch_NonClass_UnknownLLMProvider_DefersToRuntime(t *testing.T) {
+// Built-in OpenAI-compatible llm_provider= values are accepted by prelaunch
+// as first-class API routes. They do not rely on handler-level empty-driver
+// reinterpretation.
+func TestValidatePreLaunch_NonClass_OpenAICompatProvider_FirstClassRoute(t *testing.T) {
 	g := graphWithAgentNode(t, "agent", map[string]string{
 		"llm_provider": "kimi",
 		"llm_model":    "kimi-k2.5",

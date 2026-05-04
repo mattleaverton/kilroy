@@ -19,13 +19,13 @@ import (
 // Exported as agentHandlerImpl rather than reusing engine.Handler so
 // tests can inject mocks without dragging in the full engine surface.
 type agentHandlerImpl interface {
-	Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error)
+	ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error)
 }
 
 // Dispatcher is the single agent handler registered for shape=box nodes.
 // It resolves the agent route (engine.ResolveAgentRoute is the canonical
 // resolver) and delegates to either the tmux handler (CLI drivers) or
-// the codergen handler (SDK drivers).
+// the codergen handler (API/SDK drivers).
 type Dispatcher struct {
 	Tmux      agentHandlerImpl
 	Codergen  agentHandlerImpl
@@ -49,12 +49,18 @@ func (d *Dispatcher) UsesFidelity() bool { return true }
 // RequiresProvider is true: every agent node needs a resolved provider.
 func (d *Dispatcher) RequiresProvider() bool { return true }
 
-// Execute routes the node to the appropriate handler based on the
-// resolved driver. The full AgentRoute (provider/model/driver/backend
-// plus auth snapshot when class-resolved) is computed once here via
-// engine.ResolveAgentRoute and emitted on progress.ndjson; API handlers
-// receive that route through context, keeping the dispatcher as the
-// authoritative decision for the execution path.
+// AgentRoutePolicyDeps exposes dispatcher test deps to the engine when the
+// engine resolves a route before invoking ExecuteAgent.
+func (d *Dispatcher) AgentRoutePolicyDeps() engine.PolicyDeps {
+	if d == nil {
+		return engine.PolicyDeps{}
+	}
+	return d.PolicyDep
+}
+
+// Execute routes the node to the appropriate handler. It exists for tests and
+// legacy direct calls that bypass the engine's route-aware execution path.
+// Normal execution should call ExecuteAgent with an already-resolved route.
 //
 // A node that resolves to no usable driver — or to one without a
 // dispatch mapping — is a deterministic failure. Prelaunch should have
@@ -62,16 +68,15 @@ func (d *Dispatcher) RequiresProvider() bool { return true }
 func (d *Dispatcher) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
 	route, err := engine.ResolveAgentRoute(node, exec, d.PolicyDep)
 	if err != nil {
-		return runtime.Outcome{
-			Status:        runtime.StatusFail,
-			FailureReason: fmt.Sprintf("dispatcher: %v", err),
-			Meta:          map[string]any{"failure_class": "deterministic"},
-			ContextUpdates: map[string]any{
-				"failure_class": "deterministic",
-			},
-		}, nil
+		return engine.AgentRouteFailureOutcome(err), nil
 	}
+	return d.ExecuteAgent(ctx, exec, node, route)
+}
 
+// ExecuteAgent routes an explicitly resolved AgentRoute to the correct
+// execution handler. Sub-handlers execute the supplied route and do not
+// re-resolve provider/model/backend/auth from node attributes.
+func (d *Dispatcher) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
 	if exec != nil && exec.Engine != nil {
 		exec.Engine.AppendProgress(map[string]any{
 			"event":    "agent_dispatch",
@@ -86,26 +91,22 @@ func (d *Dispatcher) Execute(ctx context.Context, exec *engine.Execution, node *
 
 	switch dispatchPathForDriver(route.Driver) {
 	case dispatchCLI:
-		return d.tmux().Execute(ctx, exec, node)
+		return d.tmux().ExecuteAgent(ctx, exec, node, route)
 	case dispatchAPI:
-		return d.codergen().Execute(engine.ContextWithResolvedAgentRoute(ctx, route), exec, node)
+		return d.codergen().ExecuteAgent(ctx, exec, node, route)
 	default:
-		// Empty driver with a non-empty Provider is the deferred-to-
-		// runtime case: custom or non-canonical providers (kimi, zai,
-		// minimax, custom OpenAI-compat endpoints) registered via
-		// cfg.LLM.Providers in run.yaml. Delegate to codergen
-		// (AgentRouter) which consults cfg to pick the backend at
-		// execution time. agent_router fails loudly there if cfg has
-		// no entry, surfacing a clear "no backend configured" error
-		// rather than the cryptic "no dispatch mapping".
+		// Ad-hoc providers can still arrive without a named driver when
+		// their runtime config does not map to a built-in protocol. Delegate
+		// to codergen only when the route at least names a provider; the
+		// router will fail loudly if the route has no executable backend.
 		if route.Driver == "" && strings.TrimSpace(route.Provider) != "" {
-			return d.codergen().Execute(engine.ContextWithResolvedAgentRoute(ctx, route), exec, node)
+			return d.codergen().ExecuteAgent(ctx, exec, node, route)
 		}
 		return runtime.Outcome{
 			Status: runtime.StatusFail,
 			FailureReason: fmt.Sprintf(
 				"dispatcher: driver %q has no dispatch mapping; expected one of "+
-					"claude_cli|codex_cli|gemini_cli|opencode|anthropic_sdk|openai_sdk|google_sdk",
+					"claude_cli|codex_cli|gemini_cli|opencode|anthropic_sdk|openai_sdk|google_sdk|openai_compat_api|codex_app_server_api",
 				route.Driver),
 			Meta:           map[string]any{"failure_class": "deterministic"},
 			ContextUpdates: map[string]any{"failure_class": "deterministic"},
@@ -143,7 +144,7 @@ func dispatchPathForDriver(driver string) dispatchPath {
 	switch strings.TrimSpace(driver) {
 	case "claude_cli", "codex_cli", "gemini_cli", "opencode":
 		return dispatchCLI
-	case "anthropic_sdk", "openai_sdk", "google_sdk":
+	case "anthropic_sdk", "openai_sdk", "google_sdk", "openai_compat_api", "codex_app_server_api":
 		return dispatchAPI
 	default:
 		return dispatchUnknown

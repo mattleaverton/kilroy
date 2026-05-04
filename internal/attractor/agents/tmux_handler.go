@@ -47,23 +47,20 @@ func (h *TmuxAgentHandler) UsesFidelity() bool { return true }
 // RequiresProvider implements engine.ProviderRequiringHandler.
 func (h *TmuxAgentHandler) RequiresProvider() bool { return true }
 
-// Execute implements engine.Handler. Spawns a CLI tool in a tmux session,
-// waits for completion, captures output, and returns an outcome.
+// Execute implements engine.Handler for legacy direct calls. Normal engine and
+// dispatcher execution use ExecuteAgent with an explicit route.
 func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
-	// Resolve via the canonical engine.ResolveAgentRoute — same call the
-	// Dispatcher made when picking this handler. Class-routed nodes read
-	// the prelaunch snapshot via ResolveAgentClass internally; explicit
-	// agent_tool=/llm_provider= nodes derive a Driver directly. The
-	// AgentRoute is the single source of truth for everything below
-	// (driver, model, provider, auth snapshot).
-	//
-	// A resolver error here means the node was vague or the
-	// agent_tool/llm_provider didn't map to a canonical driver. The
-	// Dispatcher and prelaunch both catch this earlier; in direct-call
-	// test paths that bypass them, fall back to a zero AgentRoute and
-	// let resolveToolName below pick a tool from registered templates.
-	route, _ := engine.ResolveAgentRoute(node, exec, h.PolicyDeps)
+	route, err := engine.ResolveAgentRoute(node, exec, h.PolicyDeps)
+	if err != nil {
+		return engine.AgentRouteFailureOutcome(err), nil
+	}
+	return h.ExecuteAgent(ctx, exec, node, route)
+}
 
+// ExecuteAgent implements route-aware agent execution. It spawns a CLI tool in
+// a tmux session, waits for completion, captures output, and returns an
+// outcome.
+func (h *TmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
 	// Map driver → tmux tool. CLI drivers have a 1:1 mapping; SDK
 	// drivers (anthropic_sdk/openai_sdk/google_sdk) should not have
 	// reached the tmux handler — that's a dispatch bug. Reject loudly

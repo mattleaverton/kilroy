@@ -82,6 +82,80 @@ func TestValidatePreLaunch_WritesPrelaunchSnapshots(t *testing.T) {
 	}
 }
 
+func TestValidatePreLaunch_WritesSnapshotForNonClassAgentRoute(t *testing.T) {
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "openai",
+		"llm_model":    "gpt-5.4",
+	})
+	logsRoot := t.TempDir()
+
+	_, err := ValidatePreLaunch(g, RunOptions{LogsRoot: logsRoot}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+
+	snapPath := filepath.Join(logsRoot, "prelaunch_snapshots.json")
+	raw, err := os.ReadFile(snapPath)
+	if err != nil {
+		t.Fatalf("read prelaunch_snapshots.json: %v", err)
+	}
+	var store preLaunchSnapshotStore
+	if err := json.Unmarshal(raw, &store); err != nil {
+		t.Fatalf("decode snapshots: %v", err)
+	}
+	snap, ok := store.Snapshots["agent"]
+	if !ok {
+		t.Fatalf("no snapshot for node 'agent'; got %v", store.Snapshots)
+	}
+	if snap.Source != "llm_provider=openai" {
+		t.Errorf("source = %q, want llm_provider=openai", snap.Source)
+	}
+	if snap.Provider != "openai" {
+		t.Errorf("provider = %q, want openai", snap.Provider)
+	}
+	if snap.Driver != "openai_sdk" {
+		t.Errorf("driver = %q, want openai_sdk", snap.Driver)
+	}
+	if snap.Backend != BackendAPI {
+		t.Errorf("backend = %q, want api", snap.Backend)
+	}
+}
+
+func TestResolveAgentRoute_UsesFrozenNonClassSnapshot(t *testing.T) {
+	logsRoot := t.TempDir()
+	snap := preLaunchNodeSnap{
+		Source:   "llm_provider=anthropic",
+		Provider: "anthropic",
+		ModelID:  "claude-haiku-4.5",
+		Driver:   "anthropic_sdk",
+		Backend:  BackendAPI,
+	}
+	if err := writePreLaunchSnapshots(logsRoot, map[string]preLaunchNodeSnap{"agent": snap}); err != nil {
+		t.Fatalf("write snapshot: %v", err)
+	}
+
+	node := &model.Node{
+		ID: "agent",
+		Attrs: map[string]string{
+			"llm_provider": "openai",
+			"llm_model":    "gpt-5.4",
+		},
+	}
+	route, err := ResolveAgentRoute(node, &Execution{LogsRoot: logsRoot}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ResolveAgentRoute: %v", err)
+	}
+	if route.Provider != "anthropic" {
+		t.Fatalf("provider = %q, want frozen anthropic", route.Provider)
+	}
+	if route.Model != "claude-haiku-4.5" {
+		t.Fatalf("model = %q, want frozen claude-haiku-4.5", route.Model)
+	}
+	if route.Driver != "anthropic_sdk" {
+		t.Fatalf("driver = %q, want frozen anthropic_sdk", route.Driver)
+	}
+}
+
 // TestResolveAgentClass_PrefersFrozenSnapshot verifies that when a
 // prelaunch snapshot exists, ResolveAgentClass uses it INSTEAD of
 // running policy.Resolve. The test injects a snapshot pointing to one
