@@ -250,8 +250,10 @@ exit 0
 }
 
 // TestTmuxAgentHandler_ClassAttribute_NonCLIDriver_Errors verifies that when
-// policy resolves to a non-CLI driver under --tmux mode, the handler refuses
-// loudly instead of silently using whatever tool the legacy fallback would pick.
+// policy resolves to a non-CLI driver and the tmux handler is somehow
+// invoked anyway (the dispatcher should never route that way; this is
+// a belt-and-braces check), the handler refuses loudly rather than
+// silently using whatever tool the legacy fallback would pick.
 func TestTmuxAgentHandler_ClassAttribute_NonCLIDriver_Errors(t *testing.T) {
 	apiOnlyPolicy := &policy.Data{
 		SchemaVersion: "1",
