@@ -25,6 +25,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/auth"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
+	"github.com/danshapiro/kilroy/internal/providerspec"
 )
 
 // buildPreLaunchDeps wraps PolicyDeps to give the prelaunch loop one
@@ -113,6 +114,22 @@ type PreLaunchNodeCheck struct {
 	// "missing env var" from "binary not found" without re-parsing the
 	// human-readable Errors strings.
 	SkippedCandidates []PreLaunchSkippedCandidate `json:"skipped_candidates,omitempty"`
+	// MissingCredentials is set when the resolved route requires an
+	// API-key env var that the prelaunch credentials probe could not
+	// find. Surfaces only for opencode-style multi-provider indirection
+	// today — the class-routed path already validates auth at resolve
+	// time and the SDK adapters check at process start.
+	MissingCredentials *PreLaunchMissingCredentials `json:"missing_credentials,omitempty"`
+}
+
+// PreLaunchMissingCredentials describes which API-key env vars were
+// checked (in precedence order) and the provider that needed one.
+// Populated by the credentials probe when none of the candidate env
+// vars hold a non-empty value.
+type PreLaunchMissingCredentials struct {
+	Provider string   `json:"provider"`
+	EnvVars  []string `json:"env_vars"`
+	Hint     string   `json:"hint,omitempty"`
 }
 
 // PreLaunchSkippedCandidate is the JSON-friendly mirror of
@@ -241,6 +258,25 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 			if probeErr := probeCLIBinary(binaryPath); probeErr != nil {
 				check.Status = "fail"
 				check.Errors = append(check.Errors, fmt.Sprintf("CLI binary %s does not respond to --help (required by driver %s): %v", binaryPath, route.Driver, probeErr))
+				report.Nodes = append(report.Nodes, check)
+				report.Summary.Fail++
+				continue
+			}
+		}
+
+		// Opencode is multi-provider: the binary is invoked locally but it
+		// then makes HTTP calls to whichever <PROVIDER>_API_KEY the user
+		// has configured. The class-routed path already checks api_key
+		// chains at resolve time; non-class opencode routes don't, so a
+		// missing key currently surfaces as a 401 deep inside opencode's
+		// JSON output and the run loops doing nothing. Catch that here.
+		if route.Driver == "opencode" {
+			if missing := probeAPIKeyCredentials(route.Provider); missing != nil {
+				check.Status = "fail"
+				check.MissingCredentials = missing
+				check.Errors = append(check.Errors, fmt.Sprintf(
+					"missing API-key credentials for provider %q (route via opencode): none of %s set or all empty/whitespace. %s",
+					missing.Provider, strings.Join(missing.EnvVars, ", "), missing.Hint))
 				report.Nodes = append(report.Nodes, check)
 				report.Summary.Fail++
 				continue
@@ -435,6 +471,52 @@ func extractSkippedCandidates(err error) []PreLaunchSkippedCandidate {
 		})
 	}
 	return out
+}
+
+// probeAPIKeyCredentials checks whether at least one of the API-key env
+// vars opencode would pass through for the given provider holds a
+// non-empty value. Returns nil when a key is present (or when the
+// provider is unknown — best-effort probe; let the upstream binary
+// produce its own error rather than blocking on a provider whose env
+// var contract we don't know).
+//
+// Precedence mirrors the opencode template's BuildEnv: <NAME>_KILROY
+// before <NAME>. For canonical providers (anthropic/openai/google) the
+// chain-driven binding.APIKeyEnvOrder list is used so we honor the
+// richer multi-source order encoded in default_chains.toml.
+func probeAPIKeyCredentials(provider string) *PreLaunchMissingCredentials {
+	canonProvider := providerspec.CanonicalProviderKey(provider)
+	if canonProvider == "" {
+		canonProvider = strings.TrimSpace(provider)
+	}
+	if canonProvider == "" {
+		return nil
+	}
+	envVars := binding.APIKeyEnvOrder(canonProvider)
+	if len(envVars) == 0 {
+		spec, ok := providerspec.Builtin(canonProvider)
+		if !ok || spec.API == nil {
+			return nil
+		}
+		canonical := strings.TrimSpace(spec.API.DefaultAPIKeyEnv)
+		if canonical == "" {
+			return nil
+		}
+		envVars = []string{canonical + "_KILROY", canonical}
+	}
+	for _, name := range envVars {
+		if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+			return nil
+		}
+	}
+	hint := fmt.Sprintf(
+		"set %s (or %s) and rerun. Inspect with `kilroy auth list` or `kilroy auth suggest-fix`.",
+		envVars[0], envVars[len(envVars)-1])
+	return &PreLaunchMissingCredentials{
+		Provider: canonProvider,
+		EnvVars:  envVars,
+		Hint:     hint,
+	}
 }
 
 // cliBinaryForDriver maps a CLI driver to the expected PATH binary name.

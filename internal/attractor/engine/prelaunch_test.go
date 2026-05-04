@@ -870,6 +870,201 @@ func TestIsCLIDriver_Opencode_Recognized(t *testing.T) {
 	}
 }
 
+// stageFakeOpencode writes an executable shell stub named "opencode" into
+// a temp dir, points PATH at that dir, and returns the dir. Used by the
+// credentials-probe tests to get past the binary-presence + capability
+// checks so the credentials check is the failure under test.
+func stageFakeOpencode(t *testing.T) string {
+	t.Helper()
+	binDir := t.TempDir()
+	fake := filepath.Join(binDir, "opencode")
+	if err := os.WriteFile(fake, []byte("#!/bin/bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("stage fake opencode: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+	return binDir
+}
+
+// clearAPIKeyEnvVars unsets every API-key env var the credentials probe
+// might find on dev machines, so leaks from the developer shell don't
+// mask "missing key" assertions.
+func clearAPIKeyEnvVars(t *testing.T) {
+	t.Helper()
+	names := []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_KILROY",
+		"OPENAI_API_KEY", "OPENAI_API_KEY_KILROY",
+		"GOOGLE_API_KEY", "GOOGLE_API_KEY_KILROY",
+		"GEMINI_API_KEY", "GEMINI_API_KEY_KILROY",
+		"GOOGLE_GENERATIVE_AI_API_KEY",
+		"KIMI_API_KEY", "KIMI_API_KEY_KILROY",
+		"ZAI_API_KEY", "ZAI_API_KEY_KILROY",
+		"CEREBRAS_API_KEY", "CEREBRAS_API_KEY_KILROY",
+		"MINIMAX_API_KEY", "MINIMAX_API_KEY_KILROY",
+		"INCEPTION_API_KEY", "INCEPTION_API_KEY_KILROY",
+	}
+	for _, n := range names {
+		t.Setenv(n, "")
+	}
+}
+
+// TestPrelaunch_OpencodeKimi_MissingKey_FailsLoudly is the headline
+// regression: an opencode-routed node whose downstream provider needs
+// an API key must fail prelaunch loudly when the env var is missing,
+// rather than letting opencode hit a 401 deep inside the run loop.
+func TestPrelaunch_OpencodeKimi_MissingKey_FailsLoudly(t *testing.T) {
+	stageFakeOpencode(t)
+	clearAPIKeyEnvVars(t)
+
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_tool":   "opencode",
+		"llm_provider": "kimi",
+		"llm_model":    "kimi-k2.5",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err == nil {
+		t.Fatal("expected fail when KIMI_API_KEY is missing for opencode route")
+	}
+	if _, ok := err.(*PreLaunchError); !ok {
+		t.Errorf("error type = %T, want *PreLaunchError", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "fail" {
+		t.Fatalf("expected one failed node, got %+v", report.Nodes)
+	}
+	mc := report.Nodes[0].MissingCredentials
+	if mc == nil {
+		t.Fatal("expected MissingCredentials on the failed node, got nil")
+	}
+	if mc.Provider != "kimi" {
+		t.Errorf("MissingCredentials.Provider = %q, want kimi", mc.Provider)
+	}
+	if !envVarsContain(mc.EnvVars, "KIMI_API_KEY") || !envVarsContain(mc.EnvVars, "KIMI_API_KEY_KILROY") {
+		t.Errorf("MissingCredentials.EnvVars = %v, want list containing KIMI_API_KEY and KIMI_API_KEY_KILROY", mc.EnvVars)
+	}
+	if !anyError(report.Nodes[0].Errors, "KIMI_API_KEY") {
+		t.Errorf("expected per-node error to mention KIMI_API_KEY, got %v", report.Nodes[0].Errors)
+	}
+	if !anyError(report.Nodes[0].Errors, "kilroy auth") {
+		t.Errorf("expected per-node error to surface a remediation hint, got %v", report.Nodes[0].Errors)
+	}
+}
+
+// TestPrelaunch_OpencodeKimi_KeyPresent_Passes confirms the probe
+// is satisfied by the _KILROY-suffixed variant alone (the budget-isolated
+// kilroy convention) — i.e. it doesn't require both vars to be set.
+func TestPrelaunch_OpencodeKimi_KeyPresent_Passes(t *testing.T) {
+	stageFakeOpencode(t)
+	clearAPIKeyEnvVars(t)
+	t.Setenv("KIMI_API_KEY_KILROY", "testvalue")
+
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_tool":   "opencode",
+		"llm_provider": "kimi",
+		"llm_model":    "kimi-k2.5",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "ok" {
+		t.Fatalf("expected one ok node, got %+v", report.Nodes)
+	}
+	if report.Nodes[0].MissingCredentials != nil {
+		t.Errorf("MissingCredentials should be nil when KIMI_API_KEY_KILROY is set, got %+v", report.Nodes[0].MissingCredentials)
+	}
+}
+
+// TestPrelaunch_OpencodeAnthropic_KeyPresent_Passes is the canonical-
+// provider happy path: opencode + anthropic with ANTHROPIC_API_KEY set
+// must continue to pass prelaunch — we did not regress the existing flow.
+func TestPrelaunch_OpencodeAnthropic_KeyPresent_Passes(t *testing.T) {
+	stageFakeOpencode(t)
+	clearAPIKeyEnvVars(t)
+	t.Setenv("ANTHROPIC_API_KEY", "testvalue")
+
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_tool":   "opencode",
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-5",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "ok" {
+		t.Fatalf("expected one ok node, got %+v", report.Nodes)
+	}
+	if report.Nodes[0].MissingCredentials != nil {
+		t.Errorf("MissingCredentials should be nil for opencode+anthropic when ANTHROPIC_API_KEY set, got %+v", report.Nodes[0].MissingCredentials)
+	}
+}
+
+// TestPrelaunch_NonOpencode_NoCredentialCheck confirms the probe is
+// scoped to the opencode driver. Direct claude_cli (cli_oauth) and
+// non-class anthropic_sdk routes have their own auth handling and
+// must not be blocked by this probe — even with no API key in env.
+func TestPrelaunch_NonOpencode_NoCredentialCheck(t *testing.T) {
+	clearAPIKeyEnvVars(t)
+
+	// Non-class llm_provider+llm_model = anthropic — driver resolves to
+	// anthropic_sdk. This route is exercised by the SDK adapters, which
+	// have their own LookupAPIKeyEnv check at process start; prelaunch
+	// must not duplicate that here. With no env set, the node should
+	// still pass prelaunch (the SDK adapter will surface the missing
+	// key separately at execution time).
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"llm_provider": "anthropic",
+		"llm_model":    "claude-sonnet-4-6",
+	})
+	report, err := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if err != nil {
+		t.Fatalf("ValidatePreLaunch: %v", err)
+	}
+	if len(report.Nodes) != 1 || report.Nodes[0].Status != "ok" {
+		t.Fatalf("expected one ok node for non-opencode route, got %+v", report.Nodes)
+	}
+	if report.Nodes[0].MissingCredentials != nil {
+		t.Errorf("expected MissingCredentials nil for non-opencode route, got %+v", report.Nodes[0].MissingCredentials)
+	}
+	if report.Nodes[0].ResolvedDriver == "opencode" {
+		t.Errorf("resolved_driver = %q, expected non-opencode driver for this test", report.Nodes[0].ResolvedDriver)
+	}
+}
+
+// TestPrelaunch_Credentials_Hint_MentionsAuthCommands confirms the
+// credential failure surfaces a remediation hint pointing at the auth
+// CLI commands, satisfying the "user sees the failure within seconds"
+// bar from the task spec.
+func TestPrelaunch_Credentials_Hint_MentionsAuthCommands(t *testing.T) {
+	stageFakeOpencode(t)
+	clearAPIKeyEnvVars(t)
+
+	g := graphWithAgentNode(t, "agent", map[string]string{
+		"agent_tool":   "opencode",
+		"llm_provider": "zai",
+		"llm_model":    "glm-4.6",
+	})
+	report, _ := ValidatePreLaunch(g, RunOptions{LogsRoot: t.TempDir()}, PolicyDeps{})
+	if len(report.Nodes) != 1 || report.Nodes[0].MissingCredentials == nil {
+		t.Fatalf("expected MissingCredentials populated, got %+v", report.Nodes)
+	}
+	hint := report.Nodes[0].MissingCredentials.Hint
+	if !strings.Contains(hint, "kilroy auth list") && !strings.Contains(hint, "kilroy auth suggest-fix") {
+		t.Errorf("hint %q should mention `kilroy auth list` or `kilroy auth suggest-fix`", hint)
+	}
+	if !strings.Contains(hint, "ZAI_API_KEY") {
+		t.Errorf("hint %q should name the missing env var", hint)
+	}
+}
+
+func envVarsContain(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
 // TestPrelaunch_Opencode_BinaryMissing_FailsLoudly verifies that when an
 // opencode-driven node hits prelaunch and the opencode binary is not on
 // PATH, validation fails with a structured per-node error — same shape
