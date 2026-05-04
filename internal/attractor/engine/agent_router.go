@@ -168,10 +168,14 @@ func providerAndBackendForDriver(driver string) (string, BackendKind) {
 // route decision) and translating the AgentRoute into the local
 // nodeRoute view that runAPI/runCLI consume.
 //
-// For legacy providers (kimi/zai/minimax/custom OpenAI-compat), the
-// resolver returns Backend="" — we fall back to backendForProvider to
-// pick the backend from cfg.LLM.Providers. Only legacy ad-hoc graphs
-// that use llm_provider= without a canonical SDK driver hit this seam.
+// Backend selection precedence:
+//
+//  1. Class-resolved: route.Backend (from policy driver mapping) wins
+//     unconditionally — class routing is authoritative.
+//  2. Legacy llm_provider= path: cfg.LLM.Providers[<prov>].Backend
+//     wins. This preserves the run-config override behavior tests
+//     rely on (e.g. forcing BackendCLI for openai via cfg). Falls back
+//     to route.Backend if cfg has no entry, then to a hard error.
 func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (nodeRoute, error) {
 	route, err := ResolveAgentRoute(node, exec, PolicyDeps{Load: r.policyLoad, Resolver: r.policyResolver})
 	if err != nil {
@@ -190,13 +194,19 @@ func (r *AgentRouter) resolveNodeRouteInner(node *model.Node, exec *Execution) (
 	}
 
 	backend := route.Backend
-	if backend == "" {
-		// Legacy non-canonical provider (kimi/zai/minimax/etc.). Pick
-		// backend from cfg.LLM.Providers; fail loudly if no config row.
-		backend = r.backendForProvider(prov)
-		if backend == "" {
-			return nodeRoute{}, fmt.Errorf("no backend configured for provider %s", prov)
+	if route.ClassResult == nil {
+		// Non-class routes: cfg.LLM.Providers override wins. Catches
+		// the test fixture pattern of declaring
+		// `cfg.LLM.Providers["openai"].Backend = BackendCLI` to force
+		// the CLI path for canonical providers, plus legacy
+		// non-canonical providers (kimi/zai/minimax/custom
+		// OpenAI-compat) that ResolveAgentRoute leaves Backend="".
+		if cfgBe := r.backendForProvider(prov); cfgBe != "" {
+			backend = cfgBe
 		}
+	}
+	if backend == "" {
+		return nodeRoute{}, fmt.Errorf("no backend configured for provider %s", prov)
 	}
 
 	source := route.Source
