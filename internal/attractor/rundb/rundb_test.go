@@ -300,6 +300,36 @@ func TestPruneRuns_Orphans(t *testing.T) {
 	}
 }
 
+// ListRuns with Orphans=true must mirror PruneRuns(Orphans=true) semantics:
+// only return rows whose status is terminal (success/fail/canceled) AND whose
+// logs_root directory is missing on disk. Non-terminal rows with missing dirs
+// must be excluded; terminal rows whose dirs still exist must be excluded.
+func TestListRuns_Orphans_OnlyTerminalAndMissingDir(t *testing.T) {
+	db := openTestDB(t)
+	existingDir := t.TempDir()
+
+	_ = db.InsertRun(RunRecord{RunID: "term-missing", Status: "fail", LogsRoot: "/nonexistent/path/logs-1", StartedAt: time.Now()})
+	_ = db.InsertRun(RunRecord{RunID: "term-exists", Status: "success", LogsRoot: existingDir, StartedAt: time.Now()})
+	_ = db.InsertRun(RunRecord{RunID: "running-missing", Status: "running", LogsRoot: "/nonexistent/path/logs-2", StartedAt: time.Now()})
+	_ = db.InsertRun(RunRecord{RunID: "interrupted-missing", Status: "interrupted", LogsRoot: "/nonexistent/path/logs-3", StartedAt: time.Now()})
+	_ = db.InsertRun(RunRecord{RunID: "term-empty-logs", Status: "canceled", LogsRoot: "", StartedAt: time.Now()})
+
+	got, err := db.ListRuns(ListFilter{Orphans: true})
+	if err != nil {
+		t.Fatalf("ListRuns: %v", err)
+	}
+	if len(got) != 1 {
+		ids := make([]string, len(got))
+		for i, r := range got {
+			ids[i] = r.RunID
+		}
+		t.Fatalf("ListRuns(Orphans) returned %d rows %v, want 1 (term-missing)", len(got), ids)
+	}
+	if got[0].RunID != "term-missing" {
+		t.Fatalf("ListRuns(Orphans)[0] = %q, want %q", got[0].RunID, "term-missing")
+	}
+}
+
 func TestNodeCount_InRunSummary(t *testing.T) {
 	db := openTestDB(t)
 	_ = db.InsertRun(RunRecord{RunID: "r1", Status: "running", StartedAt: time.Now()})

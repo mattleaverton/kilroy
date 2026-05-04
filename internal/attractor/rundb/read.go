@@ -78,6 +78,7 @@ type ListFilter struct {
 	GraphName string            // filter by graph name pattern
 	Sort      string            // "newest" (default), "oldest", "longest"
 	Limit     int               // max results (0 = no limit)
+	Orphans   bool              // include only runs with terminal status whose logs_root is missing on disk
 }
 
 // ListRuns returns runs matching the filter, newest first.
@@ -97,6 +98,9 @@ func (d *DB) ListRuns(f ListFilter) ([]RunSummary, error) {
 		where = append(where, "json_extract(labels_json, ?) = ?")
 		args = append(args, "$."+k, v)
 	}
+	if f.Orphans {
+		where = append(where, "status IN ('success', 'fail', 'canceled')")
+	}
 
 	clause := ""
 	if len(where) > 0 {
@@ -113,7 +117,24 @@ func (d *DB) ListRuns(f ListFilter) ([]RunSummary, error) {
 	if f.Limit > 0 {
 		clause += fmt.Sprintf(" LIMIT %d", f.Limit)
 	}
-	return d.queryRuns(clause, args)
+	results, err := d.queryRuns(clause, args)
+	if err != nil {
+		return nil, err
+	}
+	if !f.Orphans {
+		return results, nil
+	}
+	filtered := results[:0]
+	for _, r := range results {
+		if strings.TrimSpace(r.LogsRoot) == "" {
+			continue
+		}
+		if _, err := fileInfoStat(r.LogsRoot); err == nil {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered, nil
 }
 
 // PruneFilter specifies criteria for pruning old runs.

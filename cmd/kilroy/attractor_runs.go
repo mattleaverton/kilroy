@@ -536,7 +536,7 @@ func pruneFromDB(beforeTime time.Time, graphPattern, labelKey, labelVal string, 
 
 	if dryRun {
 		// For dry run, list matching runs instead of deleting.
-		listFilter := rundb.ListFilter{GraphName: graphPattern}
+		listFilter := rundb.ListFilter{GraphName: graphPattern, Orphans: orphansOnly}
 		if labelKey != "" {
 			listFilter.Labels = map[string]string{labelKey: labelVal}
 		}
