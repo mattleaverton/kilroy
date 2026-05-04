@@ -90,6 +90,17 @@ func (d *Dispatcher) Execute(ctx context.Context, exec *engine.Execution, node *
 	case dispatchAPI:
 		return d.codergen().Execute(ctx, exec, node)
 	default:
+		// Empty driver with a non-empty Provider is the deferred-to-
+		// runtime case: custom or non-canonical providers (kimi, zai,
+		// minimax, custom OpenAI-compat endpoints) registered via
+		// cfg.LLM.Providers in run.yaml. Delegate to codergen
+		// (AgentRouter) which consults cfg to pick the backend at
+		// execution time. agent_router fails loudly there if cfg has
+		// no entry, surfacing a clear "no backend configured" error
+		// rather than the cryptic "no dispatch mapping".
+		if route.Driver == "" && strings.TrimSpace(route.Provider) != "" {
+			return d.codergen().Execute(ctx, exec, node)
+		}
 		return runtime.Outcome{
 			Status: runtime.StatusFail,
 			FailureReason: fmt.Sprintf(

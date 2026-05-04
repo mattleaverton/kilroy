@@ -108,6 +108,40 @@ func TestDispatcher_ExecuteMixedRouting(t *testing.T) {
 	}
 }
 
+// Test 5 (reviewer regression): an llm_provider=<custom> node where the
+// provider isn't one of the canonical SDK drivers (kimi/zai/minimax/etc.)
+// resolves with Driver="" and Provider!="". The dispatcher must delegate
+// to codergen — agent_router will then pick the backend from
+// cfg.LLM.Providers at execution time. Without this delegation, runs with
+// custom providers fail at dispatch with "no dispatch mapping" before
+// run-config-aware routing has a chance to kick in.
+func TestDispatcher_ExecuteCustomProvider_DelegatesToCodergen(t *testing.T) {
+	tmux := &recordingHandler{label: "tmux"}
+	cg := &recordingHandler{label: "codergen", outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "codergen handled custom"}}
+	d := &Dispatcher{Tmux: tmux, Codergen: cg}
+
+	node := &model.Node{
+		ID: "minimax_call",
+		Attrs: map[string]string{
+			"llm_provider": "minimax",
+			"llm_model":    "minimax-m2.5",
+		},
+	}
+	out, err := d.Execute(context.Background(), nil, node)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tmux.called {
+		t.Fatalf("tmux handler must not be invoked for custom provider")
+	}
+	if !cg.called {
+		t.Fatalf("codergen handler must be invoked for custom provider with empty Driver (got out=%+v)", out)
+	}
+	if out.Status != runtime.StatusSuccess {
+		t.Fatalf("expected delegated codergen success; got %+v", out)
+	}
+}
+
 // Test 4: a node with no resolvable driver fails deterministically at
 // dispatch time, with neither sub-handler invoked.
 func TestDispatcher_ExecuteVagueNode_DeterministicFailure(t *testing.T) {
