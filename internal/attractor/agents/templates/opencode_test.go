@@ -11,50 +11,88 @@ import (
 	"testing"
 )
 
-func TestBuildOpencodeConfig_Anthropic(t *testing.T) {
-	cfg := buildOpencodeConfig("anthropic")
+func TestBuildOpencodeConfig_Anthropic_NativeMinimalShape(t *testing.T) {
+	// Anthropic is a native opencode provider — kilroy emits the minimal
+	// config (options only) and lets opencode's own registry fill in the
+	// rest. No npm / models / name in the block.
+	cfg := buildOpencodeConfig("anthropic", "claude-sonnet-4-6")
 	var got map[string]any
 	if err := json.Unmarshal([]byte(cfg), &got); err != nil {
 		t.Fatalf("decode: %v\n%s", err, cfg)
 	}
 	prov := got["provider"].(map[string]any)
-	if _, ok := prov["anthropic"]; !ok {
+	block, ok := prov["anthropic"].(map[string]any)
+	if !ok {
 		t.Fatalf("expected provider.anthropic block; got %s", cfg)
 	}
-	opts := prov["anthropic"].(map[string]any)["options"].(map[string]any)
+	opts := block["options"].(map[string]any)
 	if opts["apiKey"] != "{env:ANTHROPIC_API_KEY}" {
 		t.Errorf("apiKey: got %v want {env:ANTHROPIC_API_KEY}", opts["apiKey"])
 	}
-}
-
-func TestBuildOpencodeConfig_Kimi(t *testing.T) {
-	cfg := buildOpencodeConfig("kimi")
-	if !strings.Contains(cfg, `"kimi"`) {
-		t.Fatalf("expected kimi block in config; got %s", cfg)
-	}
-	if !strings.Contains(cfg, "{env:KIMI_API_KEY}") {
-		t.Errorf("expected KIMI_API_KEY env reference; got %s", cfg)
-	}
-	if !strings.Contains(cfg, "api.kimi.com/coding") {
-		t.Errorf("expected kimi base URL; got %s", cfg)
+	if _, hasNPM := block["npm"]; hasNPM {
+		t.Errorf("native anthropic block should not declare npm; got %s", cfg)
 	}
 }
 
-func TestBuildOpencodeConfig_Zai(t *testing.T) {
-	cfg := buildOpencodeConfig("zai")
-	if !strings.Contains(cfg, `"zai"`) {
-		t.Fatalf("expected zai block; got %s", cfg)
+func TestBuildOpencodeConfig_Kimi_FullCustomDeclaration(t *testing.T) {
+	// Kimi is anthropic_messages-protocol but not a native opencode
+	// provider — kilroy must emit the FULL custom-provider declaration
+	// (npm + name + options + models). Without this, opencode rejects
+	// the launch with ProviderModelNotFoundError.
+	cfg := buildOpencodeConfig("kimi", "kimi-k2")
+	var got map[string]any
+	if err := json.Unmarshal([]byte(cfg), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, cfg)
 	}
-	if !strings.Contains(cfg, "{env:ZAI_API_KEY}") {
-		t.Errorf("expected ZAI_API_KEY env reference; got %s", cfg)
+	prov := got["provider"].(map[string]any)
+	block, ok := prov["kimi"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected provider.kimi block; got %s", cfg)
+	}
+	if block["npm"] != "@ai-sdk/anthropic" {
+		t.Errorf("npm: got %v want @ai-sdk/anthropic (kimi speaks anthropic_messages)", block["npm"])
+	}
+	opts := block["options"].(map[string]any)
+	if opts["apiKey"] != "{env:KIMI_API_KEY}" {
+		t.Errorf("apiKey: got %v", opts["apiKey"])
+	}
+	// baseURL must end at /v1 because @ai-sdk/anthropic appends /messages itself.
+	wantBase := "https://api.kimi.com/coding/v1"
+	if opts["baseURL"] != wantBase {
+		t.Errorf("baseURL: got %v want %s (must include /v1 suffix)", opts["baseURL"], wantBase)
+	}
+	models, ok := block["models"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected models map for custom provider; got %s", cfg)
+	}
+	if _, ok := models["kimi-k2"]; !ok {
+		t.Errorf("models map should declare kimi-k2; got %s", cfg)
+	}
+}
+
+func TestBuildOpencodeConfig_Zai_OpenAICompatibleNPM(t *testing.T) {
+	// Z.ai speaks openai_chat_completions — npm package differs.
+	cfg := buildOpencodeConfig("zai", "glm-4.6")
+	var got map[string]any
+	if err := json.Unmarshal([]byte(cfg), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, cfg)
+	}
+	block := got["provider"].(map[string]any)["zai"].(map[string]any)
+	if block["npm"] != "@ai-sdk/openai-compatible" {
+		t.Errorf("npm: got %v want @ai-sdk/openai-compatible", block["npm"])
+	}
+	opts := block["options"].(map[string]any)
+	if opts["apiKey"] != "{env:ZAI_API_KEY}" {
+		t.Errorf("apiKey: got %v", opts["apiKey"])
 	}
 }
 
 // Unknown provider falls back to a canonical {env:<UPPER>_API_KEY}
 // pattern. Catches typos at agent-launch time rather than silently
-// launching against anthropic.
+// launching against anthropic. No npm/baseURL emitted (we have no spec
+// to look up).
 func TestBuildOpencodeConfig_UnknownProvider_UsesCanonicalEnvName(t *testing.T) {
-	cfg := buildOpencodeConfig("madeup")
+	cfg := buildOpencodeConfig("madeup", "")
 	if !strings.Contains(cfg, `"madeup"`) {
 		t.Fatalf("provider block should preserve the input name; got %s", cfg)
 	}
@@ -63,23 +101,30 @@ func TestBuildOpencodeConfig_UnknownProvider_UsesCanonicalEnvName(t *testing.T) 
 	}
 }
 
-// PrepareSession reads KILROY_AGENT_PROVIDER from env and writes the
-// matching OPENCODE_CONFIG_CONTENT. Empty env defaults to anthropic
-// for back-compat.
-func TestOpencodePrepareSession_HonorsKilroyAgentProvider(t *testing.T) {
+// PrepareSession reads KILROY_AGENT_PROVIDER + KILROY_AGENT_MODEL from
+// the env map and writes the matching OPENCODE_CONFIG_CONTENT. The
+// model is needed because custom providers (kimi, zai, etc.) require a
+// `models` block declaring exactly which model is being launched.
+func TestOpencodePrepareSession_HonorsKilroyAgentProviderAndModel(t *testing.T) {
 	tmpl := OpenCode()
 	stage := t.TempDir()
 
-	envKimi := map[string]string{"KILROY_AGENT_PROVIDER": "kimi"}
+	envKimi := map[string]string{
+		"KILROY_AGENT_PROVIDER": "kimi",
+		"KILROY_AGENT_MODEL":    "kimi-k2",
+	}
 	if err := tmpl.PrepareSession(stage, envKimi); err != nil {
 		t.Fatalf("PrepareSession: %v", err)
 	}
 	cfg := envKimi["OPENCODE_CONFIG_CONTENT"]
-	if !strings.Contains(cfg, "kimi") {
-		t.Errorf("expected kimi config when KILROY_AGENT_PROVIDER=kimi; got %s", cfg)
+	if !strings.Contains(cfg, `"kimi"`) {
+		t.Errorf("expected kimi block; got %s", cfg)
 	}
-	if strings.Contains(cfg, "anthropic") {
-		t.Errorf("kimi config should not mention anthropic; got %s", cfg)
+	if !strings.Contains(cfg, `"kimi-k2"`) {
+		t.Errorf("expected kimi-k2 in models block; got %s", cfg)
+	}
+	if !strings.Contains(cfg, "@ai-sdk/anthropic") {
+		t.Errorf("expected @ai-sdk/anthropic npm package for kimi; got %s", cfg)
 	}
 
 	envEmpty := map[string]string{}

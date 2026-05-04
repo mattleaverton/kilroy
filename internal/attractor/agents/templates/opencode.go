@@ -89,15 +89,17 @@ func OpenCode() Template {
 		},
 		PrepareSession: func(stageDir string, env map[string]string) error {
 			// Build OPENCODE_CONFIG_CONTENT for whichever provider the
-			// route resolved to. tmux_handler writes route.Provider into
-			// KILROY_AGENT_PROVIDER before this runs. Default is
-			// anthropic for back-compat with fixtures that don't go
-			// through ResolveAgentRoute.
+			// route resolved to. tmux_handler writes route.Provider /
+			// route.Model into KILROY_AGENT_PROVIDER /
+			// KILROY_AGENT_MODEL before this runs. Default is anthropic
+			// for back-compat with fixtures that don't go through
+			// ResolveAgentRoute.
 			provider := strings.TrimSpace(env["KILROY_AGENT_PROVIDER"])
 			if provider == "" {
 				provider = "anthropic"
 			}
-			env["OPENCODE_CONFIG_CONTENT"] = buildOpencodeConfig(provider)
+			model := strings.TrimSpace(env["KILROY_AGENT_MODEL"])
+			env["OPENCODE_CONFIG_CONTENT"] = buildOpencodeConfig(provider, model)
 			return nil
 		},
 		PromptPrefix:     ">",
@@ -110,31 +112,114 @@ func OpenCode() Template {
 }
 
 // buildOpencodeConfig produces opencode's provider configuration JSON
-// for one provider. Looks up the provider's API spec in providerspec to
-// pick the correct API key env var and base URL. For unknown providers,
-// emits a minimal config with the canonical API key env var pattern.
-func buildOpencodeConfig(provider string) string {
+// for one provider+model pair.
+//
+// Two shapes:
+//
+//  1. Native opencode providers (anthropic, openai, google, etc.) — emit
+//     a minimal block with options.apiKey + options.baseURL. opencode's
+//     own provider registry knows the rest (npm package, model list,
+//     etc.) so the minimal config is enough.
+//
+//  2. Custom providers kilroy adds via providerspec (kimi, zai, cerebras,
+//     minimax, inception) — opencode does not know them natively, so we
+//     emit the full custom-provider declaration: npm package (chosen from
+//     protocol), name, options (baseURL with /v1 appended for
+//     anthropic_messages, apiKey), and a `models` map declaring the model
+//     being launched. Without `models`, opencode rejects the launch with
+//     "ProviderModelNotFoundError" even when the provider config is
+//     otherwise valid.
+//
+// The decider is `ProviderOptionsKey != Key`: when the spec says "this
+// provider speaks <other>'s protocol," it's a compat-mode provider and
+// needs the full declaration. Pure native specs (anthropic→anthropic,
+// openai→openai, etc.) keep the minimal config.
+//
+// model="" still emits a config without a models block — the caller will
+// fall back to opencode's defaults; useful for direct-use callers that
+// don't pass a model.
+func buildOpencodeConfig(provider, model string) string {
 	provider = strings.ToLower(strings.TrimSpace(provider))
+	model = strings.TrimSpace(model)
+
+	spec, ok := providerspec.Builtin(provider)
+	if !ok || spec.API == nil {
+		// Unknown provider: best-effort canonical-env-var minimal config.
+		// Use the input name verbatim to surface typos at launch time.
+		options := map[string]any{
+			"apiKey": "{env:" + strings.ToUpper(provider) + "_API_KEY}",
+		}
+		return marshalOpencodeConfig(provider, options, "", "", model)
+	}
 
 	options := map[string]any{}
+	if env := strings.TrimSpace(spec.API.DefaultAPIKeyEnv); env != "" {
+		options["apiKey"] = "{env:" + env + "}"
+	}
+	baseURL := strings.TrimSpace(spec.API.DefaultBaseURL)
+	// "Custom" = not a native opencode provider. Heuristic: the spec's
+	// ProfileFamily disagrees with the provider key (e.g. kimi/zai/cerebras
+	// all live under "openai" family). Native providers (anthropic, openai,
+	// google) have ProfileFamily == provider name. Drives whether we emit
+	// the full custom declaration (npm + name + models) or the minimal
+	// options-only block opencode's registry can fill in itself.
+	customNeeded := strings.TrimSpace(spec.API.ProfileFamily) != "" &&
+		!strings.EqualFold(spec.API.ProfileFamily, provider)
 
-	if spec, ok := providerspec.Builtin(provider); ok && spec.API != nil {
-		if env := strings.TrimSpace(spec.API.DefaultAPIKeyEnv); env != "" {
-			options["apiKey"] = "{env:" + env + "}"
+	npm := ""
+	if customNeeded {
+		// opencode's @ai-sdk/<package> name is determined by the
+		// underlying API protocol. Without npm, opencode reports
+		// "ProviderModelNotFoundError" because it can't load the SDK.
+		switch spec.API.Protocol {
+		case providerspec.ProtocolAnthropicMessages:
+			npm = "@ai-sdk/anthropic"
+			// @ai-sdk/anthropic appends /messages to the baseURL, so the
+			// caller's baseURL must end at /v1. providerspec's DefaultBaseURL
+			// is the API host root; append /v1 when it isn't already there.
+			if baseURL != "" && !strings.HasSuffix(baseURL, "/v1") && !strings.Contains(baseURL, "/v1/") {
+				baseURL = strings.TrimRight(baseURL, "/") + "/v1"
+			}
+		case providerspec.ProtocolOpenAIChatCompletions:
+			npm = "@ai-sdk/openai-compatible"
+		case providerspec.ProtocolOpenAIResponses:
+			npm = "@ai-sdk/openai"
+		case providerspec.ProtocolGoogleGenerateContent:
+			npm = "@ai-sdk/google"
 		}
-		if base := strings.TrimSpace(spec.API.DefaultBaseURL); base != "" {
-			options["baseURL"] = base
+	}
+
+	if baseURL != "" {
+		options["baseURL"] = baseURL
+	}
+	displayName := strings.ToTitle(provider[:1]) + provider[1:]
+	return marshalOpencodeConfig(provider, options, npm, displayName, model)
+}
+
+// marshalOpencodeConfig emits the JSON config block for one provider.
+// When npm is empty, only `provider.<name>.options` is set (minimal
+// shape for opencode-native providers). When npm is non-empty, the
+// full custom-provider declaration is emitted (npm + name + options +
+// models). model="" omits the models map.
+func marshalOpencodeConfig(provider string, options map[string]any, npm, displayName, model string) string {
+	providerBlock := map[string]any{
+		"options": options,
+	}
+	if npm != "" {
+		providerBlock["npm"] = npm
+		if displayName != "" {
+			providerBlock["name"] = displayName
 		}
-	} else {
-		// Unknown provider: best-effort canonical env var name.
-		options["apiKey"] = "{env:" + strings.ToUpper(provider) + "_API_KEY}"
+	}
+	if model != "" {
+		providerBlock["models"] = map[string]any{
+			model: map[string]any{},
+		}
 	}
 
 	cfg := map[string]any{
 		"provider": map[string]any{
-			provider: map[string]any{
-				"options": options,
-			},
+			provider: providerBlock,
 		},
 	}
 	data, err := json.Marshal(cfg)
