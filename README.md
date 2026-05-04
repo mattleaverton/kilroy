@@ -1,13 +1,6 @@
 # Kilroy
 
-Kilroy is a local-first CLI for running StrongDM-style Attractor pipelines in a git repo.
-
-High-level flow:
-
-1. Convert English requirements to a Graphviz DOT pipeline (`kilroy ingest`).
-2. Validate graph structure and semantics (`kilroy validate`).
-3. Execute node-by-node with coding agents in an isolated git worktree (`kilroy run`).
-4. Resume interrupted runs from logs, CXDB, or run branch (`kilroy resume`).
+Kilroy is a local-first CLI that runs **workflow packages** — opinionated coding loops, investigations, and reviews — in a git repo. Each workflow is a self-contained directory (`workflow.toml` + DOT graph + prompts/scripts) executed by an Attractor pipeline engine. Stages declare an *agent class* rather than a model; provider, model, backend, and credentials are selected automatically by a class resolver, policy chain, and auth resolver, then frozen into a prelaunch snapshot before any LLM call. The user-facing surface is `kilroy run <workflow>`.
 
 ## Installation
 
@@ -27,44 +20,149 @@ go install github.com/danshapiro/kilroy/cmd/kilroy@latest
 ### Build from Source
 
 ```bash
-go build -o kilroy ./cmd/kilroy
+go build -o ./kilroy ./cmd/kilroy/
 ```
 
-## What Is CXDB?
+## Quick Start
 
-CXDB is the execution database Kilroy uses for observability and recovery.
+Workflows ship in this repo under `workflows/<name>/`. The CLI discovers them automatically; no `--graph` or `--config` is needed.
 
-- Kilroy records typed run events (run started, stage finished, checkpoint saved, run completed/failed) to CXDB.
-- Kilroy stores artifacts (logs, outputs, archives) in CXDB blobs.
-- Resume-from-CXDB works because run metadata (like `logs_root` and checkpoint pointers) is written into this timeline.
+```bash
+# 1. List installed workflow packages.
+./kilroy workflows list --pretty
 
-Short version: git branch is code history; CXDB is run history.
+# 2. Describe one to see its inputs, outputs, and default class.
+./kilroy workflows describe implement --pretty
 
-## What Attractor Means Here
+# 3. Validate before launching: DOT integrity, package layout,
+#    class resolution, auth resolution, and CLI binary probes.
+./kilroy workflows validate implement --pretty
 
-An Attractor pipeline is a `digraph` where:
+# 4. Run a workflow. --input-file reads file contents into the named input;
+#    --label attaches metadata used later by `kilroy runs` filters.
+./kilroy run implement --input-file prompt=spec.md --label scope=my-task
 
-- Nodes are stages (`start`, `exit`, codergen tasks, conditionals, human gates, tool steps, parallel/fan-in).
-- Edges define control flow and optional conditions/retry behavior.
-- The engine checkpoints after each stage and routes to the next stage deterministically.
+# 5. Inspect runs.
+./kilroy runs list --pretty
+./kilroy runs show <run-id>
+./kilroy runs wait <run-id> --timeout 1h
+```
 
-In this repo, each completed node also creates a git checkpoint commit on a run branch.
+Run output, artifacts, and the isolated execution worktree all land under `~/.local/state/kilroy/attractor/runs/<run-id>/`.
 
-## StrongDM Attractor vs Kilroy Implementation
+## Concepts
 
-This implementation is based on the Attractor specification by StrongDM at `https://github.com/strongdm/attractor`. Here's how Kilroy differs
+### Workflow packages
 
-| Area | From StrongDM Attractor Specs | Kilroy-Specific in This Repo |
-|---|---|---|
-| Graph DSL + engine semantics | DOT schema, handler model, edge selection, retry, conditions, context fidelity | Concrete Go engine implementation details and defaults |
-| Coding-agent loop | Session model, tool loop behavior, provider-aligned tool concepts | Local tool execution wiring and CLI/API backend routing choices |
-| Unified LLM model | Provider-neutral request/response/tool/streaming contracts | Concrete provider adapters and environment wiring |
-| Provider support | Conceptual provider abstraction | Provider plug-in runtime with built-ins: OpenAI, Anthropic, Google, Kimi, ZAI, Minimax |
-| Backend selection | Spec allows flexible backend choices | Backend is mandatory per provider (`api`/`cli`), no implicit defaults |
-| Checkpointing + persistence | Attractor/CXDB contracts | Required git branch/worktree/commit-per-node and concrete artifact layout |
-| Ingestion | Ingestor behavior described in spec docs | `kilroy ingest` implementation: Claude CLI + `create-dotfile` skill |
+Each workflow lives in `workflows/<name>/` with:
 
-## Prerequisites
+- `workflow.toml` — manifest declaring `default_class`, inputs, outputs, side effects, and the entry graph.
+- `graph.dot` — Attractor pipeline driving the stages.
+- `prompts/`, `scripts/` (optional) — stage-local prompt fragments and helpers.
+
+The loader searches, in order:
+
+1. `$KILROY_WORKFLOW_PATHS` (colon-separated env var)
+2. `<project-root>/.kilroy/workflows/` (when a `.kilroy/` marker is found above cwd)
+3. `$XDG_CONFIG_HOME/kilroy/workflows/` (default `~/.config/kilroy/workflows/`)
+
+In this repo, `.kilroy/workflows/` is a symlink to `workflows/`, so the in-tree packages resolve out of the box.
+
+### Class resolver + policy → automatic provider routing
+
+Stages do not pin a provider or model. They declare an **agent class** (e.g. `hard_coding`, `deep_investigation`, `architectural_critique`). At launch, the policy chain resolves the class to a concrete `(model, driver, transport)` tuple, attempts each candidate against current host state, and freezes the choice in a prelaunch snapshot.
+
+```bash
+./kilroy policy list                # all classes and their fallback chains
+./kilroy policy show hard_coding    # one class with full chain detail
+./kilroy policy resolve hard_coding # what would be picked right now
+./kilroy policy explain <run-id>    # what was actually picked per node
+```
+
+### Auth chains
+
+Each `(provider, method[, tool])` binding is satisfied by an ordered chain of auth sources (env var → cli session → keychain). Convention: per-tool budgets use the `_KILROY` env var suffix (e.g. `ANTHROPIC_API_KEY_KILROY`). When set, that key beats the unsuffixed global key without unsetting anything — useful for scoping spend to a single project or run.
+
+```bash
+./kilroy auth defaults              # ship-default chain template
+./kilroy auth init                  # generate ~/.config/kilroy/auth.toml
+./kilroy auth list --pretty         # active resolution + shadowing
+./kilroy auth check                 # exercise every binding end-to-end
+./kilroy auth suggest-fix anthropic # remediation hints
+```
+
+### Run DB + prelaunch validation
+
+Every launch records a row in the local run DB (queryable via `kilroy runs`) and writes `prelaunch_validation.json` to the run's `logs_root` before the engine starts. Validation covers DOT graph integrity, package layout, per-node class resolution, per-binding auth resolution, and CLI binary presence/capability probes. `kilroy workflows validate <name>` runs the same checks without launching, so you can verify a workflow against the current host state before spending tokens.
+
+## Observe and Intervene
+
+```bash
+./kilroy status --logs-root <logs_root>           # one-shot status snapshot
+./kilroy status --latest --watch                  # live-follow most recent run
+./kilroy stop --logs-root <logs_root> --grace-ms 30000 --force
+./kilroy resume --logs-root <logs_root>
+./kilroy resume --run-branch <attractor/run/...> [--repo <path>]
+```
+
+## Run Artifacts
+
+Typical run-level artifacts under `{logs_root}`:
+
+- `graph.dot`
+- `prelaunch_validation.json`
+- `manifest.json`
+- `checkpoint.json`
+- `final.json`
+- `run_config.json`
+- `modeldb/openrouter_models.json`
+- `run.tgz` (run archive excluding `worktree/`)
+- `worktree/` (isolated execution worktree)
+
+Typical stage-level artifacts under `{logs_root}/{node_id}`:
+
+- `prompt.md`
+- `response.md`
+- `status.json`
+- `resolution.json` (per-node class resolution; consumed by `kilroy policy explain`)
+- `stage.tgz`
+- CLI backend extras: `cli_invocation.json`, `stdout.log`, `stderr.log`, `events.ndjson`, `events.json`, `output_schema.json`, `output.json`
+- API backend extras: `api_request.json`, `api_response.json`, `events.ndjson`, `events.json`
+
+## Commands
+
+```text
+kilroy run <workflow-name>     [--input-file KEY=PATH ...] [--label KEY=VALUE ...] [--detach] [--wait] [--pretty]
+kilroy run --graph <file.dot>  [--config <run.yaml>]   # advanced: ad-hoc graph
+kilroy run --package <dir>     [--config <run.yaml>]   # advanced: ad-hoc package
+kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
+kilroy runs list | show <id> | wait <id> | prune  [--json | --pretty] [--label KEY=VALUE]
+kilroy status [--logs-root <dir> | --latest] [--json] [--watch] [--interval <sec>]
+kilroy resume --logs-root <dir>
+kilroy resume --run-branch <attractor/run/...> [--repo <path>]
+kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
+kilroy validate --graph <file.dot>            # static DOT validation
+kilroy auth defaults | init | list | check | suggest-fix
+kilroy policy list | show <class> | resolve <class> | explain <run-id>
+kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] <requirements>
+kilroy serve [--addr <host:port>]
+kilroy modeldb suggest [--refresh] [--ttl <duration>] [--provider <name>]
+```
+
+Model selection is workflow/DOT/policy-driven; there is no `--force-model` override flag. Provider/model/backend/auth/codec are all decided by the policy class (or explicit DOT attributes) and frozen by the prelaunch snapshot before execution begins.
+
+Exit codes:
+
+- `0`: run/resume finished with final status `success`, or validate succeeded
+- `1`: command failed, validation error, or final status was not `success`
+
+---
+
+## Advanced: Direct Mode and Authoring Surface
+
+The workflow surface above is the recommended way to drive Kilroy. The flags and knobs in this section predate workflow packages and are kept for ad-hoc DOT graphs, integration tests, and infrastructure debugging. New work should be wrapped as a workflow package.
+
+### Prerequisites
 
 - Go 1.25+
 - Git repo with at least one commit
@@ -73,15 +171,7 @@ This implementation is based on the Attractor specification by StrongDM at `http
 - Provider access for any provider used in your graph
 - `claude` CLI for `kilroy ingest` (or set `KILROY_CLAUDE_PATH`)
 
-## Quickstart
-
-### 1) Build
-
-```bash
-go build -o kilroy ./cmd/kilroy
-```
-
-### 2) Generate a pipeline from English
+### Generate a pipeline from English
 
 ```bash
 ./kilroy ingest -o pipeline.dot "Solitaire plz"
@@ -92,7 +182,12 @@ Notes:
 - Ingest auto-detects `skills/create-dotfile/SKILL.md` from `--repo` (default: cwd), then falls back to paths relative to the `kilroy` binary (including Homebrew-style `../share/kilroy/skills/...`) and Go module-cache install roots from build metadata (`go install`).
 - Use `--skill <path>` if your skill file is elsewhere.
 
-### 3) Validate the pipeline
+Additional ingest flags:
+
+- `--repo <path>`: repo root to run ingestion from (default: cwd)
+- `--no-validate`: skip post-generation DOT validation
+
+### Validate a hand-authored graph
 
 ```bash
 ./kilroy validate --graph pipeline.dot
@@ -118,7 +213,7 @@ digraph Simple {
 }
 ```
 
-### 4) Create `run.yaml`
+### Ad-hoc run with `run.yaml`
 
 ```yaml
 version: 1
@@ -200,8 +295,6 @@ Important:
 - Deprecated compatibility: `modeldb.litellm_catalog_*` keys are still accepted for one release.
 - Config can be YAML or JSON.
 
-### 5) Run the pipeline
-
 Real run (recommended/default profile):
 
 ```bash
@@ -224,16 +317,6 @@ llm:
 ./kilroy run --graph pipeline.dot --config run.yaml --allow-test-shim
 ```
 
-Pre-launch validation (validate everything, do not start execution):
-
-```bash
-./kilroy workflows validate <workflow-name>
-```
-
-This runs the same checks as a real launch — DOT validation + package
-integrity + class resolution + auth + binary presence — minus
-execution. JSON by default; `--pretty` for human output.
-
 On success, stdout includes:
 
 - `run_id=...`
@@ -248,14 +331,7 @@ If autostart is used, startup logs are written under `{logs_root}`:
 - `cxdb-autostart.log`
 - `cxdb-ui-autostart.log`
 
-Observe and intervene during long runs:
-
-```bash
-./kilroy status --logs-root <logs_root>
-./kilroy stop --logs-root <logs_root> --grace-ms 30000 --force
-```
-
-## CXDB Autostart Notes
+### CXDB Autostart Notes
 
 - `cxdb.autostart.command` is required when `cxdb.autostart.enabled=true`.
 - This repo includes `scripts/start-cxdb.sh` and `scripts/start-cxdb-ui.sh` launchers for local Docker-based CXDB.
@@ -275,7 +351,7 @@ Observe and intervene during long runs:
   - `KILROY_CXDB_ALLOW_EXTERNAL=1` to let `scripts/start-cxdb.sh` accept a pre-existing non-docker CXDB endpoint.
 - If CXDB is unreachable and autostart is disabled, Kilroy fails fast with a remediation hint.
 
-## Provider Setup
+### Provider Setup
 
 Provider runtime architecture:
 
@@ -325,11 +401,11 @@ Kimi compatibility note:
 - Built-in `kimi` defaults target Kimi Coding (`anthropic_messages`, `https://api.kimi.com/coding`).
 - If you use Moonshot Open Platform keys instead, override `kimi.api` to `protocol: openai_chat_completions`, `base_url: https://api.moonshot.ai`, `path: /v1/chat/completions`.
 
-## Node Attributes
+### Node Attributes
 
 Node attributes are DOT key=value pairs on `[shape=box]` nodes that control engine behaviour.
 
-### Output token limit (`max_tokens`)
+#### Output token limit (`max_tokens`)
 
 Every provider adapter has a built-in default output token cap of **32768** tokens. This is the
 per-response limit — how many tokens the model may generate in a single API call. It is completely
@@ -361,7 +437,7 @@ Provider-specific behaviour:
 | OpenAI-compat | omitted (API uses model default) | Only sent when explicitly set |
 | Kimi | max(32768, 16000) | 16000 minimum enforced by provider policy |
 
-### Turn budget (`max_agent_turns`)
+#### Turn budget (`max_agent_turns`)
 
 Caps the number of agent turns (model calls) in a single session. Defaults to unlimited.
 
@@ -369,7 +445,7 @@ Caps the number of agent turns (model calls) in a single session. Defaults to un
 implement [shape=box, max_agent_turns=300, prompt="..."]
 ```
 
-### Reasoning effort (`reasoning_effort`)
+#### Reasoning effort (`reasoning_effort`)
 
 Passed to the model as the reasoning effort parameter where supported (e.g. `low|medium|high` for
 Anthropic extended thinking, `o1`-family models).
@@ -378,64 +454,7 @@ Anthropic extended thinking, `o1`-family models).
 review [shape=box, reasoning_effort=high, prompt="..."]
 ```
 
-## Run Artifacts
-
-Typical run-level artifacts under `{logs_root}`:
-
-- `graph.dot`
-- `prelaunch_validation.json`
-- `manifest.json`
-- `checkpoint.json`
-- `final.json`
-- `run_config.json`
-- `modeldb/openrouter_models.json`
-- `run.tgz` (run archive excluding `worktree/`)
-- `worktree/` (isolated execution worktree)
-
-Typical stage-level artifacts under `{logs_root}/{node_id}`:
-
-- `prompt.md`
-- `response.md`
-- `status.json`
-- `stage.tgz`
-- CLI backend extras: `cli_invocation.json`, `stdout.log`, `stderr.log`, `events.ndjson`, `events.json`, `output_schema.json`, `output.json`
-- API backend extras: `api_request.json`, `api_response.json`, `events.ndjson`, `events.json`
-
-## Commands
-
-```text
-kilroy run <workflow-name> [--input-file KEY=PATH ...] [--label KEY=VALUE ...] [--detach] [--wait] [--pretty]
-kilroy run --graph <file.dot> [--config <run.yaml>]   # advanced: ad-hoc graph
-kilroy run --package <dir>    [--config <run.yaml>]   # advanced: ad-hoc package
-kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
-kilroy runs list | show <id> | wait <id> | prune  [--json | --pretty] [--label KEY=VALUE]
-kilroy status [--logs-root <dir> | --latest] [--json] [--watch] [--interval <sec>]
-kilroy resume --logs-root <dir>
-kilroy resume --run-branch <attractor/run/...> [--repo <path>]
-kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy validate --graph <file.dot>            # static DOT validation
-kilroy auth list | check | init | suggest-fix
-kilroy policy list | show <class> | resolve <class> | explain <run-id>
-kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] <requirements>
-kilroy serve [--addr <host:port>]
-```
-
-Model selection is workflow/DOT/policy-driven; there is no
-`--force-model` override flag. Provider/model/backend/auth/codec are
-all decided by the policy class (or explicit DOT attributes) and
-frozen by the prelaunch snapshot before execution begins.
-
-Additional ingest flags:
-
-- `--repo <path>`: repo root to run ingestion from (default: cwd)
-- `--no-validate`: skip post-generation DOT validation
-
-Exit codes:
-
-- `0`: run/resume finished with final status `success`, or validate succeeded
-- `1`: command failed, validation error, or final status was not `success`
-
-## HTTP Server Mode (Experimental)
+### HTTP Server Mode (Experimental)
 
 **This feature is experimental and subject to breaking changes.**
 
@@ -461,19 +480,56 @@ Endpoints:
 
 The server defaults to localhost-only binding and includes CSRF protection. There is no authentication — do not expose to untrusted networks.
 
-## Skills Included In This Repo
+## Background
 
-- `skills/using-kilroy/SKILL.md`: operational workflow for ingest/validate/run/resume.
-- `skills/create-dotfile/SKILL.md`: requirements-to-DOT generation instructions.
+### What Is CXDB?
+
+CXDB is the execution database Kilroy uses for observability and recovery.
+
+- Kilroy records typed run events (run started, stage finished, checkpoint saved, run completed/failed) to CXDB.
+- Kilroy stores artifacts (logs, outputs, archives) in CXDB blobs.
+- Resume-from-CXDB works because run metadata (like `logs_root` and checkpoint pointers) is written into this timeline.
+
+Short version: git branch is code history; CXDB is run history.
+
+### What Attractor Means Here
+
+An Attractor pipeline is a `digraph` where:
+
+- Nodes are stages (`start`, `exit`, codergen tasks, conditionals, human gates, tool steps, parallel/fan-in).
+- Edges define control flow and optional conditions/retry behavior.
+- The engine checkpoints after each stage and routes to the next stage deterministically.
+
+In this repo, each completed node also creates a git checkpoint commit on a run branch.
+
+### StrongDM Attractor vs Kilroy Implementation
+
+This implementation is based on the Attractor specification by StrongDM at `https://github.com/strongdm/attractor`. Here's how Kilroy differs:
+
+| Area | From StrongDM Attractor Specs | Kilroy-Specific in This Repo |
+|---|---|---|
+| Graph DSL + engine semantics | DOT schema, handler model, edge selection, retry, conditions, context fidelity | Concrete Go engine implementation details and defaults |
+| Coding-agent loop | Session model, tool loop behavior, provider-aligned tool concepts | Local tool execution wiring and CLI/API backend routing choices |
+| Unified LLM model | Provider-neutral request/response/tool/streaming contracts | Concrete provider adapters and environment wiring |
+| Provider support | Conceptual provider abstraction | Provider plug-in runtime with built-ins: OpenAI, Anthropic, Google, Kimi, ZAI, Minimax |
+| Backend selection | Spec allows flexible backend choices | Backend is mandatory per provider (`api`/`cli`), no implicit defaults |
+| Checkpointing + persistence | Attractor/CXDB contracts | Required git branch/worktree/commit-per-node and concrete artifact layout |
+| Ingestion | Ingestor behavior described in spec docs | `kilroy ingest` implementation: Claude CLI + `create-dotfile` skill |
 
 ## References
 
-- StrongDM Attractor specs: `docs/strongdm/attractor/`
-- Attractor spec: `docs/strongdm/attractor/attractor-spec.md`
-- Coding Agent Loop spec: `docs/strongdm/attractor/coding-agent-loop-spec.md`
-- Unified LLM spec: `docs/strongdm/attractor/unified-llm-spec.md`
-- Kilroy metaspec: `docs/strongdm/attractor/kilroy-metaspec.md`
-- Ingestor spec: `docs/strongdm/attractor/ingestor-spec.md`
+- Workflow packages: [`workflows/`](workflows/) — `workflows/<name>/workflow.toml` per package.
+- Active plans and architecture notes: [`docs/plans/`](docs/plans/).
+- Repo conventions and contributor guide: [`AGENTS.md`](AGENTS.md).
+- StrongDM Attractor specs: [`docs/strongdm/attractor/`](docs/strongdm/attractor/)
+  - Attractor spec: `docs/strongdm/attractor/attractor-spec.md`
+  - Coding Agent Loop spec: `docs/strongdm/attractor/coding-agent-loop-spec.md`
+  - Unified LLM spec: `docs/strongdm/attractor/unified-llm-spec.md`
+  - Kilroy metaspec: `docs/strongdm/attractor/kilroy-metaspec.md`
+  - Ingestor spec: `docs/strongdm/attractor/ingestor-spec.md`
+- Skills shipped in this repo:
+  - `skills/using-kilroy/SKILL.md` — operational workflow for ingest/validate/run/resume.
+  - `skills/create-dotfile/SKILL.md` — requirements-to-DOT generation instructions.
 - CXDB project: <https://github.com/strongdm/cxdb>
 
 ## License
