@@ -545,30 +545,25 @@ func shellQuoteSimple(s string) string {
 // artifacts: env vars to set, env vars to scrub from the child env, and
 // any per-stage files to write.
 //
-// Re-runs binding.Resolver.Bind against a freshly-constructed resolver so
-// that vanished sources (env var unset OR CLI session expired between
-// prelaunch and execution) are caught decisively. Then dispatches to the
-// per-driver materializer (engine/credential_binder.go).
+// The route's ClassResult.AuthSnapshot is the FROZEN identity from
+// prelaunch. We re-validate source liveness (env var still set, CLI
+// session still ok) via engine.BindSnapshot — which deliberately does
+// NOT reload auth.toml from the worktree. The freeze is authoritative:
+// if the worktree's project auth.toml diverges from what prelaunch
+// resolved against (e.g., the worktree branch lacks the file), that
+// drift must NOT be observable here. Then dispatches to the per-driver
+// materializer (engine/credential_binder.go).
 //
 // Critically, claude_cli's binder returns EnvScrub=["ANTHROPIC_API_KEY"]
 // (and codex_cli scrubs OPENAI_API_KEY) so the CLI uses the logged-in
 // subscription session rather than silently falling through to the env key.
 func materializeCredential(route engine.AgentRoute, exec *engine.Execution, stageDir string) (engine.BindResult, error) {
+	_ = exec
 	if route.ClassResult == nil {
 		return engine.BindResult{}, fmt.Errorf("materializeCredential: route has no ClassResult — only class-resolved routes carry an auth snapshot")
 	}
 	snap := route.ClassResult.AuthSnapshot
-	// Construct a resolver so Bind can re-check the source's reachability
-	// (env_var present, or cli_session still ok) at execution time.
-	projectRoot := ""
-	if exec != nil {
-		projectRoot = strings.TrimSpace(exec.WorktreeDir)
-	}
-	resolver, err := engine.DefaultBindingResolver(projectRoot)
-	if err != nil {
-		return engine.BindResult{}, fmt.Errorf("auth resolver at execution: %w", err)
-	}
-	cred, err := resolver.Bind(snap)
+	cred, err := engine.BindSnapshot(snap)
 	if err != nil {
 		return engine.BindResult{}, err
 	}

@@ -364,6 +364,13 @@ func persistResolution(exec *Execution, nodeID, className string, res policy.Res
 //
 // projectRoot may be empty (no project override). Tests inject their own
 // resolver via PolicyDeps.Resolver instead of calling this.
+//
+// IMPORTANT: at execution time, do NOT call this against the run worktree
+// to materialize the selected credential. The prelaunch snapshot is the
+// authoritative route; reloading auth.toml from the worktree breaks the
+// freeze (a worktree branch may not have the project auth.toml the
+// snapshot was resolved against, causing silent drift or hard fail).
+// Use BindSnapshot for that path.
 func DefaultBindingResolver(projectRoot string) (*binding.Resolver, error) {
 	cfg, err := binding.LoadConfig(projectRoot)
 	if err != nil {
@@ -371,6 +378,23 @@ func DefaultBindingResolver(projectRoot string) (*binding.Resolver, error) {
 	}
 	view := binding.AuthListView{List: auth.ListAll("", auth.DefaultDetectors())}
 	return binding.NewResolver(&cfg, view), nil
+}
+
+// BindSnapshot materializes a frozen prelaunch credential without reloading
+// auth.toml. The Snapshot itself carries the chain identity + selected
+// source; binding.Resolver.Bind only needs a live DetectionView to verify
+// the source is still usable (env var still set, CLI session still ok).
+//
+// This is the load-bearing piece of the "prelaunch snapshot is
+// authoritative" invariant: at execution time, no path that materializes
+// the selected credential is allowed to consult the worktree's
+// `.kilroy/auth.toml`. Drift between prelaunch and execution (different
+// project layer, missing project layer, mutated chain) cannot silently
+// re-route the request.
+func BindSnapshot(snap binding.Snapshot) (binding.Credential, error) {
+	view := binding.AuthListView{List: auth.ListAll("", auth.DefaultDetectors())}
+	resolver := binding.NewResolver(&binding.Config{}, view)
+	return resolver.Bind(snap)
 }
 
 // projectRootForExec returns the worktree directory if available — used as
