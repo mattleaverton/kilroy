@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
+	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
@@ -45,9 +46,10 @@ func policyUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy policy list [--json]")
 	fmt.Fprintln(os.Stderr, "  kilroy policy show <class-name> [--json]")
-	fmt.Fprintln(os.Stderr, "  kilroy policy resolve <class-name> [--json]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy resolve <class-name> [--json] [--project <dir>]")
 	fmt.Fprintln(os.Stderr, "    resolve runs the resolver against the current machine state")
 	fmt.Fprintln(os.Stderr, "    and reports which candidate would be picked for the class.")
+	fmt.Fprintln(os.Stderr, "    --project <dir>  project root containing .kilroy/ (default: nearest .kilroy/ above cwd)")
 	fmt.Fprintln(os.Stderr, "  kilroy policy explain <run-id> [--json]")
 	fmt.Fprintln(os.Stderr, "    explain reports which candidate each agentic node in the run")
 	fmt.Fprintln(os.Stderr, "    actually picked, reading per-step resolution.json artifacts.")
@@ -296,7 +298,7 @@ func policyShow(args []string) {
 // ── kilroy policy resolve ────────────────────────────────────────────────────
 
 func policyResolve(args []string) {
-	className, asJSON, err := parsePolicyClassArgs(args, "resolve")
+	className, asJSON, projectDir, err := parsePolicyResolveArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -308,7 +310,17 @@ func policyResolve(args []string) {
 		os.Exit(1)
 	}
 
-	resolver, rErr := engine.DefaultBindingResolver("")
+	projectRoot := projectDir
+	if projectRoot == "" {
+		root, _, findErr := projectroot.Find("")
+		if findErr != nil {
+			fmt.Fprintf(os.Stderr, "project root: %v\n", findErr)
+			os.Exit(1)
+		}
+		projectRoot = root
+	}
+
+	resolver, rErr := engine.DefaultBindingResolver(projectRoot)
 	if rErr != nil {
 		fmt.Fprintf(os.Stderr, "auth resolver: %v\n", rErr)
 		os.Exit(1)
@@ -370,26 +382,39 @@ func policyResolve(args []string) {
 	}
 }
 
-// parsePolicyClassArgs is a small helper for show/resolve that share the same
-// "<class-name> [--json]" argument shape.
-func parsePolicyClassArgs(args []string, subcmd string) (className string, asJSON bool, err error) {
-	for _, a := range args {
+// parsePolicyResolveArgs parses arguments for `kilroy policy resolve`:
+// "<class-name> [--json] [--project <dir>]". The --project flag lets
+// tests and scripts target a specific project root; absent it, the
+// resolver auto-discovers via projectroot.Find.
+func parsePolicyResolveArgs(args []string) (className string, asJSON bool, projectDir string, err error) {
+	usage := "usage: kilroy policy resolve <class-name> [--json] [--project <dir>]"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
 		switch a {
 		case "--json":
 			asJSON = true
+		case "--project":
+			i++
+			if i >= len(args) {
+				return "", false, "", fmt.Errorf("--project requires a directory argument\n%s", usage)
+			}
+			projectDir = args[i]
 		case "-h", "--help":
-			return "", false, fmt.Errorf("usage: kilroy policy %s <class-name> [--json]", subcmd)
+			return "", false, "", fmt.Errorf("%s", usage)
 		default:
+			if strings.HasPrefix(a, "--") {
+				return "", false, "", fmt.Errorf("unknown flag %q\n%s", a, usage)
+			}
 			if className != "" {
-				return "", false, fmt.Errorf("unexpected extra argument %q", a)
+				return "", false, "", fmt.Errorf("unexpected extra argument %q", a)
 			}
 			className = a
 		}
 	}
 	if className == "" {
-		return "", false, fmt.Errorf("class name required\nusage: kilroy policy %s <class-name> [--json]", subcmd)
+		return "", false, "", fmt.Errorf("class name required\n%s", usage)
 	}
-	return className, asJSON, nil
+	return className, asJSON, projectDir, nil
 }
 
 // ── kilroy policy explain ────────────────────────────────────────────────────
