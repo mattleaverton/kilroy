@@ -333,6 +333,47 @@ description = "System design review and architectural trade-off analysis."
     tool     = "claude"
 
 # ══════════════════════════════════════════════════════════════════
+# CLASS: coding_codex_subscription
+# Single-candidate class for users with a Codex subscription — routes
+# codex_cli through the cli_oauth path. The binder scrubs OPENAI_API_KEY
+# at execution time so the CLI uses ~/.codex/ session, not the env key
+# (silent wrong-billing prevention; mirrors claude_cli pattern).
+# ══════════════════════════════════════════════════════════════════
+[classes.coding_codex_subscription]
+description = "Codex CLI via subscription (cli_oauth)."
+
+  [[classes.coding_codex_subscription.chain]]
+  model_id     = "gpt-5"
+  driver       = "codex_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["subscription", "tier:elite"]
+    [classes.coding_codex_subscription.chain.requires]
+    provider = "openai"
+    method   = "cli_oauth"
+    tool     = "codex"
+
+# ══════════════════════════════════════════════════════════════════
+# CLASS: coding_codex_apikey
+# Single-candidate class for the codex_cli driver on the OpenAI api_key
+# path. Binder writes a stage-isolated <stage>/.codex/auth.json with
+# auth_mode=apikey and exports CODEX_HOME so the run never mutates
+# ~/.codex/. Use when an api-key budget is preferred over a subscription.
+# ══════════════════════════════════════════════════════════════════
+[classes.coding_codex_apikey]
+description = "Codex CLI on the OpenAI api_key path with stage-isolated auth.json."
+
+  [[classes.coding_codex_apikey.chain]]
+  model_id     = "gpt-5"
+  driver       = "codex_cli"
+  transport    = "cli_subprocess"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:elite"]
+    [classes.coding_codex_apikey.chain.requires]
+    provider = "openai"
+    method   = "api_key"
+
+# ══════════════════════════════════════════════════════════════════
 # ALIASES
 # ══════════════════════════════════════════════════════════════════
 [[aliases]]
