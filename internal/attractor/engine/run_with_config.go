@@ -243,9 +243,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	opts.RequiredSecrets = append([]string(nil), overrides.RequiredSecrets...)
 	if overrides.Workspace != "" {
 		opts.Workspace = overrides.Workspace
-		if opts.RepoPath == "" {
-			opts.RepoPath = overrides.Workspace
-		}
+		opts.RepoPath = overrides.Workspace
 	}
 
 	if err := opts.applyDefaults(); err != nil {
