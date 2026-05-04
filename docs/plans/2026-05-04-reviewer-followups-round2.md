@@ -32,11 +32,19 @@ handlers" ask. Vague nodes and unknown `agent_tool=` values now fail
 prelaunch loudly with a clear error naming the offending input.
 
 Lenient corner: unknown `llm_provider=` values (kimi, zai, minimax,
-custom OpenAI-compat endpoints) are deferred to the runtime — they
-resolve via `cfg.LLM.Providers` in the legacy CodergenHandler path.
-Prelaunch accepts them; the dispatcher (which only knows the canonical
-3 SDK drivers) rejects them at execution. This preserves legacy provider
-plugins without weakening the spirit of the reviewer's ask.
+custom OpenAI-compat endpoints) are deferred to the runtime. Prelaunch
+accepts them. The Dispatcher detects `Driver==""` + non-empty `Provider`
+and delegates to codergen (`AgentRouter`), which consults
+`cfg.LLM.Providers` for the backend at execution time.
+**Reviewer-flagged regression** (commit `9c36f40`, after the initial
+push): the original Dispatcher rejected empty-driver routes outright
+with `dispatcher: driver "" has no dispatch mapping`, so production
+runs of custom providers failed before AgentRouter saw them. Package
+tests missed this because `engine.RunWithConfig` uses
+`NewDefaultRegistry`, not the layered Dispatcher. The CLI-level
+regression test in `cmd/kilroy/run_custom_provider_test.go` now
+guards this seam by exec'ing the real binary against an httptest
+fake.
 
 ### Medium severity (output contract)
 
