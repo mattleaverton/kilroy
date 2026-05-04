@@ -85,7 +85,20 @@ func main() {
 
 	switch args[0] {
 	case "--version", "-v", "version":
-		fmt.Printf("kilroy %s\n", version.Version)
+		// Check for --json flag in remaining args
+		jsonOutput := false
+		for _, arg := range args[1:] {
+			if arg == "--json" {
+				jsonOutput = true
+				break
+			}
+		}
+		if jsonOutput {
+			out, _ := json.Marshal(map[string]string{"version": version.Version})
+			fmt.Println(string(out))
+		} else {
+			fmt.Printf("kilroy %s\n", version.Version)
+		}
 		os.Exit(0)
 	case "auth":
 		authCmd(args[1:])
