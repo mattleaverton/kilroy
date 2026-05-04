@@ -708,9 +708,9 @@ func normalizeRunProviderKey(provider string) string {
 // loadOrBuildConfig loads a config from file, or builds a zero-config default
 // when configPath is empty. In both cases, providers are auto-detected from
 // the environment to fill gaps. Config-file values always take precedence.
-// When quiet is true (--validate path), suppresses the chatty
-// "auto-detected provider …" status lines so the deterministic
-// validate-only output stays clean.
+// When quiet is true, suppresses the chatty "auto-detected provider …"
+// status lines (currently always false from the run path; retained for
+// callers that want a quieter output).
 func loadOrBuildConfig(configPath string, gitOps engine.GitOps, repoPath string, quiet bool) (*engine.RunConfigFile, error) {
 	var cfg *engine.RunConfigFile
 	if configPath != "" {
