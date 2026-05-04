@@ -4,26 +4,29 @@ An iterative coding workflow that repeatedly chooses sub-tasks, implements them,
 
 ## What it does
 
-Runs up to 8 loops of:
+Runs up to 12 loops of:
 
-1. **Task Chooser** — reads the spec + latest review, picks the highest-priority unimplemented sub-task, writes `.kilroy/task.md`.
+1. **Task Chooser** — reads the spec + latest review, picks the highest-priority unimplemented sub-task, writes `.kilroy/plan.md`.
 2. **Implementer** — reads the task, writes code, commits.
 3. **Reviewer** — diffs HEAD~1..HEAD against the spec, writes `.reviews/iter-NNN.md` and `.reviews/latest.md`, commits.
 4. **Done Gate** — reads spec + latest review, writes `COMPLETE` or `CONTINUE` to `.kilroy/decision.md`.
 
-When Done Gate writes `COMPLETE` (or `loop_max=8` is reached), the loop exits and a **Report** node writes `result.md`.
+When Done Gate writes `COMPLETE` (or `loop_max=12` is reached), the loop exits and a **Report** node writes `result.md`.
 
 ## How to launch
 
 ```bash
-kilroy run \
-  --package workflows/coding-loop/ \
+cat > /tmp/coding-loop-input.yaml <<'YAML'
+spec: /abs/path/to/spec.md
+YAML
+
+kilroy run coding-loop --detach --wait \
   --workspace /abs/path/to/target-repo \
-  --input '{"spec":"/abs/path/to/spec.md"}'
+  --input /tmp/coding-loop-input.yaml
 ```
 
 - `--workspace` — the repo being coded against (must already exist; the caller handles `git init` / `go mod init` etc.)
-- `--input spec` — absolute path to the spec/requirements file (read in-place; not copied into the repo)
+- `--input` — path to a YAML or JSON input file. For this workflow, `spec` must be the absolute path to the spec/requirements file. Do not use `--input-file spec=...`; that would inline the spec contents, but this older workflow expects a path value and then reads the file itself.
 
 ## Input contract
 
@@ -36,12 +39,13 @@ kilroy run \
 | File             | Description |
 |------------------|-------------|
 | `result.md`      | Summary: what was implemented, iterations run, final status |
+| `.kilroy/plan.md` | Current iteration's scoped sub-task. Named to avoid collision with the engine-managed `.kilroy/TASK.md` on case-insensitive filesystems. |
 | `.reviews/iter-NNN.md` | Per-iteration reviewer feedback (committed to repo) |
 | `.reviews/latest.md`   | Rolling copy of the most recent review |
 
 ## Known limits
 
-- `loop_max=8` — hard ceiling; if the done-gate never writes `COMPLETE` after 8 iterations, the run fails.
-- Chooser and done-gate use `claude-haiku-4.5` (cheap, API-based). Implementer and reviewer use `claude-sonnet-4.6` (Claude Code CLI via tmux, or API).
+- `loop_max=12` — hard ceiling; if the done-gate never writes `COMPLETE` after 12 iterations, the run fails.
+- Chooser and done-gate use `claude-haiku-4.5` via the Anthropic SDK path. Implementer and reviewer use `claude-sonnet-4.6` through the Claude CLI path selected by `agent_tool="claude"`.
 - Spec is NOT committed to the target repo — it is read in-place via the `spec` input path.
 - No pre-flight scaffolding — the caller must initialize the repo before launching.

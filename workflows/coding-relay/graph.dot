@@ -66,12 +66,9 @@ digraph coding_relay {
         prompt="You are the planner in an iterative coding workflow. Pick ONE narrow next sub-task.\n\nSteps:\n1. Read .kilroy/INPUT.md. The '## prompt' section names the spec file path; read that file in full.\n2. If '## context_files_contents' exists in INPUT.md, that's already-inlined context — skim it.\n3. If .kilroy/feedback/latest.md exists, read it for what the critic said last iteration.\n4. Run: git log --oneline -10\n5. Run: git status -sb\n6. Pick EXACTLY ONE smallest-possible self-contained sub-task. Do NOT bundle features.\n   - No code yet → pick the foundation step ONLY (one file, one type, the bootstrap).\n   - Foundation exists → pick the SINGLE smallest unimplemented feature.\n   - All features done but critic flagged a bug → pick JUST that bug.\n7. Write .kilroy/plan.md (under 30 lines). Required sections:\n   - ## What to implement (one thing, narrowly scoped)\n   - ## Acceptance criteria (2-4 bullets, this sub-task only)\n   - ## Files likely affected (best guess)\n   - ## Guardrail (verbatim line: 'Do NOT implement any other features in this iteration. Stop immediately after the scoped sub-task is complete.')\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
     ]
 
-    // Coder: opencode CLI + kimi-k2.
-    // NOTE: opencode is currently outside kilroy's auth-binder model (see
-    // internal/attractor/agents/templates/opencode.go:36). The template
-    // hard-codes the anthropic provider in OPENCODE_CONFIG_CONTENT, so
-    // routing kimi through here is a known upstream gap that this workflow
-    // is explicitly designed to surface.
+    // Coder: opencode CLI + kimi-k2. The opencode template has partial
+    // binder integration: provider-aware OPENCODE_CONFIG_CONTENT plus
+    // _KILROY env-var preference for budget isolation.
     coder [
         shape=box,
         label="Coder",

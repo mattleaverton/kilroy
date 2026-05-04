@@ -3,7 +3,7 @@
 // Inputs: spec (absolute path to a spec file).
 // Output: result.md at the workspace root.
 //
-// Flow (up to loop_max=8 iterations):
+// Flow (up to loop_max=12 iterations):
 //   start → loop_begin → task_chooser → implementer → reviewer → done_gate → loop_end → report → done
 //
 // Termination: done_gate writes COMPLETE or CONTINUE to .kilroy/decision.md.
@@ -34,7 +34,7 @@ digraph coding_loop {
     ]
 
     // Task chooser: lightweight model reads spec + latest review,
-    // decides the most impactful next sub-task, writes .kilroy/task.md.
+    // decides the most impactful next sub-task, writes .kilroy/plan.md.
     task_chooser [
         shape=box,
         label="Task Chooser",
@@ -54,17 +54,17 @@ Steps:
    - If foundation exists, pick the SINGLE smallest unimplemented feature. Not two. Not three. Exactly one.
    - If all features exist but the reviewer flagged a bug, pick JUST that bug and nothing else.
    The explicit goal is to force multiple tight iterations. Each iteration should produce the minimum-viable increment — a single method, a single test, a single bugfix.
-7. Write a concise task description to .kilroy/task.md. Include:
+7. Write a concise task description to .kilroy/plan.md. Include:
    - What to implement: ONE thing, explicitly and narrowly scoped.
    - Acceptance criteria for THIS sub-task only (2-4 bullets, focused solely on what's being added this iteration).
    - Files likely affected (your best guess).
    - Explicit guardrail line, quoted verbatim: Do NOT implement any other features in this iteration. Stop immediately after the scoped sub-task is complete, even if other unimplemented items are visible in the spec.
-   Keep .kilroy/task.md under 30 lines.
+   Keep .kilroy/plan.md under 30 lines.
 
 When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
     ]
 
-    // Implementer: reads .kilroy/task.md, implements the task, commits.
+    // Implementer: reads .kilroy/plan.md, implements the task, commits.
     implementer [
         shape=box,
         label="Implementer",
@@ -75,9 +75,9 @@ When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $K
 Your job: read the task and implement it in the codebase.
 
 Steps:
-1. Read .kilroy/task.md for the current sub-task and its acceptance criteria.
+1. Read .kilroy/plan.md for the current sub-task and its acceptance criteria.
 2. Read .kilroy/INPUT.md to find the spec path ('## spec' section), then read the spec for broader context.
-3. Implement ONLY what .kilroy/task.md asks for. Do NOT implement any other features you see in the spec or guess at next steps — the chooser is responsible for scheduling and will hand you the next sub-task on the next iteration. Stay strictly in your lane.
+3. Implement ONLY what .kilroy/plan.md asks for. Do NOT implement any other features you see in the spec or guess at next steps — the chooser is responsible for scheduling and will hand you the next sub-task on the next iteration. Stay strictly in your lane.
 4. Write clean, idiomatic code. Make targeted changes — do not refactor unrelated code.
 5. Run any applicable tests or build commands to verify your work does not break existing functionality.
 6. Stage and commit ALL changes with a clear message describing what was done (e.g., 'feat: add X per spec').
@@ -97,7 +97,7 @@ When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $K
 Your job: review the latest commit against the spec and record structured feedback.
 
 Steps:
-1. Read .kilroy/task.md to understand what was supposed to be implemented this iteration.
+1. Read .kilroy/plan.md to understand what was supposed to be implemented this iteration.
 2. Read .kilroy/INPUT.md to find the spec path ('## spec' section), then read the spec for acceptance criteria.
 3. Run: git log --oneline -5
 4. Run: git show HEAD   (shows the commit message + full diff of the implementer's latest commit; works regardless of commit depth)

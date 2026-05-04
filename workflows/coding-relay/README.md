@@ -79,19 +79,15 @@ kilroy run coding-relay --detach --wait \
 
 ## Known prerequisites / gaps
 
-This workflow surfaces a real gap in the auth-binder model. See
-`UPSTREAM-FEEDBACK.md` in this directory for the running list. As of authoring:
+This workflow intentionally exercises mixed routing. See `UPSTREAM-FEEDBACK.md`
+in this directory for the historical feedback that led to the current template
+behavior.
 
-- **`KIMI_API_KEY` must be set in the environment** before launching. Kilroy
-  does not yet have a binding for kimi (kimi is not in
-  `~/.config/kilroy/auth.toml` template).
-- **opencode is outside the auth-binder model** (documented at
-  `internal/attractor/agents/templates/opencode.go:36`). The opencode
-  template currently hard-codes the anthropic provider in
-  `OPENCODE_CONFIG_CONTENT`, so routing kimi (or any non-anthropic provider)
-  through `agent_tool=opencode` requires an upstream change to that template.
-- **`quick_easy` class on the status node will route through claude_cli +
-  tmux** on machines with `claude` logged in. That's correct behavior for
-  this exercise but slower per-iteration than a haiku API call. Override the
-  class to a literal `agent_mode=agent_loop` + `llm_provider=anthropic` +
-  `llm_model=claude-haiku-4.5` if you want SDK-only.
+- The opencode coder route uses Kimi. You must have a Kimi credential
+  available in the launch environment: the coder prefers `KIMI_API_KEY_KILROY`
+  and falls back to `KIMI_API_KEY`. The opencode template builds
+  provider-aware `OPENCODE_CONFIG_CONTENT` from the resolved route.
+- `quick_easy` on the status node resolves through policy. On machines with
+  Claude logged in, it commonly routes through `claude_cli` + tmux. That is
+  correct behavior for this routing exercise, but slower per iteration than a
+  literal Haiku SDK node.

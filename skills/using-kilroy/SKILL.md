@@ -12,7 +12,12 @@ Kilroy is a local-first Attractor runner:
 3. Run in an isolated git worktree with checkpoint commits.
 4. Resume interrupted runs from logs, CXDB, or run branch.
 
-> **If you only need to delegate a one-shot task to a single agent** (investigation, research, a small code change you don't need to supervise live), use `skills/quick-launch/` instead — it's the fire-and-forget workflow built on top of this command surface and handles tagging, detached launch, and result retrieval with one command each.
+> **If you only need to delegate a focused one-shot task to a single agent**
+> (investigation, research, or a small code change you do not need to supervise
+> live), use the packaged workflows directly: `kilroy run investigate` for
+> read-only research and `kilroy run implement` for directed code changes with
+> verification. The old `quick-launch` skill/workflow has been replaced by
+> this workflow surface.
 
 ## Command Surface
 

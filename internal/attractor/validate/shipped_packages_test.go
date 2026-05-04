@@ -202,6 +202,11 @@ func TestShippedWorkflowPackages(t *testing.T) {
 
 			for _, id := range nodeIDs {
 				node := g.Nodes[id]
+				for attrName, attrValue := range node.Attrs {
+					if strings.Contains(attrValue, ".kilroy/task.md") {
+						t.Errorf("node %q attr %q references .kilroy/task.md; use a non-conflicting workflow-owned path such as .kilroy/plan.md because the engine writes .kilroy/TASK.md on every node entry", id, attrName)
+					}
+				}
 
 				// tool_command points at scripts staged into .kilroy/package/...
 				// at runtime; the source script lives under <pkg>/scripts/.
