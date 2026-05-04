@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
+# Summary stage. Delegates BLOCKED-stub synthesis to the shared helper
+# kilroy-write-result.sh (a sibling installed via symlink in this
+# workflow's scripts/ directory). The review workflow has no verify
+# stage — but it does have a workflow-specific diff.patch (under
+# .kilroy/) that gets appended to a synthesized stub. review.json is
+# guaranteed to exist (empty array == "no findings").
 set -uo pipefail
 STATUS="${KILROY_STAGE_STATUS_PATH:-/dev/null}"
-synthesized=0
-# Re-entrancy: see implement/scripts/summary.sh for rationale.
-if [ -f result.md ] && head -n 1 result.md 2>/dev/null | grep -q '(synthesized)'; then
-    synthesized=1
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Synthesize result.md if the agent didn't write one (BLOCKED stub).
-if [ ! -f result.md ]; then
-    synthesized=1
-    {
-        echo "# review workflow result (synthesized)"
-        echo
-        echo "BLOCKED: agent did not write result.md."
-        echo
-        if [ -f .kilroy/diff.patch ]; then
-            BYTES=$(wc -c < .kilroy/diff.patch | tr -d ' ')
+WORKFLOW_NAME=review \
+INPUT_KEY=target \
+    bash "$SCRIPT_DIR/kilroy-write-result.sh"
+
+# If the helper synthesized result.md, append the .kilroy/diff.patch
+# appendix (the staged diff the agent was supposed to review).
+if [ -f result.md ] && head -n 1 result.md 2>/dev/null | grep -q '(synthesized)'; then
+    if [ -f .kilroy/diff.patch ]; then
+        BYTES=$(wc -c < .kilroy/diff.patch | tr -d ' ')
+        {
+            echo
             echo "## diff.patch"
             echo
             echo "Size: ${BYTES} bytes"
@@ -26,8 +29,8 @@ if [ ! -f result.md ]; then
                 head -n 200 .kilroy/diff.patch
                 echo '```'
             fi
-        fi
-    } > result.md
+        } >> result.md
+    fi
 fi
 
 # Ensure review.json exists even if the agent skipped it, so the
@@ -37,7 +40,7 @@ if [ ! -f review.json ]; then
     echo '[]' > review.json
 fi
 
-if [ "$synthesized" -eq 1 ]; then
+if [ -f result.md ] && head -n 1 result.md 2>/dev/null | grep -q '(synthesized)'; then
     printf '{"status":"fail","failure_reason":"agent_did_not_write_result"}\n' > "$STATUS"
     exit 1
 fi

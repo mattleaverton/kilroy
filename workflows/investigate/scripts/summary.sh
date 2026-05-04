@@ -1,27 +1,18 @@
 #!/usr/bin/env bash
+# Summary stage. Delegates BLOCKED-stub synthesis to the shared helper
+# kilroy-write-result.sh (a sibling installed via symlink in this
+# workflow's scripts/ directory). The investigate workflow has no
+# verify or diff stage — the helper's stub with the surfaced question
+# is sufficient.
 set -uo pipefail
 STATUS="${KILROY_STAGE_STATUS_PATH:-/dev/null}"
-synthesized=0
-# Re-entrancy: see implement/scripts/summary.sh for rationale.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+WORKFLOW_NAME=investigate \
+INPUT_KEY=question \
+    bash "$SCRIPT_DIR/kilroy-write-result.sh"
+
 if [ -f result.md ] && head -n 1 result.md 2>/dev/null | grep -q '(synthesized)'; then
-    synthesized=1
-fi
-if [ ! -f result.md ]; then
-    synthesized=1
-    {
-        echo "# investigate workflow result (synthesized)"
-        echo
-        echo "BLOCKED: agent did not write result.md."
-        echo
-        echo "## what was asked"
-        if [ -f .kilroy/INPUT.md ]; then
-            sed -n '/^## question$/,/^## /p' .kilroy/INPUT.md | sed '1d;$d'
-        else
-            echo "(input file not found)"
-        fi
-    } > result.md
-fi
-if [ "$synthesized" -eq 1 ]; then
     printf '{"status":"fail","failure_reason":"agent_did_not_write_result"}\n' > "$STATUS"
     exit 1
 fi
