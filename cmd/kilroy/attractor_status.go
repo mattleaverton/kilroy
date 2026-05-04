@@ -1,3 +1,7 @@
+// kilroy status: one-shot snapshot or repeated polling snapshot. v2 §2 is
+// polling-not-streaming; the legacy --follow / -f / --raw / --cxdb tail
+// modes were removed in this push.
+
 package main
 
 import (
@@ -17,17 +21,13 @@ func attractorStatus(args []string) {
 func statusUsage(out io.Writer) {
 	fmt.Fprintln(out, "usage:")
 	fmt.Fprintln(out, "  kilroy status (--logs-root <dir> | --latest | --run <id>)")
-	fmt.Fprintln(out, "                [--json] [--follow|-f] [--watch] [--cxdb] [--raw]")
-	fmt.Fprintln(out, "                [--interval <sec>] [--verbose|-v]")
+	fmt.Fprintln(out, "                [--json] [--watch] [--interval <sec>] [--verbose|-v]")
 	fmt.Fprintln(out, "")
 	fmt.Fprintln(out, "  --logs-root <dir>   inspect a specific run's logs directory")
 	fmt.Fprintln(out, "  --latest            shorthand for the most recent run's logs_root")
 	fmt.Fprintln(out, "  --run <id>          supervisor assessment from the run database")
-	fmt.Fprintln(out, "  --follow,-f         tail progress.ndjson (or CXDB if configured)")
-	fmt.Fprintln(out, "  --watch             repeated snapshot (mutually exclusive with --follow)")
+	fmt.Fprintln(out, "  --watch             repeated polling snapshot")
 	fmt.Fprintln(out, "  --interval <sec>    poll interval for --watch (default 2)")
-	fmt.Fprintln(out, "  --cxdb              follow CXDB instead of auto-detect")
-	fmt.Fprintln(out, "  --raw               print raw events when following")
 	fmt.Fprintln(out, "  --json              JSON output for snapshot/watch")
 	fmt.Fprintln(out, "  --verbose,-v        more detail in snapshot")
 }
@@ -48,11 +48,8 @@ func runAttractorStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	var logsRoot string
 	var asJSON bool
-	var follow bool
-	var raw bool
 	var watch bool
 	var latest bool
-	var useCXDB bool
 	var verbose bool
 	var runID string
 	intervalSec := 2
@@ -75,16 +72,10 @@ func runAttractorStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 			logsRoot = args[i]
 		case "--json":
 			asJSON = true
-		case "--follow", "-f":
-			follow = true
-		case "--raw":
-			raw = true
 		case "--watch":
 			watch = true
 		case "--latest":
 			latest = true
-		case "--cxdb":
-			useCXDB = true
 		case "--verbose", "-v":
 			verbose = true
 		case "--interval":
@@ -140,23 +131,6 @@ func runAttractorStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	if logsRoot == "" {
 		fmt.Fprintln(stderr, "--logs-root or --latest is required")
 		return 1
-	}
-
-	// Mutually exclusive modes.
-	if follow && watch {
-		fmt.Fprintln(stderr, "--follow and --watch are mutually exclusive")
-		return 1
-	}
-
-	if follow {
-		if useCXDB {
-			return runFollowCXDB(logsRoot, stdout, raw)
-		}
-		// Auto-detect: if manifest.json has CXDB config, try CXDB first.
-		if m, err := loadCXDBManifest(logsRoot); err == nil && m.CXDB.HTTPBaseURL != "" {
-			return runFollowCXDB(logsRoot, stdout, raw)
-		}
-		return runFollowProgress(logsRoot, stdout, raw)
 	}
 
 	if watch {

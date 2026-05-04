@@ -24,7 +24,7 @@ kilroy run --graph <file.dot> [--config <run.yaml>] [...]   # advanced ad-hoc gr
 kilroy run --package <dir>    [--config <run.yaml>] [...]   # advanced ad-hoc package mode
 kilroy resume --logs-root <dir> [--pretty]
 kilroy resume --run-branch <attractor/run/...> [--repo <path>] [--pretty]
-kilroy status [--logs-root <dir> | --latest] [--json] [--follow|-f] [--cxdb] [--raw] [--watch] [--interval <sec>]
+kilroy status [--logs-root <dir> | --latest] [--json] [--watch] [--interval <sec>]
 kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
 kilroy runs list   [--json|--pretty] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
 kilroy runs show   (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]

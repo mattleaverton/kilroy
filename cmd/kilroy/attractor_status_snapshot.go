@@ -1,9 +1,14 @@
+// Snapshot, watch (polling), and --latest helpers for `kilroy status`.
+// One-shot snapshot reads runstate.json; --watch reprints it on an
+// interval; --latest finds the most recently modified run via the run
+// DB then falls back to the XDG state path. v2 §2 (polling-not-
+// streaming) — the legacy tail-mode --follow / -f / --raw / --cxdb
+// flags were removed.
+
 package main
 
 import (
-	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,232 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/danshapiro/kilroy/internal/attractor/procutil"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/attractor/runstate"
 )
-
-// runFollowProgress tails progress.ndjson with formatted output until the run
-// completes (final.json appears) or the process dies (PID no longer alive).
-// When raw is true, events are printed as-is (NDJSON passthrough).
-func runFollowProgress(logsRoot string, w io.Writer, raw bool) int {
-	ndjsonPath := filepath.Join(logsRoot, "progress.ndjson")
-	finalPath := filepath.Join(logsRoot, "final.json")
-	pidPath := filepath.Join(logsRoot, "run.pid")
-
-	// Check if already finished.
-	if isTerminal(finalPath) {
-		// Catch up on all events, then exit.
-		printAllEvents(ndjsonPath, w, raw)
-		printFinalSummary(finalPath, w)
-		return 0
-	}
-
-	// Open ndjson for tailing. File may not exist yet if the run just started.
-	var offset int64
-	offset, _ = printAllEvents(ndjsonPath, w, raw)
-
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		// Read new events.
-		offset = tailEvents(ndjsonPath, offset, w, raw)
-
-		// Check for terminal state.
-		if isTerminal(finalPath) {
-			// Drain any remaining events.
-			tailEvents(ndjsonPath, offset, w, raw)
-			printFinalSummary(finalPath, w)
-			return 0
-		}
-
-		// Check if PID is still alive.
-		if pid := readPID(pidPath); pid > 0 && !procutil.PIDAlive(pid) {
-			// Drain any remaining events.
-			tailEvents(ndjsonPath, offset, w, raw)
-			fmt.Fprintf(w, "\nrun process (pid %d) is no longer alive\n", pid)
-			return 1
-		}
-	}
-	return 0
-}
-
-// printAllEvents reads all existing events from ndjson and prints them.
-// Returns the file offset after reading and any error.
-func printAllEvents(ndjsonPath string, w io.Writer, raw bool) (int64, error) {
-	f, err := os.Open(ndjsonPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		printEvent(w, line, raw)
-	}
-
-	offset, _ := f.Seek(0, io.SeekCurrent)
-	return offset, scanner.Err()
-}
-
-// tailEvents reads new events from ndjsonPath starting at the given offset.
-// Returns the new offset.
-func tailEvents(ndjsonPath string, offset int64, w io.Writer, raw bool) int64 {
-	f, err := os.Open(ndjsonPath)
-	if err != nil {
-		return offset
-	}
-	defer f.Close()
-
-	if offset > 0 {
-		if _, err := f.Seek(offset, io.SeekStart); err != nil {
-			return offset
-		}
-	}
-
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		printEvent(w, line, raw)
-	}
-
-	newOffset, _ := f.Seek(0, io.SeekCurrent)
-	return newOffset
-}
-
-func printEvent(w io.Writer, line string, raw bool) {
-	if raw {
-		fmt.Fprintln(w, line)
-		return
-	}
-	var ev map[string]any
-	if err := json.Unmarshal([]byte(line), &ev); err != nil {
-		fmt.Fprintln(w, line)
-		return
-	}
-	formatted := formatProgressEvent(ev)
-	if strings.TrimSpace(formatted) == "" {
-		return
-	}
-	fmt.Fprintln(w, formatted)
-}
-
-func formatProgressEvent(ev map[string]any) string {
-	ts := formatEventTime(ev)
-	event := evStr(ev, "event")
-	nodeID := evStr(ev, "node_id")
-
-	switch event {
-	case "stage_attempt_start":
-		return fmt.Sprintf("%s | %-24s | %s (attempt %s/%s)",
-			ts, event, nodeID,
-			evVal(ev, "attempt"), evVal(ev, "max"))
-
-	case "stage_attempt_end":
-		status := evStr(ev, "status")
-		line := fmt.Sprintf("%s | %-24s | %s | %s",
-			ts, event, nodeID, status)
-		if reason := evStr(ev, "failure_reason"); reason != "" {
-			line += " | " + reason
-		}
-		return line
-
-	case "edge_selected":
-		return fmt.Sprintf("%s | %-24s | %s -> %s",
-			ts, event,
-			evStr(ev, "from_node"),
-			evStr(ev, "to_node"))
-
-	case "warning":
-		return fmt.Sprintf("%s | %-24s | %s",
-			ts, "WARNING", evStr(ev, "message"))
-
-	case "stage_heartbeat":
-		return fmt.Sprintf("%s | %-24s | %s | elapsed=%ss",
-			ts, event, nodeID,
-			evVal(ev, "elapsed_s"))
-
-	case "branch_progress":
-		branchKey := evStr(ev, "branch_key")
-		branchEvent := evStr(ev, "branch_event")
-		branchNode := evStr(ev, "branch_node_id")
-		line := fmt.Sprintf("%s | %-24s | %s | %s", ts, event, branchKey, branchEvent)
-		if branchNode != "" {
-			line += " | node=" + branchNode
-		}
-		if status := evStr(ev, "branch_status"); status != "" {
-			line += " | status=" + status
-		}
-		if reason := evStr(ev, "branch_failure_reason"); reason != "" {
-			line += " | " + reason
-		}
-		return line
-
-	case "branch_heartbeat":
-		// Keep default follow output focused on meaningful progress; heartbeats
-		// are still available with --raw.
-		return ""
-
-	case "branch_stale_warning":
-		return fmt.Sprintf("%s | %-24s | %s | idle=%sms | last=%s",
-			ts, event,
-			evStr(ev, "branch_key"),
-			evVal(ev, "branch_idle_ms"),
-			evStr(ev, "branch_last_event"))
-
-	case "loop_restart":
-		return fmt.Sprintf("%s | %-24s | restarting pipeline",
-			ts, event)
-
-	case "stage_retry_blocked":
-		return fmt.Sprintf("%s | %-24s | %s | %s (%s)",
-			ts, event, nodeID,
-			evStr(ev, "failure_class"),
-			evStr(ev, "failure_reason"))
-
-	case "retry_attempt":
-		return fmt.Sprintf("%s | %-24s | %s (attempt %s/%s)",
-			ts, event, nodeID,
-			evVal(ev, "attempt"), evVal(ev, "max"))
-
-	default:
-		if nodeID != "" {
-			return fmt.Sprintf("%s | %-24s | %s", ts, event, nodeID)
-		}
-		// For events with a message field (like warnings without node_id)
-		if msg := evStr(ev, "message"); msg != "" {
-			return fmt.Sprintf("%s | %-24s | %s", ts, event, msg)
-		}
-		return fmt.Sprintf("%s | %-24s |", ts, event)
-	}
-}
-
-func formatEventTime(ev map[string]any) string {
-	raw := evStr(ev, "ts")
-	if raw == "" {
-		return "          "
-	}
-	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-		return t.Format("15:04:05")
-	}
-	if t, err := time.Parse(time.RFC3339, raw); err == nil {
-		return t.Format("15:04:05")
-	}
-	return raw[:min(10, len(raw))]
-}
 
 func evStr(ev map[string]any, key string) string {
 	v, ok := ev[key]
@@ -248,24 +30,6 @@ func evStr(ev map[string]any, key string) string {
 		return s
 	}
 	return fmt.Sprint(v)
-}
-
-func evVal(ev map[string]any, key string) string {
-	v, ok := ev[key]
-	if !ok || v == nil {
-		return "?"
-	}
-	switch t := v.(type) {
-	case float64:
-		if t == float64(int(t)) {
-			return fmt.Sprintf("%d", int(t))
-		}
-		return fmt.Sprintf("%.1f", t)
-	case string:
-		return t
-	default:
-		return fmt.Sprint(t)
-	}
 }
 
 func isTerminal(finalPath string) bool {

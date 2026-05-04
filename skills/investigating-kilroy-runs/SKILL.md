@@ -62,12 +62,14 @@ Use the endpoint printed by `start-cxdb-ui.sh` (`cxdb_ui=...`) as the source of 
 KILROY_CXDB_OPEN_UI=1 ./scripts/start-cxdb-ui.sh
 ```
 
-To follow run events directly from CXDB:
+To poll run state with periodic snapshots:
 
 ```bash
-./kilroy status --logs-root "$RUN_ROOT" --follow --cxdb
-./kilroy status --logs-root "$RUN_ROOT" --follow --cxdb --raw
+./kilroy status --logs-root "$RUN_ROOT" --watch
 ```
+
+(The legacy `--follow|-f` / `--raw` / `--cxdb` tail-mode flags were
+removed in the v2 cleanup; `--watch` polls the snapshot instead.)
 
 To run direct HTTP queries for ad-hoc debugging, use:
 
