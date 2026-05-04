@@ -113,6 +113,35 @@ func TestOpencodeBuildArgs_UsesProviderPrefixFromEnv(t *testing.T) {
 	}
 }
 
+// BuildEnv honors the kilroy budget-isolation convention: _KILROY-suffixed
+// env vars are preferred over canonical ones, but the exported map key is
+// always the canonical name (opencode's config block references canonical
+// names via {env:NAME}).
+func TestOpencodeBuildEnv_PrefersKilroySuffixedKeys(t *testing.T) {
+	tmpl := OpenCode()
+
+	// Both set: _KILROY value wins, exported under canonical name.
+	t.Setenv("KIMI_API_KEY", "canonical-value")
+	t.Setenv("KIMI_API_KEY_KILROY", "kilroy-value")
+	env := tmpl.BuildEnv()
+	if got := env["KIMI_API_KEY"]; got != "kilroy-value" {
+		t.Errorf("KIMI_API_KEY: got %q want %q (should prefer _KILROY)", got, "kilroy-value")
+	}
+	if _, leaked := env["KIMI_API_KEY_KILROY"]; leaked {
+		t.Errorf("env should expose canonical name only, not _KILROY suffix")
+	}
+}
+
+func TestOpencodeBuildEnv_FallsBackToCanonicalWhenKilroyAbsent(t *testing.T) {
+	tmpl := OpenCode()
+	t.Setenv("KIMI_API_KEY", "canonical-value")
+	t.Setenv("KIMI_API_KEY_KILROY", "")
+	env := tmpl.BuildEnv()
+	if got := env["KIMI_API_KEY"]; got != "canonical-value" {
+		t.Errorf("KIMI_API_KEY: got %q want canonical-value (no _KILROY set)", got)
+	}
+}
+
 // Without KILROY_AGENT_PROVIDER, BuildArgs defaults to "anthropic/" —
 // preserves back-compat for fixtures and direct-use callers that don't
 // set the env key.

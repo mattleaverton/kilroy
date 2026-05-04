@@ -49,29 +49,24 @@ func OpenCode() Template {
 			args = append(args, prompt)
 			return args
 		},
-		// KNOWN GAP: opencode is OUTSIDE the binder model.
-		//
-		// opencode is a multi-provider tool with its own internal config DB
-		// (~/.local/share/opencode/opencode.db) and its own credential
-		// management — it doesn't fit the binder pattern (one driver, one
-		// chain) cleanly. For now, BuildEnv passes through provider env vars
-		// (canonical names only) so opencode's existing `{env:NAME}` config
-		// substitution keeps working.
-		//
-		// Concrete consequence: opencode runs do NOT honor the kilroy auth
-		// chain — _KILROY-suffixed keys are not preferred, and the
-		// claude/codex env-scrub patterns don't apply. If you route
-		// opencode through a class, the resolver's auth choice is recorded
-		// in resolution.json but opencode uses whatever canonical env vars
-		// happen to be set in the launcher.
+		// PARTIAL: opencode is still outside the full auth binder model
+		// (separate credential DB at ~/.local/share/opencode/opencode.db,
+		// no env-scrub like claude/codex), but the budget-isolation
+		// convention is respected: BuildEnv prefers <NAME>_KILROY over
+		// the canonical <NAME> for each known provider. The exported env
+		// var is always the canonical name because OPENCODE_CONFIG_CONTENT
+		// references {env:CANONICAL_NAME}; only the *value* comes from the
+		// _KILROY variant when present.
 		//
 		// Tracking: full opencode binder integration is a follow-up; design
 		// is in plan §11 / docs/auth.md "What's NOT covered".
 		BuildEnv: func() map[string]string {
 			env := map[string]string{}
-			// Pass through every known provider key env var so opencode's
-			// `{env:NAME}` substitution finds whichever one PrepareSession
-			// references. The provider config below picks one of these.
+			// For each known provider key, prefer the _KILROY-suffixed
+			// variant (kilroy budget-isolation convention from auth.toml)
+			// and fall back to the canonical name. The map key is always
+			// the canonical name — opencode's `{env:NAME}` substitution
+			// reads canonical env names from its own config block.
 			for _, name := range []string{
 				"ANTHROPIC_API_KEY",
 				"OPENAI_API_KEY",
@@ -82,6 +77,10 @@ func OpenCode() Template {
 				"MINIMAX_API_KEY",
 				"INCEPTION_API_KEY",
 			} {
+				if val := os.Getenv(name + "_KILROY"); val != "" {
+					env[name] = val
+					continue
+				}
 				if val := os.Getenv(name); val != "" {
 					env[name] = val
 				}
