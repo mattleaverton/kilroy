@@ -49,7 +49,7 @@ way this one can.
 |-------------------------------|------------|------------------------------------------|
 | `STATUS.md`                   | status     | Refreshed every iteration. External-readable progress overview. |
 | `result.md`                   | final-report | Composed at end of run. |
-| `.kilroy/task.md`             | planner    | Current iteration's scoped sub-task. |
+| `.kilroy/plan.md`             | planner    | Current iteration's scoped sub-task. (Named to avoid collision with the engine-managed `.kilroy/TASK.md` on case-insensitive filesystems.) |
 | `.kilroy/feedback/iter-NNN.md`| critic     | Per-iteration feedback (committed). |
 | `.kilroy/feedback/latest.md`  | critic     | Rolling latest feedback. |
 | `.kilroy/decision.md`         | critic     | `COMPLETE` or `CONTINUE` — loop signal. |

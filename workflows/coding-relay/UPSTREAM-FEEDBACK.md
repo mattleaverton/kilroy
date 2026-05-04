@@ -404,6 +404,44 @@ This is the one item I can't make airtight in the worktree without
 either changing the providerspec (decision #1 or #2) or asking the
 user to source a different key.
 
+### F11 — DESIGN: engine writes `.kilroy/TASK.md` per node, collides with workflow-author files on case-insensitive filesystems
+
+**Symptom:** A workflow that wants its planner to write a per-iteration
+file at `.kilroy/task.md` (lowercase) runs into a name collision: the
+engine writes `.kilroy/TASK.md` (uppercase) on every node entry, with
+the current node's prompt as content. On macOS HFS+ / APFS (the most
+common dev environment) the filesystem is case-insensitive — so
+`.kilroy/task.md` and `.kilroy/TASK.md` are the same inode. The
+engine's per-node write happens last (just before each node runs), so
+the planner's content is silently clobbered every time the engine
+enters the next node.
+
+**Concrete:** in run `01KQSR85JRD9GD9SMZB0M7HSJ8`, planner wrote its
+scoped task description to `.kilroy/task.md`. When the engine
+transitioned to the coder node, it wrote `# Task: coder\n\nYou are
+the coder...` to `.kilroy/TASK.md` — overwriting the planner's
+content. The coder then read `.kilroy/task.md` and saw its own prompt
+instead of the planner's task. (The coder kept going on
+INPUT.md alone, so the run wasn't fully blocked, but the
+planner-coder discipline was lost.)
+
+**Workaround in this workflow:** rename to `.kilroy/plan.md` (no
+collision with engine names). Updated graph.dot, README.
+
+**Suggested upstream fix:** any of:
+1. Engine writes its prompt to a name workflow authors can't accidentally
+   reach for: `.kilroy/_engine_prompt.md` or `.kilroy/.task.md` (dotfile)
+   or `.kilroy/.engine/TASK.md`.
+2. Document the reservation: "the `.kilroy/` directory has a reserved
+   name list — TASK.md, INPUT.md, CONTEXT.md, decision.md, package/,
+   data/. Don't write into those." Plus a launch-time linter that
+   warns when a workflow's prompts reference these names.
+3. Document the case-sensitivity issue specifically. Workflow authors
+   on Linux won't see this; macOS authors will get bitten on first run.
+
+This footgun is invisible until you actually run a workflow and inspect
+the artifacts. Worth at least the lint or doc.
+
 ### F8 — UX: stale-build detection is not git-worktree-aware
 
 **Symptom:**
