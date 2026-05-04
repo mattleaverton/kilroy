@@ -782,8 +782,8 @@ digraph G {
 	if !strings.Contains(out, "CXDB UI available at http://127.0.0.1:9020") {
 		t.Fatalf("missing startup UI line in output:\n%s", out)
 	}
-	if !strings.Contains(out, "cxdb_ui=http://127.0.0.1:9020") {
-		t.Fatalf("missing cxdb_ui link in output:\n%s", out)
+	if !strings.Contains(out, `"cxdb_ui":"http://127.0.0.1:9020"`) {
+		t.Fatalf("missing cxdb_ui field in JSON run handle:\n%s", out)
 	}
 }
 
@@ -842,7 +842,7 @@ digraph G {
 	if !strings.Contains(out, "CXDB UI available at "+cxdbSrv.URL()) {
 		t.Fatalf("missing autodiscovered UI startup line in output:\n%s", out)
 	}
-	if !strings.Contains(out, "cxdb_ui="+cxdbSrv.URL()) {
-		t.Fatalf("missing autodiscovered cxdb_ui link in output:\n%s", out)
+	if !strings.Contains(out, `"cxdb_ui":"`+cxdbSrv.URL()+`"`) {
+		t.Fatalf("missing autodiscovered cxdb_ui field in JSON run handle:\n%s", out)
 	}
 }

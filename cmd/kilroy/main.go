@@ -112,15 +112,13 @@ func main() {
 		attractorIngest(args[1:])
 	case "serve":
 		attractorServe(args[1:])
-	case "review":
-		attractorReview(args[1:])
 	case "modeldb":
 		attractorModelDB(args[1:])
 	case "attractor":
 		fmt.Fprintln(os.Stderr, "kilroy attractor: removed.")
 		fmt.Fprintln(os.Stderr, "  Use the top-level commands instead — `kilroy run`, `kilroy runs`,")
 		fmt.Fprintln(os.Stderr, "  `kilroy validate`, `kilroy status`, `kilroy resume`, `kilroy stop`,")
-		fmt.Fprintln(os.Stderr, "  `kilroy ingest`, `kilroy serve`, `kilroy review`, `kilroy modeldb`.")
+		fmt.Fprintln(os.Stderr, "  `kilroy ingest`, `kilroy serve`, `kilroy modeldb`.")
 		fmt.Fprintln(os.Stderr, "  Run `kilroy --help` for the full surface.")
 		os.Exit(2)
 	default:
@@ -229,7 +227,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Authoring:")
 	fmt.Fprintln(os.Stderr, "  kilroy validate --graph <file.dot>                     (or --batch <file.dot> ...)")
 	fmt.Fprintln(os.Stderr, "  kilroy ingest [--output <file.dot>] <requirements>")
-	fmt.Fprintln(os.Stderr, "  kilroy review --graph <file.dot>                       [--output <file>] [--json]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Auth & policy:")
 	fmt.Fprintln(os.Stderr, "  kilroy auth defaults | init | list | check | suggest-fix")
@@ -249,6 +246,7 @@ func attractorRun(args []string) {
 	var logsRoot string
 	var detach bool
 	var waitForRun bool
+	var pretty bool
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
@@ -265,6 +263,8 @@ func attractorRun(args []string) {
 			detach = true
 		case "--wait":
 			waitForRun = true
+		case "--pretty":
+			pretty = true
 		case "--allow-test-shim":
 			allowTestShim = true
 		case "--confirm-stale-build":
@@ -587,7 +587,12 @@ func attractorRun(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("detached=true\nlogs_root=%s\npid_file=%s\n", logsRoot, filepath.Join(logsRoot, "run.pid"))
+		printRunHandle(runHandle{
+			Detached: true,
+			RunID:    runID,
+			LogsRoot: logsRoot,
+			PIDFile:  filepath.Join(logsRoot, "run.pid"),
+		}, pretty)
 		// --wait: launch async (detach), then block until the run
 		// reaches a terminal state. Useful for CI: one command does
 		// "launch a long-running detached job and surface its outcome
@@ -683,14 +688,7 @@ func attractorRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Printf("run_id=%s\n", res.RunID)
-	fmt.Printf("logs_root=%s\n", res.LogsRoot)
-	fmt.Printf("worktree=%s\n", res.WorktreeDir)
-	fmt.Printf("run_branch=%s\n", res.RunBranch)
-	fmt.Printf("final_commit=%s\n", res.FinalCommitSHA)
-	if res.CXDBUIURL != "" {
-		fmt.Printf("cxdb_ui=%s\n", res.CXDBUIURL)
-	}
+	printRunHandle(runHandleFromResult(res), pretty)
 	for _, w := range res.Warnings {
 		fmt.Fprintf(os.Stderr, "WARNING: %s\n", w)
 	}
@@ -966,15 +964,16 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 
 func attractorResume(args []string) {
 	var logsRoot string
-	var cxdbBaseURL string
-	var contextID string
 	var runBranch string
 	var repoPath string
+	var pretty bool
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-h", "--help", "help":
 			resumeUsage()
 			os.Exit(0)
+		case "--pretty":
+			pretty = true
 		case "--logs-root":
 			i++
 			if i >= len(args) {
@@ -982,20 +981,6 @@ func attractorResume(args []string) {
 				os.Exit(1)
 			}
 			logsRoot = args[i]
-		case "--cxdb":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(os.Stderr, "--cxdb requires a value")
-				os.Exit(1)
-			}
-			cxdbBaseURL = args[i]
-		case "--context-id":
-			i++
-			if i >= len(args) {
-				fmt.Fprintln(os.Stderr, "--context-id requires a value")
-				os.Exit(1)
-			}
-			contextID = args[i]
 		case "--run-branch":
 			i++
 			if i >= len(args) {
@@ -1015,7 +1000,7 @@ func attractorResume(args []string) {
 			os.Exit(1)
 		}
 	}
-	if logsRoot == "" && (cxdbBaseURL == "" || contextID == "") && runBranch == "" {
+	if logsRoot == "" && runBranch == "" {
 		usage()
 		os.Exit(1)
 	}
@@ -1028,8 +1013,6 @@ func attractorResume(args []string) {
 	switch {
 	case logsRoot != "":
 		res, err = engine.Resume(ctx, logsRoot)
-	case cxdbBaseURL != "" && contextID != "":
-		res, err = engine.ResumeFromCXDB(ctx, cxdbBaseURL, contextID)
 	case runBranch != "":
 		res, err = engine.ResumeFromBranch(ctx, repoPath, runBranch)
 	default:
@@ -1041,14 +1024,7 @@ func attractorResume(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Printf("run_id=%s\n", res.RunID)
-	fmt.Printf("logs_root=%s\n", res.LogsRoot)
-	fmt.Printf("worktree=%s\n", res.WorktreeDir)
-	fmt.Printf("run_branch=%s\n", res.RunBranch)
-	fmt.Printf("final_commit=%s\n", res.FinalCommitSHA)
-	if res.CXDBUIURL != "" {
-		fmt.Printf("cxdb_ui=%s\n", res.CXDBUIURL)
-	}
+	printRunHandle(runHandleFromResult(res), pretty)
 
 	if string(res.FinalStatus) == "success" {
 		os.Exit(0)
@@ -1069,12 +1045,10 @@ func validateUsage() {
 func resumeUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy resume --logs-root <dir>")
-	fmt.Fprintln(os.Stderr, "  kilroy resume --cxdb <http_base_url> --context-id <id>")
 	fmt.Fprintln(os.Stderr, "  kilroy resume --run-branch <attractor/run/...> [--repo <path>]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  --logs-root <dir>      resume from on-disk run state")
-	fmt.Fprintln(os.Stderr, "  --cxdb <url>           resume from a CXDB context")
-	fmt.Fprintln(os.Stderr, "  --context-id <id>      CXDB context id (with --cxdb)")
 	fmt.Fprintln(os.Stderr, "  --run-branch <branch>  resume from a run branch in the git repo")
 	fmt.Fprintln(os.Stderr, "  --repo <path>          repo path (with --run-branch; default: cwd)")
+	fmt.Fprintln(os.Stderr, "  --pretty               emit human-readable key=value text (default: JSON)")
 }

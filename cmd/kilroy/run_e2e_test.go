@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -265,15 +266,23 @@ tool = "claude"
 		t.Fatalf("kilroy run implement failed: %v\n%s", err, out)
 	}
 
-	// Locate the run's logs_root. Run output lines look like
-	// "logs_root=/path/to/runs/01XXX" or "run_id=01XXX".
-	logsRoot := extractKVValue(string(out), "logs_root=")
-	if logsRoot == "" {
-		t.Fatalf("could not find logs_root in output:\n%s", out)
+	// kilroy run emits a JSON run handle on stdout (v2 §4 contract).
+	// Decode it to find logs_root + run_id. The run output may include
+	// CombinedOutput stderr above stdout — locate the JSON line.
+	var handle struct {
+		RunID    string `json:"run_id"`
+		LogsRoot string `json:"logs_root"`
 	}
-	runID := extractKVValue(string(out), "run_id=")
+	if err := decodeRunHandleJSON(out, &handle); err != nil {
+		t.Fatalf("could not decode run handle JSON: %v\noutput:\n%s", err, out)
+	}
+	logsRoot := handle.LogsRoot
+	runID := handle.RunID
+	if logsRoot == "" {
+		t.Fatalf("missing logs_root in run handle:\n%s", out)
+	}
 	if runID == "" {
-		t.Fatalf("could not find run_id in output:\n%s", out)
+		t.Fatalf("missing run_id in run handle:\n%s", out)
 	}
 	t.Logf("e2e run %s at %s", runID, logsRoot)
 
@@ -449,6 +458,22 @@ func extractKVValue(out, prefix string) string {
 		}
 	}
 	return ""
+}
+
+// decodeRunHandleJSON scans `out` for the first line that parses as a
+// JSON object and decodes it into v. Tolerates stderr noise mixed in
+// from CombinedOutput; the run handle is emitted on stdout as one line.
+func decodeRunHandleJSON(out []byte, v any) error {
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "{") || !strings.HasSuffix(line, "}") {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), v); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("no JSON object found in output")
 }
 
 // findRepoRootForE2E walks up from cwd until it finds a go.mod. Used to
