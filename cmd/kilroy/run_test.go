@@ -101,7 +101,7 @@ func TestRunCmd_ResolvesViaKILROYWorkflowPaths(t *testing.T) {
 	pkgRoot := t.TempDir()
 	makePackageDir(t, pkgRoot, "smoke")
 
-	cmd := exec.Command(bin, "run", "smoke", "--validate")
+	cmd := exec.Command(bin, "run", "smoke", "--no-cxdb", "--allow-test-shim")
 	cmd.Env = append(os.Environ(),
 		"KILROY_WORKFLOW_PATHS="+pkgRoot,
 		"XDG_CONFIG_HOME="+t.TempDir(),

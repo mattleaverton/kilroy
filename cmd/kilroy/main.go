@@ -223,7 +223,6 @@ func attractorRun(args []string) {
 	var runID string
 	var logsRoot string
 	var detach bool
-	var validateOnly bool
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
@@ -239,8 +238,6 @@ func attractorRun(args []string) {
 		switch args[i] {
 		case "--detach":
 			detach = true
-		case "--validate":
-			validateOnly = true
 		case "--allow-test-shim":
 			allowTestShim = true
 		case "--confirm-stale-build":
@@ -327,10 +324,6 @@ func attractorRun(args []string) {
 
 	if graphPath == "" && packagePath == "" {
 		usage()
-		os.Exit(1)
-	}
-	if validateOnly && detach {
-		fmt.Fprintln(os.Stderr, "--validate cannot be combined with --detach")
 		os.Exit(1)
 	}
 	if err := ensureFreshKilroyBuild(confirmStaleBuild); err != nil {
@@ -598,76 +591,16 @@ func attractorRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	// --validate paths run quietly: the deterministic prelaunch report is
-	// the canonical output, no chatty provider auto-detection lines.
-	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, validateOnly)
+	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	if !skipCLIHeadlessWarning && runConfigUsesCLIProviders(cfg) {
 		if !confirmCLIHeadlessWarning(os.Stdin, os.Stderr) {
-			fmt.Fprintln(os.Stderr, "validation aborted: declined provider CLI headless-risk warning")
+			fmt.Fprintln(os.Stderr, "launch aborted: declined provider CLI headless-risk warning")
 			os.Exit(1)
 		}
-	}
-	if validateOnly {
-		// Same required-input check as the normal run path. --validate
-		// gives false confidence if it skips this — the entire point of
-		// prelaunch validation is catching problems before launch.
-		if len(inputs) > 0 || graphDeclaredInputs(dotSource) {
-			g, _, parseErr := engine.Prepare(dotSource)
-			if parseErr == nil && g != nil {
-				if validErr := engine.ValidateRequiredInputs(g, inputs); validErr != nil {
-					fmt.Fprintln(os.Stderr, validErr)
-					os.Exit(1)
-				}
-			}
-		}
-		ctx, cleanupSignalCtx := signalCancelContext()
-		pf, err := engine.PreflightWithConfig(ctx, dotSource, cfg, engine.RunOptions{
-			RunID:         runID,
-			LogsRoot:      logsRoot,
-			AllowTestShim: allowTestShim,
-			DisableCXDB:   noCXDB,
-			Registry:      newLayeredRegistry(),
-			GitOps:        gitOps,
-			PackageDir: func() string {
-				if pkg != nil {
-					return pkg.Dir
-				}
-				return ""
-			}(),
-			OnCXDBStartup: func(info *engine.CXDBStartupInfo) {
-				if info == nil {
-					return
-				}
-				if info.UIURL == "" {
-					return
-				}
-				if info.UIStarted {
-					fmt.Fprintf(os.Stderr, "CXDB UI starting at %s\n", info.UIURL)
-					return
-				}
-				fmt.Fprintf(os.Stderr, "CXDB UI available at %s\n", info.UIURL)
-			},
-		})
-		cleanupSignalCtx()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Printf("validate=true\n")
-		fmt.Printf("run_id=%s\n", pf.RunID)
-		fmt.Printf("logs_root=%s\n", pf.LogsRoot)
-		fmt.Printf("prelaunch_validation=%s\n", pf.PreflightReportPath)
-		if pf.CXDBUIURL != "" {
-			fmt.Printf("cxdb_ui=%s\n", pf.CXDBUIURL)
-		}
-		for _, w := range pf.Warnings {
-			fmt.Fprintf(os.Stderr, "WARNING: %s\n", w)
-		}
-		os.Exit(0)
 	}
 
 	// Default: no deadline. CLI runs (especially with provider CLIs) can take hours.

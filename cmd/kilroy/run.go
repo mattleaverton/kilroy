@@ -27,10 +27,11 @@ import (
 //
 // A leading flag (starts with "-") routes to direct mode; otherwise the
 // first positional is treated as a workflow name. Direct mode exposes
-// the engine's full flag surface (--detach, --config, --validate,
-// etc.) — `kilroy run --help` documents the common ones. The agent
-// dispatcher routes by resolved driver (CLI vs SDK), never by a CLI
-// flag, so there is no --tmux switch.
+// the engine's full flag surface (--detach, --config, etc.) —
+// `kilroy run --help` documents the common ones. The agent dispatcher
+// routes by resolved driver (CLI vs SDK), never by a CLI flag, so
+// there is no --tmux switch. For prelaunch-only validation, use
+// `kilroy workflows validate <name>`.
 func runCmd(args []string) {
 	if len(args) == 0 {
 		runUsage()
@@ -92,7 +93,6 @@ func runUsage() {
 	fmt.Fprintln(os.Stderr, "  --input-file KEY=PATH           file contents → inputs[KEY] (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --prompt-file <file>            convenience alias for --input-file prompt=PATH")
 	fmt.Fprintln(os.Stderr, "  --label KEY=VALUE               attach labels to the run record (repeatable)")
-	fmt.Fprintln(os.Stderr, "  --validate                      prelaunch-only; don't execute")
 	fmt.Fprintln(os.Stderr, "  --no-cxdb                       skip CXDB streaming")
 	fmt.Fprintln(os.Stderr, "  --confirm-stale-build           bypass the dev-build-vs-source-tree check")
 	fmt.Fprintln(os.Stderr, "  --allow-test-shim               permit test_shim provider profile (CI use)")
