@@ -69,10 +69,13 @@ final_status=success
 - **`kilroy resume --cxdb` / `--context-id`**: removed from the CLI
   surface. `engine.ResumeFromCXDB` stays as a Go API for tests and
   programmatic callers.
-- **`kilroy status --follow|-f` / `--raw`** (v2 §2 polling-not-streaming):
-  **NOT done in this push.** Removing it is ~700 LoC of impl + tests;
-  reviewer ranked it low and the spec drift is contained. Tracked as
-  follow-up.
+- **`kilroy status --follow|-f` / `--raw` / `--cxdb`** (v2 §2
+  polling-not-streaming): **landed**. -1254 LoC: deleted
+  attractor_status_cxdb.{go,_test}, attractor_status_follow_test.go,
+  the runFollowProgress/runFollowCXDB impls, and all event/CXDB
+  formatter helpers. Renamed attractor_status_follow.go →
+  attractor_status_snapshot.go to reflect what's left
+  (snapshot/watch/--latest helpers).
 
 ## Tests added
 
@@ -106,12 +109,11 @@ Updated:
 
 ## What's still open from the two reviewer letters
 
-1. **`kilroy status --follow|-f` / `--raw`** removal (low priority).
-2. **Async-default flip**: `--detach` becomes the default, `--sync`
+1. **Async-default flip**: `--detach` becomes the default, `--sync`
    the explicit-block escape. Reviewer flagged this as a separate
    decision — a UX break, not a fixup. Punted to a discrete
    conversation.
-3. **Stripping advanced run flags entirely** (`--graph`, `--config`,
+2. **Stripping advanced run flags entirely** (`--graph`, `--config`,
    `--workspace`, etc.) — needs test-infrastructure migration to Go
    APIs first.
 
