@@ -159,20 +159,15 @@ func loadEnvFile(args []string) []string {
 }
 
 // newLayeredRegistry composes the full handler registry from L0 (engine core),
-// L1 (agent capabilities), and L2 (workflow patterns). This is where the
-// layered architecture is wired together at startup.
-func newLayeredRegistry(useTmux bool) *engine.HandlerRegistry {
+// L1 (agent capabilities), and L2 (workflow patterns). The agent layer
+// is a single Dispatcher — it picks the CLI/tmux path or the API/SDK
+// path internally based on the resolved driver, never on a CLI flag.
+func newLayeredRegistry() *engine.HandlerRegistry {
 	reg := engine.NewCoreRegistry()
-	// Layer 1: Agent capabilities.
-	if useTmux {
-		agentHandler := agents.NewTmuxAgentHandler()
-		reg.Register("agent", agentHandler)
-		reg.SetDefault(agentHandler)
-	} else {
-		agentHandler := &agents.AgentHandler{}
-		reg.Register("agent", agentHandler)
-		reg.SetDefault(agentHandler)
-	}
+	// Layer 1: Agent capabilities. One handler that routes by resolved driver.
+	dispatcher := agents.NewDispatcher()
+	reg.Register("agent", dispatcher)
+	reg.SetDefault(dispatcher)
 	// Layer 2: Workflow patterns.
 	reg.Register("wait.human", &workflows.HumanGateHandler{})
 	reg.Register("stack.manager_loop", &workflows.ManagerLoopHandler{})
@@ -240,7 +235,6 @@ func attractorRun(args []string) {
 	var inputFileSpecs []string
 	var workspace string
 	var labelSpecs []string
-	var useTmux bool
 	var packagePath string
 
 	for i := 0; i < len(args); i++ {
@@ -327,8 +321,6 @@ func attractorRun(args []string) {
 				os.Exit(1)
 			}
 			labelSpecs = append(labelSpecs, args[i])
-		case "--tmux":
-			useTmux = true
 		case "--package":
 			i++
 			if i >= len(args) {
@@ -590,9 +582,6 @@ func attractorRun(args []string) {
 			}
 			childArgs = append(childArgs, "--package", packagePath)
 		}
-		if useTmux {
-			childArgs = append(childArgs, "--tmux")
-		}
 		for _, spec := range labelSpecs {
 			childArgs = append(childArgs, "--label", spec)
 		}
@@ -658,7 +647,7 @@ func attractorRun(args []string) {
 			AllowTestShim: allowTestShim,
 			DisableCXDB:   noCXDB,
 			ForceModels:   forceModels,
-			Registry:      newLayeredRegistry(useTmux),
+			Registry:      newLayeredRegistry(),
 			GitOps:        gitOps,
 			PackageDir: func() string {
 				if pkg != nil {
@@ -722,7 +711,7 @@ func attractorRun(args []string) {
 		AllowTestShim: allowTestShim,
 		DisableCXDB:   noCXDB,
 		ForceModels:   forceModels,
-		Registry:      newLayeredRegistry(useTmux),
+		Registry:      newLayeredRegistry(),
 		RunDB:         rdb,
 		Inputs:        inputs,
 		Workspace:     workspace,

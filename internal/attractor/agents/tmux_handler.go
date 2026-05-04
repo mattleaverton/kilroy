@@ -71,7 +71,7 @@ func (h *TmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, 
 			return runtime.Outcome{
 				Status: runtime.StatusFail,
 				FailureReason: fmt.Sprintf(
-					"policy class %q resolved to driver %q which has no tmux tool mapping; rerun without --tmux or arrange CLI auth so a CLI candidate matches",
+					"policy class %q resolved to driver %q which has no tmux tool mapping; this driver should not have reached the tmux handler — check dispatch routing",
 					cls.Class, cls.Driver),
 			}, nil
 		}

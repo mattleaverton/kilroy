@@ -210,7 +210,6 @@ func (s *Server) handleSubmitPipeline(w http.ResponseWriter, r *http.Request) {
 		overrides := engine.RunOptions{
 			RunID:         runID,
 			AllowTestShim: req.AllowTestShim,
-			ForceModels:   req.ForceModels,
 			ProgressSink:  broadcaster.Send,
 			Interviewer:   interviewer,
 			Inputs:        req.Inputs,
@@ -220,7 +219,7 @@ func (s *Server) handleSubmitPipeline(w http.ResponseWriter, r *http.Request) {
 			GitOps:        gitOps,
 			PackageDir:    packageDir,
 			RunDB:         rdb,
-			Registry:      newLayeredRegistry(req.Tmux),
+			Registry:      newLayeredRegistry(),
 			OnEngineReady: func(e *engine.Engine) {
 				ps.SetEngine(e)
 			},
@@ -462,17 +461,13 @@ func (s *Server) handleAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 }
 
 // newLayeredRegistry builds a handler registry with all layers registered.
-func newLayeredRegistry(useTmux bool) *engine.HandlerRegistry {
+// The agent layer is the unified Dispatcher — it routes to CLI/tmux or
+// API/SDK paths based on the resolved driver, not on a CLI flag.
+func newLayeredRegistry() *engine.HandlerRegistry {
 	reg := engine.NewCoreRegistry()
-	if useTmux {
-		agentHandler := agents.NewTmuxAgentHandler()
-		reg.Register("agent", agentHandler)
-		reg.SetDefault(agentHandler)
-	} else {
-		agentHandler := &agents.AgentHandler{}
-		reg.Register("agent", agentHandler)
-		reg.SetDefault(agentHandler)
-	}
+	dispatcher := agents.NewDispatcher()
+	reg.Register("agent", dispatcher)
+	reg.SetDefault(dispatcher)
 	reg.Register("wait.human", &workflows.HumanGateHandler{})
 	reg.Register("stack.manager_loop", &workflows.ManagerLoopHandler{})
 	return reg

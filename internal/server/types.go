@@ -41,12 +41,6 @@ type SubmitPipelineRequest struct {
 	// RunID is optional. If empty, a ULID is generated.
 	RunID string `json:"run_id,omitempty"`
 
-	// Tmux enables tmux-based agent execution.
-	Tmux bool `json:"tmux,omitempty"`
-
-	// ForceModels maps provider -> model for overrides.
-	ForceModels map[string]string `json:"force_models,omitempty"`
-
 	// AllowTestShim enables test shim mode.
 	AllowTestShim bool `json:"allow_test_shim,omitempty"`
 }

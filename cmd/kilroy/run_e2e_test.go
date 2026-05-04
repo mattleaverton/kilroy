@@ -178,7 +178,7 @@ func TestHi(t *testing.T) {
 // behavioral change should land alongside a deliberate update here.
 func TestRunImplement_E2E_FakeProvider(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not available; --tmux dispatch path requires tmux")
+		t.Skip("tmux not available; CLI-driver dispatch path requires tmux")
 	}
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go toolchain not available; verify stage runs `go build && go test`")
@@ -240,7 +240,6 @@ tool = "claude"
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin,
 		"run", "implement",
-		"--tmux",
 		"--no-cxdb",
 		"--workspace", repo,
 		"--input", inputsPath,

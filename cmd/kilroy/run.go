@@ -27,8 +27,10 @@ import (
 //
 // A leading flag (starts with "-") routes to direct mode; otherwise the
 // first positional is treated as a workflow name. Direct mode exposes
-// the engine's full flag surface (--tmux, --detach, --config, --validate,
-// etc.) — `kilroy run --help` documents the common ones.
+// the engine's full flag surface (--detach, --config, --validate,
+// etc.) — `kilroy run --help` documents the common ones. The agent
+// dispatcher routes by resolved driver (CLI vs SDK), never by a CLI
+// flag, so there is no --tmux switch.
 func runCmd(args []string) {
 	if len(args) == 0 {
 		runUsage()
@@ -84,7 +86,6 @@ func runUsage() {
 	fmt.Fprintln(os.Stderr, "Flags:")
 	fmt.Fprintln(os.Stderr, "  --graph <file.dot>              direct mode: ad-hoc graph (alternative to <workflow-name>)")
 	fmt.Fprintln(os.Stderr, "  --package <dir>                 direct mode: ad-hoc package (alternative to <workflow-name>)")
-	fmt.Fprintln(os.Stderr, "  --tmux                          run agent nodes in tmux sessions (CLI driver)")
 	fmt.Fprintln(os.Stderr, "  --detach                        background the run; print run_id + logs_root")
 	fmt.Fprintln(os.Stderr, "  --workspace <dir>               source repo (default: cwd)")
 	fmt.Fprintln(os.Stderr, "  --input <path|json>             inputs map (file path or inline JSON)")
