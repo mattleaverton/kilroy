@@ -23,10 +23,56 @@ func createDB(t *testing.T, dir string) string {
 		t.Fatalf("open test db: %v", err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`CREATE TABLE account (email TEXT, url TEXT, token_expiry INT, active INT)`); err != nil {
+	if _, err := db.Exec(`CREATE TABLE account (
+		id TEXT PRIMARY KEY,
+		email TEXT NOT NULL,
+		url TEXT NOT NULL,
+		access_token TEXT NOT NULL,
+		refresh_token TEXT NOT NULL,
+		token_expiry INTEGER,
+		time_created INTEGER NOT NULL,
+		time_updated INTEGER NOT NULL
+	)`); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
+	if _, err := db.Exec(`CREATE TABLE account_state (
+		active_account_id TEXT
+	)`); err != nil {
+		t.Fatalf("create account_state: %v", err)
+	}
 	return path
+}
+
+// setActiveAccount writes a row to account_state.active_account_id.
+func setActiveAccount(t *testing.T, path, accountID string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`INSERT INTO account_state (active_account_id) VALUES (?)`, accountID); err != nil {
+		t.Fatalf("insert account_state: %v", err)
+	}
+}
+
+// insertAccount inserts a row into the account table with the columns the
+// detector cares about; secret-bearing columns get placeholder values.
+func insertAccount(t *testing.T, path, id, email, url string, tokenExpiry int64) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	now := time.Now().Unix()
+	_, err = db.Exec(`INSERT INTO account
+		(id, email, url, access_token, refresh_token, token_expiry, time_created, time_updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, email, url, "access-placeholder", "refresh-placeholder", tokenExpiry, now, now)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
 }
 
 // TestOpenCodeDetector_DBAbsent verifies that a missing DB returns 0 entries.
@@ -56,22 +102,13 @@ func TestOpenCodeDetector_EmptyTable(t *testing.T) {
 	}
 }
 
-// TestOpenCodeDetector_ActiveFutureExpiry verifies a valid active account row returns ok.
+// TestOpenCodeDetector_ActiveFutureExpiry verifies a valid account row returns ok.
 func TestOpenCodeDetector_ActiveFutureExpiry(t *testing.T) {
 	dir := t.TempDir()
 	path := createDB(t, dir)
 
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
 	futureExpiry := time.Now().Add(24 * time.Hour).Unix()
-	_, err = db.Exec(`INSERT INTO account (email, url, token_expiry, active) VALUES (?, ?, ?, ?)`,
-		"user@anthropic.com", "https://api.anthropic.com", futureExpiry, 1)
-	db.Close()
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
+	insertAccount(t, path, "acct-1", "user@anthropic.com", "https://api.anthropic.com", futureExpiry)
 
 	det := newTestDetector(path)
 	entries, err := det.Detect()
@@ -101,17 +138,8 @@ func TestOpenCodeDetector_ActiveExpiredToken(t *testing.T) {
 	dir := t.TempDir()
 	path := createDB(t, dir)
 
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
 	pastExpiry := time.Now().Add(-24 * time.Hour).Unix()
-	_, err = db.Exec(`INSERT INTO account (email, url, token_expiry, active) VALUES (?, ?, ?, ?)`,
-		"user@openai.com", "https://api.openai.com", pastExpiry, 1)
-	db.Close()
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
+	insertAccount(t, path, "acct-1", "user@openai.com", "https://api.openai.com", pastExpiry)
 
 	det := newTestDetector(path)
 	entries, err := det.Detect()
@@ -129,8 +157,8 @@ func TestOpenCodeDetector_ActiveExpiredToken(t *testing.T) {
 	}
 }
 
-// TestOpenCodeDetector_InactiveRow verifies that inactive rows are ignored.
-func TestOpenCodeDetector_InactiveRow(t *testing.T) {
+// TestOpenCodeDetector_NullExpiry verifies that an account with NULL token_expiry is reported as ok.
+func TestOpenCodeDetector_NullExpiry(t *testing.T) {
 	dir := t.TempDir()
 	path := createDB(t, dir)
 
@@ -138,9 +166,11 @@ func TestOpenCodeDetector_InactiveRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	futureExpiry := time.Now().Add(24 * time.Hour).Unix()
-	_, err = db.Exec(`INSERT INTO account (email, url, token_expiry, active) VALUES (?, ?, ?, ?)`,
-		"user@anthropic.com", "https://api.anthropic.com", futureExpiry, 0)
+	now := time.Now().Unix()
+	_, err = db.Exec(`INSERT INTO account
+		(id, email, url, access_token, refresh_token, token_expiry, time_created, time_updated)
+		VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`,
+		"acct-1", "user@anthropic.com", "https://api.anthropic.com", "a", "r", now, now)
 	db.Close()
 	if err != nil {
 		t.Fatalf("insert: %v", err)
@@ -151,8 +181,61 @@ func TestOpenCodeDetector_InactiveRow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("expected 0 entries for inactive row, got %d", len(entries))
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].State != StateOK {
+		t.Errorf("expected state ok for NULL expiry, got %q", entries[0].State)
+	}
+	if entries[0].Expiry == nil || entries[0].Expiry.AccessTokenExpiresAt != nil {
+		t.Errorf("expected no AccessTokenExpiresAt for NULL token_expiry, got %+v", entries[0].Expiry)
+	}
+}
+
+// TestOpenCodeDetector_ActiveAccountAnnotation verifies that the row matched
+// by account_state.active_account_id is tagged "active in opencode" while
+// other rows are not.
+func TestOpenCodeDetector_ActiveAccountAnnotation(t *testing.T) {
+	dir := t.TempDir()
+	path := createDB(t, dir)
+	future := time.Now().Add(time.Hour).Unix()
+	insertAccount(t, path, "acct-anth", "u@anthropic.com", "https://api.anthropic.com", future)
+	insertAccount(t, path, "acct-oai", "u@openai.com", "https://api.openai.com", future)
+	setActiveAccount(t, path, "acct-anth")
+
+	det := newTestDetector(path)
+	entries, err := det.Detect()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	var anth, oai *Entry
+	for i := range entries {
+		switch entries[i].Provider {
+		case "anthropic":
+			anth = &entries[i]
+		case "openai":
+			oai = &entries[i]
+		}
+	}
+	if anth == nil || oai == nil {
+		t.Fatalf("missing expected providers in entries: %+v", entries)
+	}
+	hasActive := func(e *Entry) bool {
+		for _, n := range e.Notes {
+			if n == "active in opencode" {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasActive(anth) {
+		t.Errorf("anthropic entry should be tagged active, got notes %+v", anth.Notes)
+	}
+	if hasActive(oai) {
+		t.Errorf("openai entry should NOT be tagged active, got notes %+v", oai.Notes)
 	}
 }
 
