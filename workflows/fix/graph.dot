@@ -2,6 +2,7 @@ digraph fix {
     graph [
         inputs="issue",
         outputs="result.md,fix.patch",
+        max_node_visits="3",
         model_stylesheet="
             * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
         "
@@ -30,6 +31,12 @@ digraph fix {
     // failed terminal then records FinalFail at the run level. diff
     // runs on success; it captures the worktree diff for fix.patch
     // and is permitted to be empty (agent declined to change anything).
+    //
+    // max_node_visits=3 caps agent at 2 executions (original + the one
+    // retry advertised on the verify→agent edge). On a third visit
+    // attempt the engine halts with a stuck-cycle FinalFail before
+    // executing — enforcing the "retry once" contract regardless of
+    // whether failure signatures vary across attempts.
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
     stage_context -> summary        [condition="outcome!=success"]

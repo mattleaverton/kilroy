@@ -2,6 +2,7 @@ digraph implement {
     graph [
         inputs="prompt",
         outputs="result.md",
+        max_node_visits="3",
         model_stylesheet="
             * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
         "
@@ -27,7 +28,13 @@ digraph implement {
     // (exit 1, status=fail) when it had to synthesize a BLOCKED stub
     // because the agent didn't write result.md — and the failed
     // terminal then records FinalFail at the run level, so dashboards
-    // can trust final.json.status.
+    // can trust final.json.
+    //
+    // max_node_visits=3 caps agent at 2 executions (original + the one
+    // retry advertised on the verify→agent edge). On a third visit
+    // attempt the engine halts with a stuck-cycle FinalFail before
+    // executing — enforcing the "retry once" contract regardless of
+    // whether failure signatures vary across attempts.status.
     start         -> stage_context
     stage_context -> agent          [condition="outcome=success"]
     stage_context -> summary        [condition="outcome!=success"]
