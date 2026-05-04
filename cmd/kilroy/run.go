@@ -44,8 +44,7 @@ func runCmd(args []string) {
 	}
 
 	// Direct mode: first arg is a flag (--graph / --package / --config /
-	// etc.) — pass straight through to the engine. Same flag set the
-	// pre-v2 `attractor run` accepted.
+	// etc.) — pass straight through to the engine.
 	if strings.HasPrefix(args[0], "-") {
 		attractorRun(args)
 		return

@@ -836,24 +836,24 @@ func appendZombieProgressEvent(logsRoot, runID string) {
 // agent node executed. Consumers should treat absence as "no selections
 // were recorded," not as an error.
 type runShowDetail struct {
-	RunID              string                              `json:"run_id"`
-	GraphName          string                              `json:"graph_name"`
-	Goal               string                              `json:"goal,omitempty"`
-	Status             string                              `json:"status"`
-	StartedAt          time.Time                           `json:"started_at"`
-	CompletedAt        *time.Time                          `json:"completed_at,omitempty"`
-	DurationMS         *int64                              `json:"duration_ms,omitempty"`
-	LogsRoot           string                              `json:"logs_root,omitempty"`
-	WorktreeDir        string                              `json:"worktree_dir,omitempty"`
-	RepoPath           string                              `json:"repo_path,omitempty"`
-	RunBranch          string                              `json:"run_branch,omitempty"`
-	FinalSHA           string                              `json:"final_sha,omitempty"`
-	FailureReason      string                              `json:"failure_reason,omitempty"`
-	Labels             map[string]string                   `json:"labels,omitempty"`
-	Inputs             map[string]any                      `json:"inputs,omitempty"`
-	Invocation         []string                            `json:"invocation,omitempty"`
-	Outputs            []runShowOutputRef                  `json:"outputs,omitempty"`
-	ProviderSelections []rundb.ProviderSelectionSummary    `json:"provider_selections,omitempty"`
+	RunID              string                           `json:"run_id"`
+	GraphName          string                           `json:"graph_name"`
+	Goal               string                           `json:"goal,omitempty"`
+	Status             string                           `json:"status"`
+	StartedAt          time.Time                        `json:"started_at"`
+	CompletedAt        *time.Time                       `json:"completed_at,omitempty"`
+	DurationMS         *int64                           `json:"duration_ms,omitempty"`
+	LogsRoot           string                           `json:"logs_root,omitempty"`
+	WorktreeDir        string                           `json:"worktree_dir,omitempty"`
+	RepoPath           string                           `json:"repo_path,omitempty"`
+	RunBranch          string                           `json:"run_branch,omitempty"`
+	FinalSHA           string                           `json:"final_sha,omitempty"`
+	FailureReason      string                           `json:"failure_reason,omitempty"`
+	Labels             map[string]string                `json:"labels,omitempty"`
+	Inputs             map[string]any                   `json:"inputs,omitempty"`
+	Invocation         []string                         `json:"invocation,omitempty"`
+	Outputs            []runShowOutputRef               `json:"outputs,omitempty"`
+	ProviderSelections []rundb.ProviderSelectionSummary `json:"provider_selections,omitempty"`
 }
 
 // runShowOutputRef points at a declared output file on disk.

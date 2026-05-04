@@ -75,7 +75,7 @@ func main() {
 	args := os.Args[1:]
 
 	// Pre-scan for --env-file before the subcommand switch so it works with
-	// any subcommand: kilroy --env-file .env.prod attractor run ...
+	// any subcommand: kilroy --env-file .env.prod run <workflow> ...
 	args = loadEnvFile(args)
 
 	if len(args) < 1 {
@@ -115,11 +115,7 @@ func main() {
 	case "modeldb":
 		attractorModelDB(args[1:])
 	case "attractor":
-		fmt.Fprintln(os.Stderr, "kilroy attractor: removed.")
-		fmt.Fprintln(os.Stderr, "  Use the top-level commands instead — `kilroy run`, `kilroy runs`,")
-		fmt.Fprintln(os.Stderr, "  `kilroy validate`, `kilroy status`, `kilroy resume`, `kilroy stop`,")
-		fmt.Fprintln(os.Stderr, "  `kilroy ingest`, `kilroy serve`, `kilroy modeldb`.")
-		fmt.Fprintln(os.Stderr, "  Run `kilroy --help` for the full surface.")
+		fmt.Fprintln(os.Stderr, "kilroy attractor: removed — use top-level commands. Run `kilroy --help`.")
 		os.Exit(2)
 	default:
 		usage()
@@ -220,7 +216,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Run inspection:")
 	fmt.Fprintln(os.Stderr, "  kilroy runs list | show | wait | prune                 (JSON default; --pretty for humans)")
-	fmt.Fprintln(os.Stderr, "  kilroy status [--logs-root <dir> | --latest]           [--json] [--follow]")
+	fmt.Fprintln(os.Stderr, "  kilroy status [--logs-root <dir> | --latest]           [--json] [--watch]")
 	fmt.Fprintln(os.Stderr, "  kilroy resume --logs-root <dir>")
 	fmt.Fprintln(os.Stderr, "  kilroy stop --logs-root <dir>                          [--grace-ms <ms>] [--force]")
 	fmt.Fprintln(os.Stderr, "")
