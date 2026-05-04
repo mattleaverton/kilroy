@@ -234,5 +234,200 @@ So the routing surface works correctly for all the well-supported paths
    to actually run kimi through opencode end-to-end.
 3. **F3, F4, F5** are nice-to-haves; defer.
 
-After F1 + F2, the coding-relay workflow can be smoke-tested and likely
-exposes more findings.
+---
+
+## Update — smoke-test round (2026-05-04, after F1+F2 landed upstream)
+
+After pulling in the upstream F1+F2 fix (commit `87ae628`), validation
+went 4/4 ok for coding-relay. Smoke test surfaced two more issues
+worth documenting; first one is fixed in this worktree.
+
+### F6 — BUG: F2 wiring gap — `KILROY_AGENT_PROVIDER` set in child env, read from parent process env (FIXED in this worktree)
+
+**Symptom (from smoke run `01KQSPMPZDJV6NPDZB5DT1BHX1`):**
+
+opencode launched with `--model anthropic/kimi-k2`, errored with:
+```
+Model not found: anthropic/kimi-k2.
+```
+
+**Root cause:** F2's `OpencodeBuildArgs` reads `KILROY_AGENT_PROVIDER`
+via `os.Getenv` (from the kilroy parent process env). But
+`tmux_handler.go:172-177` only sets that key in the *child env map*
+that gets handed to tmux. The parent process never has it set, so
+BuildArgs always defaulted to `"anthropic"` and produced
+`anthropic/kimi-k2` regardless of route.Provider.
+
+**Fix applied:** Thread `provider` through `Template.BuildArgs` /
+`Template.BuildCommand` the same way `authMethod` is threaded — add a
+5th positional arg. tmux_handler passes `route.Provider` at the call
+site. opencode's BuildArgs reads it from the param, not from the
+parent's env. The other three templates (claude, codex, gemini) take
+provider as `_` since they're single-provider.
+
+Commit in this branch: `e5097ef fix(agents): thread route.Provider
+through Template.BuildArgs`. Tests:
+`TestOpencodeBuildArgs_UsesProviderArg` (replaces the old
+`_UsesProviderPrefixFromEnv`).
+
+**Related cleanup**: the F2 commit's docstring on opencode template
+still talks about "tmux_handler stashes route.Provider /
+route.Model under KILROY_AGENT_PROVIDER / KILROY_AGENT_MODEL in env"
+— with the fix, BuildArgs no longer reads env, only PrepareSession
+does (which IS handed the env map). The doc was rewritten in the same
+commit to match.
+
+### F7 — UX: `--config` requires `repo.path`, ignores `--workspace` flag
+
+**Symptom (from smoke run `01KQSPKZ4SN2RS37H1SH80F9Y1`):**
+
+Setting `--workspace /tmp/coding-relay-smoke --config workflows/coding-relay/run.example.yaml`
+produced `repo.path is required`, then with `repo.path: /tmp` in the
+config, produced `not a git repo: /tmp` — `--workspace` did not override
+the config's repo.path.
+
+**Why it's friction:** A workflow that ships a per-workflow run config
+(needed for non-auto-detect providers like kimi) becomes
+not-relocatable: every consumer has to copy the config and edit
+`repo.path` to point at their own target repo. The `--workspace` flag
+exists exactly for "where do I run this against," but doesn't override
+the config.
+
+**Suggested fix:** When both are provided, `--workspace` should win
+over `cfg.Repo.Path`. Or, define which has precedence (and document
+it). Today, neither — config-required-and-not-overrideable forces
+copy-and-edit ergonomics.
+
+Workaround: hardcode a placeholder in run.example.yaml (currently
+points at `/tmp/coding-relay-smoke`) and document that consumers must
+edit it.
+
+### F9 — BUG: F2's `buildOpencodeConfig` emits incomplete config for non-native opencode providers (FIXED in this worktree)
+
+**Symptom:** After F6 was fixed and opencode launched with the correct
+`--model kimi/kimi-k2`, opencode immediately errored:
+```
+ProviderModelNotFoundError: ProviderModelNotFoundError
+ data: { providerID: "kimi", modelID: "kimi-k2", suggestions: [] }
+```
+
+**Root cause:** `buildOpencodeConfig` (the F2-introduced helper) emits
+a minimal block:
+```json
+{ "provider": { "kimi": { "options": { "apiKey": "...", "baseURL": "..." } } } }
+```
+
+That works for opencode-native providers (anthropic / openai / google)
+because opencode's own registry knows them. For kilroy's custom
+providers (kimi, zai, cerebras, minimax, inception) opencode has zero
+native knowledge — without `npm`, `name`, and `models` fields the
+launch is rejected.
+
+**Fix applied** (commit `2f252d4`):
+
+`buildOpencodeConfig(provider, model)` now distinguishes "native
+opencode provider" from "kilroy-custom" by `ProfileFamily != provider`
+(native: anthropic→anthropic, openai→openai, google→google; custom:
+kimi→openai, zai→openai, etc.). For custom providers it emits the
+full declaration:
+
+```json
+{
+  "provider": {
+    "kimi": {
+      "npm": "@ai-sdk/anthropic",
+      "name": "Kimi",
+      "options": {
+        "apiKey": "{env:KIMI_API_KEY}",
+        "baseURL": "https://api.kimi.com/coding/v1"
+      },
+      "models": { "kimi-k2": {} }
+    }
+  }
+}
+```
+
+`npm` package is chosen from the API protocol:
+| Protocol | npm package |
+|---|---|
+| `anthropic_messages` | `@ai-sdk/anthropic` |
+| `openai_chat_completions` | `@ai-sdk/openai-compatible` |
+| `openai_responses` | `@ai-sdk/openai` |
+| `google_generate_content` | `@ai-sdk/google` |
+
+For `anthropic_messages` the baseURL gets `/v1` appended because the
+`@ai-sdk/anthropic` package adds `/messages` to whatever baseURL is
+provided.
+
+`PrepareSession` now reads `KILROY_AGENT_MODEL` from the env map (it
+was already set by tmux_handler) and passes it to buildOpencodeConfig.
+
+Tests added: `TestBuildOpencodeConfig_Anthropic_NativeMinimalShape`,
+`TestBuildOpencodeConfig_Kimi_FullCustomDeclaration`,
+`TestBuildOpencodeConfig_Zai_OpenAICompatibleNPM`,
+`TestOpencodePrepareSession_HonorsKilroyAgentProviderAndModel`.
+
+### F10 — DESIGN QUESTION: Kimi providerspec endpoint mismatch with the user's actual key
+
+**Symptom:** With F1+F2+F6+F9 all fixed, opencode launches with the
+right config and dials https://api.kimi.com/coding/v1/messages —
+returns 401 "Invalid Authentication". The user's `KIMI_API_KEY_KILROY`
+is valid against `https://api.moonshot.ai/v1/chat/completions`
+(verified by direct curl) but invalid against the kimi.com endpoint.
+
+**The wrinkle:** Moonshot ships at least two API products with
+different keys:
+- `api.moonshot.ai` — OpenAI-compatible chat completions, models
+  `moonshot-v1-128k`, `moonshot-v1-8k`, `kimi-k2.5`
+- `api.kimi.com/coding` — anthropic-messages compatible, models like
+  `kimi-k2` (the "Kimi Coding" product)
+
+Kilroy's `providerspec.Builtin("kimi")` hardcodes
+`https://api.kimi.com/coding` + `anthropic_messages` protocol. A user
+with a `api.moonshot.ai` key will always 401.
+
+**Decisions needed (not really an upstream bug — a product question):**
+
+1. **Should kilroy carry both as separate provider entries?** E.g.
+   `kimi` (current — kimi.com, anthropic protocol, kimi-k2) and
+   `moonshot` (new — moonshot.ai, openai protocol, kimi-k2.5)?
+2. **Should the provider entry support endpoint overrides via run
+   config?** E.g. `llm.providers.kimi.base_url = "..."` /
+   `llm.providers.kimi.protocol = "..."` to swap between products
+   without forking the spec.
+3. **Should the workflow document which key the user needs?**
+   Currently the README says "set KIMI_API_KEY" but doesn't say
+   "specifically a Kimi Coding (kimi.com) key, not a generic Moonshot
+   key."
+
+This is the one item I can't make airtight in the worktree without
+either changing the providerspec (decision #1 or #2) or asking the
+user to source a different key.
+
+### F8 — UX: stale-build detection is not git-worktree-aware
+
+**Symptom:**
+
+Running `kilroy run` from inside a git worktree always trips the stale
+build warning. `go version -m ./kilroy` reports
+`vcs.revision=<parent-repo-HEAD>` because Go's `debug.ReadBuildInfo`
+sees the parent repo's HEAD when building from a worktree, not the
+worktree's HEAD.
+
+**Concrete consequence:** Every dev session inside `.claude/worktrees/...`
+needs `--confirm-stale-build`, which defeats the safety check (real
+stale binaries get bypassed too). On a clean rebuild from worktree HEAD
+e11d4977d8f5, the embedded vcs.revision was 93c92e57e7c8 (parent repo's
+HEAD).
+
+**Suggested fix:** In `cmd/kilroy/stale_build.go::binaryVCSRevision`,
+detect git worktrees (e.g. by checking whether the binary's repo is a
+linked worktree via `git rev-parse --git-common-dir` vs `--git-dir`)
+and prefer the actual git HEAD of the working tree the binary was
+built in over `debug.ReadBuildInfo`. Alternatively, bake the build's
+git revision into a `-ldflags='-X main.embeddedBuildRevision=...'` at
+go-build time so it's authoritative regardless of how Go reads VCS
+info.
+
+This is a minor ergonomic; not a P0. But it'll bite any developer
+working in worktrees on the kilroy repo itself, so worth fixing.
