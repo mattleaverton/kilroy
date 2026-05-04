@@ -78,8 +78,12 @@ NEVER start a production run except precisely as the user requested, and only af
 Any routing decision (provider, model, reasoning depth, or API vs CLI) has cost implications and must be explicitly approved by the user.
 
 For production runs (`llm.cli_profile=real`), execute only the exact command the user explicitly approved.
-Do not change flags, env, config, paths, `--run-id`, `--detach`, or add overrides like `--force-model` unless explicitly approved.
+Do not change flags, env, config, paths, `--run-id`, or `--detach` unless explicitly approved.
 If the run fails, stop immediately, report the error, and wait for explicit approval of a new exact command.
+
+(Per-run model overrides via CLI flag — the old `--force-model` — are
+gone. Strict model selection lives in workflow/DOT/policy. If the
+chosen model is wrong, fix the workflow or policy.)
 
 ### Running Attractor
 
@@ -133,20 +137,38 @@ Runs live under `~/.local/state/kilroy/attractor/runs/<run_id>/`. Key files:
 
 ### Agent Backend Configuration
 
-Agent nodes (`shape=box`, `agent_tool="claude"`) require specific backend and handler configuration for proper agent log capture:
+Agent nodes (`shape=box`, `agent_class="hard_coding"` or `agent_tool="claude"`)
+route through the unified `agents.Dispatcher`. Resolution decides
+which path runs — never a CLI flag:
 
-- **`backend: cli`** in the run config — invokes the actual CLI binary (`claude`, `codex`, `opencode`) with `--output-format stream-json`, producing `agent_output.jsonl` with full conversation logs (tool calls, thinking, responses). The server parses this into structured agent events for the UI.
-- **`backend: api`** — uses the Anthropic HTTP API directly. Produces `events.ndjson` in a different format. The server does NOT currently parse this into UI-visible agent events. Use `backend: cli` for runs where you want the UI to show agent conversation detail.
-- **`--tmux` flag** — required for agent nodes that use CLI backends. Registers `TmuxAgentHandler` which runs agent CLIs in tmux sessions for reliable headless execution. Without `--tmux`, the default `AgentHandler` is used (API-only path).
-- **`--package` flag** — points to a workflow package directory (e.g., `workflows/pr-review/`). Copies scripts, prompts, and graph into the worktree at `.kilroy/package/`.
+- **CLI drivers** (`claude_cli`, `codex_cli`, `gemini_cli`, `opencode`) →
+  tmux handler. Spawns the agent CLI inside a tmux session keyed by
+  `kilroy-<RUN_ID>-<NODE_ID>` and captures `agent_output.jsonl`.
+- **SDK drivers** (`anthropic_sdk`, `openai_sdk`, `google_sdk`) →
+  codergen handler. Calls the provider HTTP API directly and writes
+  `events.ndjson`.
 
-Example production PR review launch:
+Driver resolution comes from (in precedence order):
+1. `agent_class="..."` resolved through the policy chain (the
+   prelaunch snapshot is authoritative — execution does not re-resolve).
+2. Explicit `agent_tool=claude|codex|gemini|opencode` (legacy
+   stylesheet path → CLI driver).
+3. Explicit `llm_provider=...` + `llm_model=...` (legacy stylesheet
+   path → SDK driver).
+
+A node missing all three fails deterministically at dispatch — the
+prelaunch validator should have caught it earlier; this is the second
+line.
+
+The `--package` flag still points to a workflow package directory
+(e.g. `workflows/implement/`) so scripts/prompts/graph land in the
+worktree at `.kilroy/package/`.
+
+Example production launch:
 ```bash
-./kilroy run --detach --tmux \
-  --package workflows/pr-review \
-  --config run.yaml \
+./kilroy run implement --detach \
   --no-cxdb --skip-cli-headless-warning \
-  --input '{"pr_repo": "owner/repo", "pr_number": 123}'
+  --input-file prompt=/path/to/task.md
 ```
 
 The run config must specify `backend: cli` for providers used by agent nodes:

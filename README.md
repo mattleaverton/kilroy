@@ -224,18 +224,15 @@ llm:
 ./kilroy run --graph pipeline.dot --config run.yaml --allow-test-shim
 ```
 
-Validate-only run (validate everything, do not start execution):
+Pre-launch validation (validate everything, do not start execution):
 
 ```bash
-./kilroy run --graph pipeline.dot --config run.yaml --validate
+./kilroy workflows validate <workflow-name>
 ```
 
-Validate-only mode contract:
-
-- It still enforces normal startup safety gates (stale-build confirmation, CLI headless warning, `--allow-test-shim` policy, provider/model validation, CXDB readiness unless `--no-cxdb`).
-- It writes `{logs_root}/prelaunch_validation.json`.
-- It does not start traversal or stage execution.
-- These are absent by design: `final.json`, `checkpoint.json`, `manifest.json`, `run.pid`, `worktree/`, run branch traversal.
+This runs the same checks as a real launch — DOT validation + package
+integrity + class resolution + auth + binary presence — minus
+execution. JSON by default; `--pretty` for human output.
 
 On success, stdout includes:
 
@@ -407,19 +404,28 @@ Typical stage-level artifacts under `{logs_root}/{node_id}`:
 ## Commands
 
 ```text
-kilroy run [--validate] [--allow-test-shim] [--force-model <provider=model>] --graph <file.dot> --config <run.yaml> [--run-id <id>] [--logs-root <dir>]
+kilroy run <workflow-name> [--input-file KEY=PATH ...] [--label KEY=VALUE ...] [--detach]
+kilroy run --graph <file.dot> [--config <run.yaml>]   # advanced: ad-hoc graph
+kilroy run --package <dir>    [--config <run.yaml>]   # advanced: ad-hoc package
+kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
+kilroy runs list | show <id> | wait <id> | prune  [--json | --pretty] [--label KEY=VALUE]
+kilroy status [--logs-root <dir> | --latest] [--json] [--follow]
 kilroy resume --logs-root <dir>
 kilroy resume --cxdb <http_base_url> --context-id <id>
 kilroy resume --run-branch <attractor/run/...> [--repo <path>]
-kilroy status --logs-root <dir> [--json]
 kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy validate --graph <file.dot>
+kilroy validate --graph <file.dot>            # static DOT validation
+kilroy auth list | check | init | suggest-fix
+kilroy policy list | show <class> | resolve <class> | explain <run-id>
 kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] <requirements>
+kilroy review --graph <file.dot> [--output <file>] [--json]
 kilroy serve [--addr <host:port>]
 ```
 
-`--force-model` can be passed multiple times (for example, `--force-model openai=gpt-5.4 --force-model google=gemini-3-pro-preview`) to override node model selection by provider.
-Supported providers are `openai`, `anthropic`, `google`, `kimi`, `zai`, and `minimax` (aliases accepted).
+Model selection is workflow/DOT/policy-driven; there is no
+`--force-model` override flag. Provider/model/backend/auth/codec are
+all decided by the policy class (or explicit DOT attributes) and
+frozen by the prelaunch snapshot before execution begins.
 
 Additional ingest flags:
 
