@@ -40,7 +40,7 @@ func attractorRuns(args []string) {
 
 func runsUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
-	fmt.Fprintln(os.Stderr, "  kilroy runs list [--json] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]")
+	fmt.Fprintln(os.Stderr, "  kilroy runs list [--json|--pretty] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]")
 	fmt.Fprintln(os.Stderr, "  kilroy runs show (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]")
 	fmt.Fprintln(os.Stderr, "  kilroy runs wait (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]")
 	fmt.Fprintln(os.Stderr, "    exit codes: 0=success, 1=fail/canceled/error, 2=timeout")
@@ -155,6 +155,11 @@ func attractorRunsList(args []string) {
 		switch args[i] {
 		case "--json":
 			asJSON = true
+		case "--pretty":
+			// Default behavior — accept as a no-op so users following
+			// the umbrella convention `kilroy runs ... [--pretty]`
+			// don't hit a spurious "unknown arg" error.
+			asJSON = false
 		case "--label":
 			i++
 			if i >= len(args) {

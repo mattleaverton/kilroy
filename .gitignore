@@ -16,4 +16,5 @@
 /dist/
 firebase-debug.log
 .claude/worktrees/
-.kilroy/
+.kilroy/*
+!.kilroy/workflows
