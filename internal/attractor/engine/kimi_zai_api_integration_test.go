@@ -46,7 +46,12 @@ func TestKimiCodingAndZai_APIIntegration(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	runCase := func(provider, model, keyEnv, baseURL string) {
+	// runCase accepts protocol + path so tests can target
+	// kimi.com/coding's anthropic_messages contract regardless of what
+	// the kimi spec defaults to. zai/minimax leave protocol+path empty
+	// so the spec defaults (their respective openai_chat_completions
+	// paths) apply.
+	runCase := func(provider, model, keyEnv, baseURL, protocol, path string) {
 		t.Helper()
 		cfg := &RunConfigFile{Version: 1}
 		cfg.Repo.Path = repo
@@ -62,6 +67,8 @@ func TestKimiCodingAndZai_APIIntegration(t *testing.T) {
 				API: ProviderAPIConfig{
 					APIKeyEnv: keyEnv,
 					BaseURL:   baseURL,
+					Protocol:  protocol,
+					Path:      path,
 				},
 			},
 		}
@@ -87,9 +94,9 @@ digraph G {
 		}
 	}
 
-	runCase("kimi", "kimi-k2.5", "KIMI_API_KEY", srv.URL+"/coding")
-	runCase("zai", "glm-4.7", "ZAI_API_KEY", srv.URL)
-	runCase("minimax", "minimax-m2.5", "MINIMAX_API_KEY", srv.URL)
+	runCase("kimi", "kimi-k2.5", "KIMI_API_KEY", srv.URL+"/coding", "anthropic_messages", "/v1/messages")
+	runCase("zai", "glm-4.7", "ZAI_API_KEY", srv.URL, "", "")
+	runCase("minimax", "minimax-m2.5", "MINIMAX_API_KEY", srv.URL, "", "")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -149,8 +156,16 @@ func TestKimiAgentLoop_UsesNativeKimiProviderRouting(t *testing.T) {
 			Backend:  BackendAPI,
 			Failover: []string{},
 			API: ProviderAPIConfig{
+				// Tests target the kimi.com/coding "Kimi Coding CLI"
+				// product (anthropic_messages), not the new default
+				// (api.moonshot.ai openai_chat_completions). Override
+				// Protocol and Path explicitly so the test exercises
+				// kimi.com/coding contract enforcement regardless of
+				// what the spec defaults to.
 				APIKeyEnv: "KIMI_API_KEY",
 				BaseURL:   srv.URL + "/coding",
+				Protocol:  "anthropic_messages",
+				Path:      "/v1/messages",
 			},
 		},
 	}
@@ -223,8 +238,16 @@ func TestKimiCoding_APIIntegration_EnforcesStreamingAndMinMaxTokensContract(t *t
 			Backend:  BackendAPI,
 			Failover: []string{},
 			API: ProviderAPIConfig{
+				// Tests target the kimi.com/coding "Kimi Coding CLI"
+				// product (anthropic_messages), not the new default
+				// (api.moonshot.ai openai_chat_completions). Override
+				// Protocol and Path explicitly so the test exercises
+				// kimi.com/coding contract enforcement regardless of
+				// what the spec defaults to.
 				APIKeyEnv: "KIMI_API_KEY",
 				BaseURL:   srv.URL + "/coding",
+				Protocol:  "anthropic_messages",
+				Path:      "/v1/messages",
 			},
 		},
 	}
@@ -312,8 +335,16 @@ func TestKimiAgentLoop_ToolRoundTrip_DoesNotDropToolResponses(t *testing.T) {
 			Backend:  BackendAPI,
 			Failover: []string{},
 			API: ProviderAPIConfig{
+				// Tests target the kimi.com/coding "Kimi Coding CLI"
+				// product (anthropic_messages), not the new default
+				// (api.moonshot.ai openai_chat_completions). Override
+				// Protocol and Path explicitly so the test exercises
+				// kimi.com/coding contract enforcement regardless of
+				// what the spec defaults to.
 				APIKeyEnv: "KIMI_API_KEY",
 				BaseURL:   srv.URL + "/coding",
+				Protocol:  "anthropic_messages",
+				Path:      "/v1/messages",
 			},
 		},
 	}
