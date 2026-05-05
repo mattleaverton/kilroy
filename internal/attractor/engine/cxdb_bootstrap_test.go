@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/danshapiro/kilroy/internal/config"
 )
 
 func TestEnsureCXDBReady_GivesAutostartGuidance(t *testing.T) {
@@ -26,7 +28,7 @@ func TestEnsureCXDBReady_GivesAutostartGuidance(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
-	_, _, _, err := ensureCXDBReady(ctx, cfg, t.TempDir(), "test-run")
+	_, _, _, err := ensureCXDBReady(ctx, cfg, t.TempDir(), "test-run", nil)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -52,7 +54,7 @@ func TestEnsureCXDBReady_StartsUIAndReturnsURL(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, bin, info, err := ensureCXDBReady(ctx, cfg, logsRoot, "ui-run")
+	_, bin, info, err := ensureCXDBReady(ctx, cfg, logsRoot, "ui-run", nil)
 	if err != nil {
 		t.Fatalf("ensureCXDBReady: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestEnsureCXDBReady_AutoDiscoversUIURLFromBase(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, bin, info, err := ensureCXDBReady(ctx, cfg, logsRoot, "discover-ui")
+	_, bin, info, err := ensureCXDBReady(ctx, cfg, logsRoot, "discover-ui", nil)
 	if err != nil {
 		t.Fatalf("ensureCXDBReady: %v", err)
 	}
@@ -115,11 +117,131 @@ func TestResolveUIURL_PrefersConfiguredAndFallsBackToBaseProbe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	if got := resolveUIURL(ctx, "http://configured.example/ui", htmlSrv.URL); got != "http://configured.example/ui" {
+	if got := resolveUIURL(ctx, "http://configured.example/ui", htmlSrv.URL, nil); got != "http://configured.example/ui" {
 		t.Fatalf("configured URL not preferred, got %q", got)
 	}
-	if got := resolveUIURL(ctx, "", htmlSrv.URL); got != htmlSrv.URL {
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, nil); got != htmlSrv.URL {
 		t.Fatalf("base URL probe failed, got %q want %q", got, htmlSrv.URL)
+	}
+}
+
+func TestResolveUIURL_EnvVarWinsOverConfig(t *testing.T) {
+	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html></html>"))
+	}))
+	defer htmlSrv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	envURL := "http://env-var.example/ui"
+	t.Setenv("KILROY_CXDB_UI_URL", envURL)
+
+	cfgURL := "http://config.example/ui"
+	cfg := &config.Config{
+		CxDB: config.CxDBConfig{
+			UI: config.CxDBUIConfig{
+				URL: &cfgURL,
+			},
+		},
+	}
+
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, cfg); got != envURL {
+		t.Fatalf("env var should win over config, got %q want %q", got, envURL)
+	}
+}
+
+func TestResolveUIURL_ConfigUsedWhenEnvUnset(t *testing.T) {
+	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html></html>"))
+	}))
+	defer htmlSrv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Ensure env var is unset - use t.Setenv to avoid leaking across tests
+	t.Setenv("KILROY_CXDB_UI_URL", "")
+
+	cfgURL := "http://config.example/ui"
+	cfg := &config.Config{
+		CxDB: config.CxDBConfig{
+			UI: config.CxDBUIConfig{
+				URL: &cfgURL,
+			},
+		},
+	}
+
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, cfg); got != cfgURL {
+		t.Fatalf("config URL should be used when env unset, got %q want %q", got, cfgURL)
+	}
+}
+
+func TestResolveUIURL_ProjectConfigOverridesUser(t *testing.T) {
+	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html></html>"))
+	}))
+	defer htmlSrv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Ensure env var is unset - use t.Setenv to avoid leaking across tests
+	t.Setenv("KILROY_CXDB_UI_URL", "")
+
+	// Simulate merged config where project value overrode user value
+	projectURL := "http://project.example/ui"
+	cfg := &config.Config{
+		CxDB: config.CxDBConfig{
+			UI: config.CxDBUIConfig{
+				URL: &projectURL,
+			},
+		},
+	}
+
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, cfg); got != projectURL {
+		t.Fatalf("project config should be used, got %q want %q", got, projectURL)
+	}
+}
+
+func TestResolveUIURL_FallsThroughWhenNeitherEnvNorConfigSet(t *testing.T) {
+	htmlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html></html>"))
+	}))
+	defer htmlSrv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Ensure env var is unset - use t.Setenv to avoid leaking across tests
+	t.Setenv("KILROY_CXDB_UI_URL", "")
+
+	// Pass nil config - should fall through to probe
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, nil); got != htmlSrv.URL {
+		t.Fatalf("should fall through to probe when neither env nor config set, got %q want %q", got, htmlSrv.URL)
+	}
+
+	// Pass empty config - should also fall through to probe
+	cfg := &config.Config{}
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, cfg); got != htmlSrv.URL {
+		t.Fatalf("should fall through to probe when config has no URL, got %q want %q", got, htmlSrv.URL)
+	}
+
+	// Pass config with empty URL - should also fall through
+	emptyURL := ""
+	cfgWithEmpty := &config.Config{
+		CxDB: config.CxDBConfig{
+			UI: config.CxDBUIConfig{
+				URL: &emptyURL,
+			},
+		},
+	}
+	if got := resolveUIURL(ctx, "", htmlSrv.URL, cfgWithEmpty); got != htmlSrv.URL {
+		t.Fatalf("should fall through to probe when config URL is empty, got %q want %q", got, htmlSrv.URL)
 	}
 }
 
@@ -183,7 +305,7 @@ while true; do sleep 1; done
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	_, _, _, err := ensureCXDBReady(ctx, cfg, logsRoot, "cancel-run")
+	_, _, _, err := ensureCXDBReady(ctx, cfg, logsRoot, "cancel-run", nil)
 	if err == nil {
 		t.Fatalf("expected cancellation error, got nil")
 	}
@@ -222,7 +344,7 @@ while true; do sleep 1; done
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, bin, startup, err := ensureCXDBReady(ctx, cfg, logsRoot, "ui-shutdown")
+	_, bin, startup, err := ensureCXDBReady(ctx, cfg, logsRoot, "ui-shutdown", nil)
 	if err != nil {
 		t.Fatalf("ensureCXDBReady: %v", err)
 	}

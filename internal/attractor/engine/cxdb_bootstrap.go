@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/cxdb"
 )
 
@@ -106,13 +107,13 @@ func (i *CXDBStartupInfo) shutdownManagedProcesses() error {
 	return fmt.Errorf("managed process shutdown errors: %s", strings.Join(errs, "; "))
 }
 
-func ensureCXDBReady(ctx context.Context, cfg *RunConfigFile, logsRoot string, runID string) (*cxdb.Client, *cxdb.BinaryClient, *CXDBStartupInfo, error) {
+func ensureCXDBReady(ctx context.Context, cfg *RunConfigFile, logsRoot string, runID string, mergedCfg *config.Config) (*cxdb.Client, *cxdb.BinaryClient, *CXDBStartupInfo, error) {
 	if cfg == nil {
 		return nil, nil, nil, fmt.Errorf("config is nil")
 	}
 	client := cxdb.New(cfg.CXDB.HTTPBaseURL)
 	info := &CXDBStartupInfo{
-		UIURL: resolveUIURL(ctx, cfg.CXDB.Autostart.UI.URL, cfg.CXDB.HTTPBaseURL),
+		UIURL: resolveUIURL(ctx, cfg.CXDB.Autostart.UI.URL, cfg.CXDB.HTTPBaseURL, mergedCfg),
 	}
 
 	connect := func() (*cxdb.BinaryClient, error) {
@@ -130,7 +131,7 @@ func ensureCXDBReady(ctx context.Context, cfg *RunConfigFile, logsRoot string, r
 
 	bin, err := connect()
 	if err == nil {
-		startCXDBUI(ctx, cfg, logsRoot, runID, info)
+		startCXDBUI(ctx, cfg, logsRoot, runID, info, mergedCfg)
 		return client, bin, info, nil
 	}
 	if !cfg.CXDB.Autostart.Enabled {
@@ -185,7 +186,7 @@ func ensureCXDBReady(ctx context.Context, cfg *RunConfigFile, logsRoot string, r
 		bin, err = connect()
 		if err == nil {
 			info.registerManagedProcess(proc)
-			startCXDBUI(ctx, cfg, logsRoot, runID, info)
+			startCXDBUI(ctx, cfg, logsRoot, runID, info, mergedCfg)
 			return client, bin, info, nil
 		}
 		lastErr = err
@@ -216,12 +217,12 @@ func ensureCXDBReady(ctx context.Context, cfg *RunConfigFile, logsRoot string, r
 	)
 }
 
-func startCXDBUI(ctx context.Context, cfg *RunConfigFile, logsRoot string, runID string, info *CXDBStartupInfo) {
+func startCXDBUI(ctx context.Context, cfg *RunConfigFile, logsRoot string, runID string, info *CXDBStartupInfo, mergedCfg *config.Config) {
 	if cfg == nil || info == nil {
 		return
 	}
 	if info.UIURL == "" {
-		info.UIURL = resolveUIURL(ctx, cfg.CXDB.Autostart.UI.URL, cfg.CXDB.HTTPBaseURL)
+		info.UIURL = resolveUIURL(ctx, cfg.CXDB.Autostart.UI.URL, cfg.CXDB.HTTPBaseURL, mergedCfg)
 	}
 
 	uiCmd := resolveUICommand(cfg)
@@ -284,12 +285,17 @@ func resolveUICommand(cfg *RunConfigFile) []string {
 	return nil
 }
 
-func resolveUIURL(ctx context.Context, configuredURL string, cxdbHTTPBaseURL string) string {
+func resolveUIURL(ctx context.Context, configuredURL string, cxdbHTTPBaseURL string, cfg *config.Config) string {
 	if s := strings.TrimSpace(configuredURL); s != "" {
 		return s
 	}
 	if s := strings.TrimSpace(os.Getenv("KILROY_CXDB_UI_URL")); s != "" {
 		return s
+	}
+	if cfg != nil && cfg.CxDB.UI.URL != nil {
+		if s := strings.TrimSpace(*cfg.CxDB.UI.URL); s != "" {
+			return s
+		}
 	}
 	base := strings.TrimSpace(cxdbHTTPBaseURL)
 	if base == "" {

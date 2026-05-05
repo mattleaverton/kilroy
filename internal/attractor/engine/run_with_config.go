@@ -351,7 +351,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	cxdbConfigured := strings.TrimSpace(cfg.CXDB.BinaryAddr) != "" && strings.TrimSpace(cfg.CXDB.HTTPBaseURL) != ""
 	if !overrides.DisableCXDB && cxdbConfigured {
 		var cxdbStartup *CXDBStartupInfo
-		cxdbClient, bin, cxdbStartup, err = ensureCXDBReady(ctx, cfg, opts.LogsRoot, opts.RunID)
+		cxdbClient, bin, cxdbStartup, err = ensureCXDBReady(ctx, cfg, opts.LogsRoot, opts.RunID, overrides.MergedConfig)
 		if err != nil {
 			return nil, err
 		}

@@ -2,9 +2,12 @@
 
 // Command gen_classes_doc generates docs/reference/classes.md from
 // internal/policy/data/policy.toml. Run via:
-//   go generate ./internal/policy/...
+//
+//	go generate ./internal/policy/...
+//
 // Or directly:
-//   go run ./internal/policy/cmd/gen_classes_doc/main.go
+//
+//	go run ./internal/policy/cmd/gen_classes_doc/main.go
 package main
 
 import (

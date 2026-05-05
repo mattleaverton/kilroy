@@ -22,6 +22,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/attractor/style"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
+	"github.com/danshapiro/kilroy/internal/config"
 )
 
 type RunOptions struct {
@@ -135,6 +136,10 @@ type RunOptions struct {
 	// ParentRunID is the run ID of the parent run that dispatched this run.
 	// Empty for top-level runs; populated for nested runs via tool_command.
 	ParentRunID string
+
+	// MergedConfig is the merged project/user config loaded from config.toml.
+	// Used to resolve config values (e.g., cxdb.ui.url) with proper precedence.
+	MergedConfig *config.Config
 }
 
 func (o *RunOptions) applyDefaults() error {

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
+	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/cxdb"
 )
 
@@ -190,7 +192,20 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 		if baseURL != "" && contextID != "" {
 			cfgForCXDB := *cfg
 			cfgForCXDB.CXDB.HTTPBaseURL = baseURL
-			cxdbClient, bin, startupInfo, err := ensureCXDBReady(ctx, &cfgForCXDB, logsRoot, m.RunID)
+			// Load merged config for runtime config resolution (e.g., cxdb.ui.url).
+			var mergedCfg *config.Config
+			if m.RepoPath != "" {
+				mc, mcErr := config.LoadConfig(m.RepoPath)
+				if mcErr != nil {
+					var noCfg *config.ErrNoConfig
+					if !errors.As(mcErr, &noCfg) {
+						return nil, fmt.Errorf("config load: %w", mcErr)
+					}
+				} else {
+					mergedCfg = &mc
+				}
+			}
+			cxdbClient, bin, startupInfo, err := ensureCXDBReady(ctx, &cfgForCXDB, logsRoot, m.RunID, mergedCfg)
 			if err != nil {
 				return nil, err
 			}

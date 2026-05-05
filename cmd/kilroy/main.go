@@ -17,9 +17,11 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/agents/tmux"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
+	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
+	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/dotenv"
 	"github.com/danshapiro/kilroy/internal/providerspec"
 	"github.com/danshapiro/kilroy/internal/version"
@@ -628,6 +630,27 @@ func attractorRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+
+	// Load merged project/user config for runtime config resolution (e.g., cxdb.ui.url).
+	var mergedCfg *config.Config
+	repoRoot, _, findErr := projectroot.Find(gitDetectDir)
+	if findErr != nil {
+		fmt.Fprintf(os.Stderr, "kilroy run: project root: %v\n", findErr)
+		os.Exit(1)
+	}
+	if repoRoot != "" {
+		mc, mcErr := config.LoadConfig(repoRoot)
+		if mcErr != nil {
+			var noCfg *config.ErrNoConfig
+			if !errors.As(mcErr, &noCfg) {
+				fmt.Fprintf(os.Stderr, "kilroy run: config load: %v\n", mcErr)
+				os.Exit(1)
+			}
+		} else {
+			mergedCfg = &mc
+		}
+	}
+
 	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -689,6 +712,7 @@ func attractorRun(args []string) {
 			}
 			return nil
 		}(),
+		MergedConfig: mergedCfg,
 		OnCXDBStartup: func(info *engine.CXDBStartupInfo) {
 			if info == nil {
 				return
