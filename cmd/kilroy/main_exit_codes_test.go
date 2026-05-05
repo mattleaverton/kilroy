@@ -323,15 +323,57 @@ func buildKilroyBinary(t *testing.T) string {
 	return buildKilroyBinaryWithRevision(t, "")
 }
 
+var (
+	sharedTestBinaryMu         sync.Mutex
+	sharedTestBinaryDir        string
+	sharedTestBinaryByRevision = map[string]string{}
+)
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+
+	sharedTestBinaryMu.Lock()
+	dir := sharedTestBinaryDir
+	sharedTestBinaryMu.Unlock()
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
+
+	os.Exit(code)
+}
+
 func buildKilroyBinaryWithRevision(t *testing.T, revision string) string {
 	t.Helper()
+	requireIntegration(t)
+
+	sharedTestBinaryMu.Lock()
+	defer sharedTestBinaryMu.Unlock()
+
+	if bin, ok := sharedTestBinaryByRevision[revision]; ok {
+		if _, err := os.Stat(bin); err == nil {
+			return bin
+		}
+		delete(sharedTestBinaryByRevision, revision)
+	}
+
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
 	// wd is .../cmd/kilroy
 	root := filepath.Dir(filepath.Dir(wd))
-	bin := filepath.Join(t.TempDir(), "kilroy")
+	if sharedTestBinaryDir == "" {
+		sharedTestBinaryDir, err = os.MkdirTemp("", "kilroy-test-binaries-*")
+		if err != nil {
+			t.Fatalf("MkdirTemp: %v", err)
+		}
+	}
+	binName := "kilroy"
+	if strings.TrimSpace(revision) != "" {
+		sum := blake3.Sum256([]byte(revision))
+		binName = fmt.Sprintf("kilroy-%x", sum[:8])
+	}
+	bin := filepath.Join(sharedTestBinaryDir, binName)
 	args := []string{"build", "-o", bin}
 	if strings.TrimSpace(revision) != "" {
 		args = append(args, "-ldflags", "-X main.embeddedBuildRevision="+revision)
@@ -343,6 +385,7 @@ func buildKilroyBinaryWithRevision(t *testing.T, revision string) string {
 	if err != nil {
 		t.Fatalf("go build: %v\n%s", err, string(out))
 	}
+	sharedTestBinaryByRevision[revision] = bin
 	return bin
 }
 

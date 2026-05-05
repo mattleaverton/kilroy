@@ -14,6 +14,7 @@ import (
 )
 
 func TestRun_ParallelFanOutAndFanIn_FastForwardsWinner(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -75,6 +76,7 @@ digraph P {
 }
 
 func TestRun_ParallelFanOut_Component_ConvergesOnBoxJoinWithoutFastForward(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -170,6 +172,7 @@ digraph P {
 }
 
 func TestFanIn_RunScopedPromotion_DefaultNoneDoesNotPromote(t *testing.T) {
+	requireIntegration(t)
 	res := runParallelPromotionFixture(t, nil)
 
 	if got := strings.TrimSpace(anyToString(res.joinOutcome.ContextUpdates["input_lineage.run_head_revision"])); got != "" {
@@ -192,6 +195,7 @@ func TestFanIn_RunScopedPromotion_DefaultNoneDoesNotPromote(t *testing.T) {
 }
 
 func TestFanIn_RunScopedPromotion_ExplicitListPromotesDeterministically(t *testing.T) {
+	requireIntegration(t)
 	resA := runParallelPromotionFixture(t, []string{"postmortem_latest.md", "review_final.md"})
 	resB := runParallelPromotionFixture(t, []string{"postmortem_latest.md", "review_final.md"})
 
@@ -224,6 +228,7 @@ func TestFanIn_RunScopedPromotion_ExplicitListPromotesDeterministically(t *testi
 }
 
 func TestFanIn_RunScopedPromotion_UnresolvedGlobIsBestEffort(t *testing.T) {
+	requireIntegration(t)
 	res := runParallelPromotionFixture(t, []string{"does-not-exist-*.md"})
 	if res.finalStatus != runtime.FinalSuccess {
 		t.Fatalf("unresolved promotion globs should be best-effort, got final status %q", res.finalStatus)

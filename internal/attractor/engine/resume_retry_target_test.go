@@ -15,6 +15,7 @@ import (
 // path mirrors the forward path's retry_target fallback when a failed node has
 // no outgoing fail edge.
 func TestResume_NoMatchingFailEdge_FallsBackToRetryTarget(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	repo := t.TempDir()

@@ -9,25 +9,10 @@ import (
 	"testing"
 )
 
-// buildTestBinary builds the kilroy binary into a temp file and returns its path.
-// If the binary cannot be built, the test is skipped with a descriptive message.
+// buildTestBinary builds the kilroy binary for integration tests and returns its path.
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
-	bin, err := os.CreateTemp("", "kilroy-test-*")
-	if err != nil {
-		t.Fatalf("create temp file: %v", err)
-	}
-	bin.Close()
-	binPath := bin.Name()
-	t.Cleanup(func() { os.Remove(binPath) })
-
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
-	cmd.Dir = "."
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("build kilroy binary: %v\n%s", err, out)
-	}
-	return binPath
+	return buildKilroyBinary(t)
 }
 
 func TestPolicyList_HumanOutput_IncludesEveryClass(t *testing.T) {

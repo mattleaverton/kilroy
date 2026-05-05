@@ -41,6 +41,7 @@ digraph G {
 }
 
 func TestRunWithConfig_ReportsCXDBUIURL(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -345,6 +346,7 @@ digraph G {
 }
 
 func TestRunWithConfig_WritesPIDFile(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)

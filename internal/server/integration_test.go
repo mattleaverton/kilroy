@@ -47,6 +47,7 @@ func registerTestPipeline(t *testing.T, srv *Server, runID string) (*PipelineSta
 }
 
 func TestIntegration_HealthEndpoint(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	resp, err := http.Get(ts.URL + "/health")
@@ -69,6 +70,7 @@ func TestIntegration_HealthEndpoint(t *testing.T) {
 }
 
 func TestIntegration_PipelineNotFound(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	resp, err := http.Get(ts.URL + "/pipelines/nonexistent")
@@ -83,6 +85,7 @@ func TestIntegration_PipelineNotFound(t *testing.T) {
 }
 
 func TestIntegration_PipelineLifecycle(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-run-001"
 	ps, broadcaster, _ := registerTestPipeline(t, srv, runID)
@@ -146,6 +149,7 @@ func TestIntegration_PipelineLifecycle(t *testing.T) {
 }
 
 func TestIntegration_SSEEvents(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-sse-001"
 	_, broadcaster, _ := registerTestPipeline(t, srv, runID)
@@ -234,6 +238,7 @@ func TestIntegration_SSEEvents(t *testing.T) {
 }
 
 func TestIntegration_CancelPipeline(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-cancel-001"
 	registerTestPipeline(t, srv, runID)
@@ -257,6 +262,7 @@ func TestIntegration_CancelPipeline(t *testing.T) {
 }
 
 func TestIntegration_QuestionsAndAnswers(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-qa-001"
 	_, _, interviewer := registerTestPipeline(t, srv, runID)
@@ -352,6 +358,7 @@ func TestIntegration_QuestionsAndAnswers(t *testing.T) {
 }
 
 func TestIntegration_ContextEndpoint(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-ctx-001"
 	registerTestPipeline(t, srv, runID)
@@ -375,6 +382,7 @@ func TestIntegration_ContextEndpoint(t *testing.T) {
 }
 
 func TestIntegration_SubmitValidation(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	tests := []struct {
@@ -418,6 +426,7 @@ func TestIntegration_SubmitValidation(t *testing.T) {
 }
 
 func TestIntegration_HealthReflectsPipelineCount(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 
 	// Initially 0.
@@ -444,6 +453,7 @@ func TestIntegration_HealthReflectsPipelineCount(t *testing.T) {
 }
 
 func TestIntegration_AnswerWrongQuestion(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-wrongq-001"
 	registerTestPipeline(t, srv, runID)
@@ -466,6 +476,7 @@ func TestIntegration_AnswerWrongQuestion(t *testing.T) {
 }
 
 func TestIntegration_CSRFBlocksCrossOrigin(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	// POST with cross-origin Origin header should be blocked.
@@ -484,6 +495,7 @@ func TestIntegration_CSRFBlocksCrossOrigin(t *testing.T) {
 }
 
 func TestIntegration_CSRFAllowsNoOrigin(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	// POST without Origin header should pass through (programmatic caller).
@@ -504,6 +516,7 @@ func TestIntegration_CSRFAllowsNoOrigin(t *testing.T) {
 }
 
 func TestIntegration_CSRFAllowsLocalhostOrigin(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	// POST with localhost Origin should be allowed.
@@ -523,6 +536,7 @@ func TestIntegration_CSRFAllowsLocalhostOrigin(t *testing.T) {
 }
 
 func TestIntegration_RunIDPathTraversal(t *testing.T) {
+	requireIntegration(t)
 	_, ts := newTestServer(t)
 
 	tests := []struct {
@@ -552,6 +566,7 @@ func TestIntegration_RunIDPathTraversal(t *testing.T) {
 }
 
 func TestIntegration_FailedPipelineStatus(t *testing.T) {
+	requireIntegration(t)
 	srv, ts := newTestServer(t)
 	runID := "test-fail-001"
 	ps, _, _ := registerTestPipeline(t, srv, runID)

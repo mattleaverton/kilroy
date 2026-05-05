@@ -16,6 +16,7 @@ import (
 // path mirrors the forward path's implicit fan-out when a node has multiple
 // eligible outgoing edges that converge at a common downstream node.
 func TestResume_ImplicitFanOut_DispatchesParallelBranches(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	repo := t.TempDir()

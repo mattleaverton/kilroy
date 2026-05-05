@@ -52,6 +52,7 @@ func (h *retryCountCheckHandler) Execute(ctx context.Context, exec *Execution, n
 //   - The key is 1 after one retry.
 //   - The final checkpoint context snapshot contains the correct value.
 func TestRun_InternalRetryCountContextKey(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -146,6 +147,7 @@ digraph G {
 // TestRun_InternalRetryCountContextKey_NoRetries verifies that
 // internal.retry_count.<node_id> is 0 when no retries occur.
 func TestRun_InternalRetryCountContextKey_NoRetries(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

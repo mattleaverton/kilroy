@@ -24,6 +24,8 @@ import (
 // Skipped automatically when ~/.local/state/kilroy/attractor/runs/
 // is absent — this is a developer dogfood test, not a CI test.
 func TestParseClaudeCLIJSONL_AgainstAllRealCaptures(t *testing.T) {
+	requireIntegration(t)
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skipf("UserHomeDir: %v", err)

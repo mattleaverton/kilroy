@@ -10,6 +10,7 @@ import (
 // TestRunWithMockClaude tests the full Run pipeline using a mock claude script
 // that writes a known .dot file to pipeline.dot.
 func TestRunWithMockClaude(t *testing.T) {
+	requireIntegration(t)
 	repoRoot := findRepoRoot(t)
 
 	// Read a known-good .dot file to use as mock output.
@@ -74,6 +75,7 @@ func TestRunWithMockClaude(t *testing.T) {
 // TestRunWithMockClaudeWrappedOutput tests that Run reads the pipeline.dot file
 // even when the file contains extra content around the digraph.
 func TestRunWithMockClaudeWrappedOutput(t *testing.T) {
+	requireIntegration(t)
 	repoRoot := findRepoRoot(t)
 
 	dotPath := filepath.Join(repoRoot, "research", "refactor-test-moderate.dot")
@@ -121,6 +123,7 @@ func TestRunWithMockClaudeWrappedOutput(t *testing.T) {
 
 // TestRunWithMockClaudeFailure tests that Run returns an error when claude fails.
 func TestRunWithMockClaudeFailure(t *testing.T) {
+	requireIntegration(t)
 	tmpDir := t.TempDir()
 
 	mockScript := filepath.Join(tmpDir, "claude")
@@ -151,6 +154,7 @@ func TestRunWithMockClaudeFailure(t *testing.T) {
 // TestRunWithMockClaudeNoPipelineDot tests that Run returns an error when
 // claude exits successfully but doesn't write pipeline.dot.
 func TestRunWithMockClaudeNoPipelineDot(t *testing.T) {
+	requireIntegration(t)
 	tmpDir := t.TempDir()
 
 	mockScript := filepath.Join(tmpDir, "claude")

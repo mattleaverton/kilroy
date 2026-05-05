@@ -40,6 +40,7 @@ func parityInitRepo(t *testing.T) string {
 
 // Row 1: Parse a simple linear pipeline (start -> A -> B -> done)
 func TestParityMatrix_Row01_ParseLinearPipeline(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -67,6 +68,7 @@ digraph G {
 
 // Row 2: Parse a pipeline with graph-level attributes (goal, label)
 func TestParityMatrix_Row02_ParseGraphAttributes(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   graph [goal="Build a CLI tool", label="My Pipeline"]
@@ -89,6 +91,7 @@ digraph G {
 
 // Row 3: Parse multi-line node attributes
 func TestParityMatrix_Row03_ParseMultiLineNodeAttributes(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -129,6 +132,7 @@ digraph G {
 
 // Row 4: Validate: missing start node -> error
 func TestParityMatrix_Row04_ValidateMissingStartNode(t *testing.T) {
+	requireIntegration(t)
 	_, _, err := Prepare([]byte(`
 digraph G {
   exit [shape=Msquare]
@@ -146,6 +150,7 @@ digraph G {
 
 // Row 5: Validate: missing exit node -> error
 func TestParityMatrix_Row05_ValidateMissingExitNode(t *testing.T) {
+	requireIntegration(t)
 	_, _, err := Prepare([]byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -166,6 +171,7 @@ digraph G {
 // unreachable nodes as ERROR severity (lintReachability). This test verifies
 // the diagnostic is emitted; the severity discrepancy is tracked separately.
 func TestParityMatrix_Row06_ValidateOrphanNodeDiagnostic(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   start  [shape=Mdiamond]
@@ -193,6 +199,7 @@ digraph G {
 
 // Row 7: Execute a linear 3-node pipeline end-to-end
 func TestParityMatrix_Row07_ExecuteLinear3NodePipeline(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dot := []byte(`
 digraph G {
@@ -221,6 +228,7 @@ digraph G {
 
 // Row 8: Execute with conditional branching (success/fail paths)
 func TestParityMatrix_Row08_ExecuteConditionalBranching(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	// tool_command succeeds, so condition="outcome=success" edge should win.
 	dot := []byte(`
@@ -257,6 +265,7 @@ digraph G {
 
 // Row 9: Execute with retry on failure (max_retries=2)
 func TestParityMatrix_Row09_ExecuteRetryOnFailure(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dot := []byte(`
 digraph G {
@@ -293,6 +302,7 @@ digraph G {
 
 // Row 10: Goal gate blocks exit when unsatisfied
 func TestParityMatrix_Row10_GoalGateBlocksExit(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dot := []byte(`
 digraph G {
@@ -322,6 +332,7 @@ digraph G {
 
 // Row 11: Goal gate allows exit when all satisfied
 func TestParityMatrix_Row11_GoalGateAllowsExit(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dot := []byte(`
 digraph G {
@@ -352,6 +363,7 @@ digraph G {
 
 // Row 12: Wait.human presents choices and routes on selection
 func TestParityMatrix_Row12_WaitHumanRoutesOnSelection(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dotSrc := []byte(`
 digraph G {
@@ -411,6 +423,7 @@ digraph G {
 
 // Row 13: Edge selection: condition match wins over weight
 func TestParityMatrix_Row13_EdgeConditionBeatsWeight(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -441,6 +454,7 @@ digraph G {
 
 // Row 14: Edge selection: weight breaks ties for unconditional edges
 func TestParityMatrix_Row14_EdgeWeightBreaksTies(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -471,6 +485,7 @@ digraph G {
 
 // Row 15: Edge selection: lexical tiebreak as final fallback
 func TestParityMatrix_Row15_EdgeLexicalTiebreak(t *testing.T) {
+	requireIntegration(t)
 	g, err := dot.Parse([]byte(`
 digraph G {
   start [shape=Mdiamond]
@@ -502,6 +517,7 @@ digraph G {
 
 // Row 16: Context updates from one node are visible to the next
 func TestParityMatrix_Row16_ContextUpdatesVisibleToNext(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 
 	g, _, err := Prepare([]byte(`
@@ -552,6 +568,7 @@ digraph G {
 
 // Row 17: Checkpoint save and resume produces same result
 func TestParityMatrix_Row17_CheckpointSaveAndResume(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	repo := parityInitRepo(t)
@@ -607,6 +624,7 @@ digraph G {
 // set on the node (spec §8: "only set properties that are missing"). So to
 // test that the stylesheet applies, the node must NOT have the property pre-set.
 func TestParityMatrix_Row18_StylesheetAppliesModelOverrideByShape(t *testing.T) {
+	requireIntegration(t)
 	// Test 1: Verify at parse/prepare level that stylesheet fills in missing agent_class.
 	g, _, err := Prepare([]byte(`
 digraph G {
@@ -661,6 +679,7 @@ digraph G {
 
 // Row 19: Prompt variable expansion ($goal) works
 func TestParityMatrix_Row19_PromptVariableExpansion(t *testing.T) {
+	requireIntegration(t)
 	g, _, err := Prepare([]byte(`
 digraph G {
   graph [goal="Build a REST API"]
@@ -681,6 +700,7 @@ digraph G {
 
 // Row 20: Parallel fan-out and fan-in complete correctly
 func TestParityMatrix_Row20_ParallelFanOutAndFanIn(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dot := []byte(`
 digraph P {
@@ -732,6 +752,7 @@ func (h *parityCustomHandler) Execute(ctx context.Context, exec *Execution, node
 }
 
 func TestParityMatrix_Row21_CustomHandlerRegistration(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 
 	g, _, err := Prepare([]byte(`
@@ -793,6 +814,7 @@ digraph G {
 
 // Row 22: Pipeline with 10+ nodes completes without errors
 func TestParityMatrix_Row22_TenPlusNodesPipeline(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 	dot := []byte(`
 digraph G {
@@ -839,6 +861,7 @@ digraph G {
 // as defined in spec §11.13: parse -> validate -> execute -> verify artifacts
 // -> verify goal gate -> verify checkpoint.
 func TestIntegrationSmokeTest_Section11_13(t *testing.T) {
+	requireIntegration(t)
 	repo := parityInitRepo(t)
 
 	// The DOT graph from spec §11.13 (adapted for SimulatedAgentBackend).

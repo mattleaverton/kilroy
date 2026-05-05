@@ -13,6 +13,7 @@ import (
 )
 
 func TestKimiCodingAndZai_APIIntegration(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -109,6 +110,7 @@ digraph G {
 }
 
 func TestKimiAgentLoop_UsesNativeKimiProviderRouting(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -197,6 +199,7 @@ digraph G {
 }
 
 func TestKimiCoding_APIIntegration_EnforcesStreamingAndMinMaxTokensContract(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -265,6 +268,7 @@ digraph G {
 }
 
 func TestKimiAgentLoop_ToolRoundTrip_DoesNotDropToolResponses(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)

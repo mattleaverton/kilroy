@@ -15,6 +15,7 @@ import (
 // Intentionally uses shape=parallelogram/tool_command because this is the
 // existing supported ToolHandler path in the current engine.
 func TestRun_GlobalStageTimeoutCapsToolNode(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("requires sleep binary")
 	}
@@ -43,6 +44,7 @@ func TestRun_GlobalStageTimeoutCapsToolNode(t *testing.T) {
 }
 
 func TestRun_GlobalAndNodeTimeout_UsesSmallerTimeout(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("requires sleep binary")
 	}
@@ -72,6 +74,7 @@ func TestRun_GlobalAndNodeTimeout_UsesSmallerTimeout(t *testing.T) {
 // Uses StageTimeout (engine-level) rather than node timeout to ensure the engine
 // context deadline fires — the ToolHandler applies node timeout internally.
 func TestRun_TimeoutOutcomeIncludesMetadata(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("requires sleep binary")
 	}

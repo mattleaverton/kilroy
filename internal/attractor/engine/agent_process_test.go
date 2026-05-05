@@ -18,6 +18,7 @@ import (
 )
 
 func TestRunWithConfig_CLIBackend_OpenAIIdleTimeoutKillsProcessGroup(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -41,8 +42,8 @@ done
 		t.Fatal(err)
 	}
 	t.Setenv("KILROY_WATCHDOG_CHILD_PID_FILE", childPIDFile)
-	t.Setenv("KILROY_CODEX_IDLE_TIMEOUT", "2s")
-	t.Setenv("KILROY_CODEX_KILL_GRACE", "200ms")
+	t.Setenv("KILROY_CODEX_IDLE_TIMEOUT", "300ms")
+	t.Setenv("KILROY_CODEX_KILL_GRACE", "50ms")
 
 	cfg := &RunConfigFile{Version: 1}
 	cfg.Repo.Path = repo
@@ -208,6 +209,7 @@ done
 // idle watchdog is disabled when the context deadline is closer than the idle
 // timeout, allowing the context to handle termination cleanly.
 func TestWaitWithIdleWatchdog_DisabledWhenContextDeadlineCloser(t *testing.T) {
+	requireIntegration(t)
 	// Create a script that writes to stdout once then goes quiet.
 	cli := filepath.Join(t.TempDir(), "codex")
 	if err := os.WriteFile(cli, []byte(`#!/usr/bin/env bash

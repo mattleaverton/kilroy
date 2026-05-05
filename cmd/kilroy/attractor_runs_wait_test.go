@@ -87,7 +87,7 @@ func TestRunsWait_TimeoutExitsWithCode2_ExplicitID(t *testing.T) {
 
 	code, out := runKilroyWait(t, bin, stateDir,
 		"runs", "wait", runID,
-		"--timeout", "600ms", "--interval", "100ms",
+		"--timeout", "100ms", "--interval", "20ms",
 	)
 
 	if code != 2 {
@@ -112,7 +112,7 @@ func TestRunsWait_TimeoutExitsWithCode2_LatestLabel(t *testing.T) {
 	code, out := runKilroyWait(t, bin, stateDir,
 		"runs", "wait",
 		"--latest", "--label", "task=timeout-contract",
-		"--timeout", "600ms", "--interval", "100ms",
+		"--timeout", "100ms", "--interval", "20ms",
 	)
 
 	if code != 2 {

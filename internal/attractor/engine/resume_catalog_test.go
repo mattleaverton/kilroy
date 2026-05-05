@@ -11,6 +11,7 @@ import (
 )
 
 func TestResume_WithRunConfig_LoadErrorIsNotSilentlyIgnored(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

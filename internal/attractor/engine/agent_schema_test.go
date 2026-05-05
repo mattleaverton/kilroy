@@ -37,6 +37,7 @@ func TestDefaultCodexOutputSchema_DisallowsAdditionalPropertiesAndRequiresCoreFi
 }
 
 func TestRunWithConfig_CLIBackend_OpenAISchemaFallback(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -128,6 +129,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_OpenAIStateDBFallbackRetry(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -215,6 +217,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_OpenAITimeoutRetryOnceThenSuccess(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -327,6 +330,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_OpenAITimeoutRetryStopsAfterOneRetry(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -413,6 +417,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_OpenAIStructuredOutput_UnknownKeysTriggersLoudFallback(t *testing.T) {
+	requireIntegration(t)
 	res, inv, unknown, err := runOpenAIUnknownKeysFallback(t)
 	if err != nil {
 		t.Fatalf("runOpenAIUnknownKeysFallback: %v", err)
@@ -452,6 +457,7 @@ func TestRunWithConfig_CLIBackend_OpenAIStructuredOutput_UnknownKeysTriggersLoud
 }
 
 func TestRunWithConfig_CLIBackend_OpenAIStructuredOutput_UnknownKeysStillAllowsSuccess(t *testing.T) {
+	requireIntegration(t)
 	res, inv, unknown, err := runOpenAIUnknownKeysFallback(t)
 	if err != nil {
 		t.Fatalf("runOpenAIUnknownKeysFallback: %v", err)

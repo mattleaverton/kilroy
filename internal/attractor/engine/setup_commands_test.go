@@ -169,6 +169,10 @@ func TestSetupCommands_FailsOnError_StopsEarly(t *testing.T) {
 }
 
 func TestSetupCommands_BackgroundDaemonDoesNotFail(t *testing.T) {
+	origWaitDelay := setupCommandWaitDelay
+	setupCommandWaitDelay = 50 * time.Millisecond
+	t.Cleanup(func() { setupCommandWaitDelay = origWaitDelay })
+
 	worktree := t.TempDir()
 	logsRoot := t.TempDir()
 

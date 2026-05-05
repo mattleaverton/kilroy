@@ -117,6 +117,7 @@ func TestBuildBaseNodeEnv_PreservesExplicitToolchainPaths(t *testing.T) {
 }
 
 func TestToolHandler_UsesBaseNodeEnv(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("CLAUDECODE", "1")
 	explicitTarget := filepath.Join(t.TempDir(), "explicit-target")
 	t.Setenv("CARGO_TARGET_DIR", explicitTarget)

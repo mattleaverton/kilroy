@@ -29,6 +29,7 @@ func (h *subgraphFailureFixtureHandler) Execute(ctx context.Context, exec *Execu
 }
 
 func TestFailureRouting_FanInAllFail_DoesNotFollowUnconditionalEdge(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -119,6 +120,7 @@ digraph G {
 }
 
 func TestFailureRouting_FanInAllFail_DeterministicBlocksRetryTarget(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -181,6 +183,7 @@ digraph G {
 }
 
 func TestSubgraphContext_PreservesFailureReasonAcrossNodes(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 

@@ -657,6 +657,8 @@ func TestValidatePreLaunch_RequiredSecrets_PassesWhenSatisfied(t *testing.T) {
 // capability probe catches a binary that's on PATH but doesn't actually
 // run cleanly under --help (broken download, missing deps, etc).
 func TestValidatePreLaunch_CLIDriver_BinaryBroken_Fails(t *testing.T) {
+	requireIntegration(t)
+
 	// Stage a fake `claude` script that exits non-zero from --help.
 	binDir := t.TempDir()
 	fakeClaude := filepath.Join(binDir, "claude")
@@ -912,6 +914,8 @@ func clearAPIKeyEnvVars(t *testing.T) {
 // an API key must fail prelaunch loudly when the env var is missing,
 // rather than letting opencode hit a 401 deep inside the run loop.
 func TestPrelaunch_OpencodeKimi_MissingKey_FailsLoudly(t *testing.T) {
+	requireIntegration(t)
+
 	stageFakeOpencode(t)
 	clearAPIKeyEnvVars(t)
 
@@ -952,6 +956,8 @@ func TestPrelaunch_OpencodeKimi_MissingKey_FailsLoudly(t *testing.T) {
 // is satisfied by the _KILROY-suffixed variant alone (the budget-isolated
 // kilroy convention) — i.e. it doesn't require both vars to be set.
 func TestPrelaunch_OpencodeKimi_KeyPresent_Passes(t *testing.T) {
+	requireIntegration(t)
+
 	stageFakeOpencode(t)
 	clearAPIKeyEnvVars(t)
 	t.Setenv("KIMI_API_KEY_KILROY", "testvalue")
@@ -977,6 +983,8 @@ func TestPrelaunch_OpencodeKimi_KeyPresent_Passes(t *testing.T) {
 // provider happy path: opencode + anthropic with ANTHROPIC_API_KEY set
 // must continue to pass prelaunch — we did not regress the existing flow.
 func TestPrelaunch_OpencodeAnthropic_KeyPresent_Passes(t *testing.T) {
+	requireIntegration(t)
+
 	stageFakeOpencode(t)
 	clearAPIKeyEnvVars(t)
 	t.Setenv("ANTHROPIC_API_KEY", "testvalue")
@@ -1035,6 +1043,8 @@ func TestPrelaunch_NonOpencode_NoCredentialCheck(t *testing.T) {
 // CLI commands, satisfying the "user sees the failure within seconds"
 // bar from the task spec.
 func TestPrelaunch_Credentials_Hint_MentionsAuthCommands(t *testing.T) {
+	requireIntegration(t)
+
 	stageFakeOpencode(t)
 	clearAPIKeyEnvVars(t)
 
@@ -1070,6 +1080,8 @@ func envVarsContain(haystack []string, needle string) bool {
 // PATH, validation fails with a structured per-node error — same shape
 // as the existing claude_cli binary-missing case.
 func TestPrelaunch_Opencode_BinaryMissing_FailsLoudly(t *testing.T) {
+	requireIntegration(t)
+
 	// Empty PATH so exec.LookPath cannot find the opencode binary.
 	t.Setenv("PATH", "")
 

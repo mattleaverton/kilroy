@@ -87,6 +87,7 @@ func TestInputMaterializationRunStartup_IncludeMissingFailsFast(t *testing.T) {
 }
 
 func TestInputMaterializationResume_LineageHydratesRunScopedWithoutWorkspaceAI(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cfg := newInputMaterializationRunConfigForTest(t, repo)

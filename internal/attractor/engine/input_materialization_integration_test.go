@@ -12,6 +12,7 @@ import (
 )
 
 func TestInputMaterializationIntegration_RunStartupHydratesUntrackedDoDAndReferences(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	mustWriteInputFile(t, filepath.Join(repo, ".ai", "definition_of_done.md"), "Do all checks. See [tests](../tests.md)\n")
@@ -52,6 +53,7 @@ digraph G {
 }
 
 func TestInputMaterializationIntegration_ParallelBranchHydration(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	mustWriteInputFile(t, filepath.Join(repo, ".ai", "definition_of_done.md"), "Run branch checks. See [tests](../tests.md)\n")
@@ -110,6 +112,7 @@ digraph P {
 }
 
 func TestInputMaterialization_Lineage_BranchIsolationBeforeFanIn(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cfg := newInputMaterializationRunConfigForTest(t, repo)

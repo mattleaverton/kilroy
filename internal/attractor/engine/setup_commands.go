@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+var setupCommandWaitDelay = 3 * time.Second
+
 // executeSetupCommands runs the configured setup commands sequentially in the
 // worktree directory before the first pipeline node executes. Commands are run
 // via "sh -c" and fail fast on the first error.
@@ -45,7 +47,7 @@ func (e *Engine) executeSetupCommands(ctx context.Context) error {
 		cmd.Cancel = func() error {
 			return forceKillPIDTree(cmd.Process.Pid)
 		}
-		cmd.WaitDelay = 3 * time.Second
+		cmd.WaitDelay = setupCommandWaitDelay
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr

@@ -91,7 +91,33 @@ go build ./cmd/kilroy/
 go test -timeout=300s ./...
 ```
 
-The engine package now needs `>180s` (running ~220s); `300s` is the safe default.
+## Test suite split
+
+`go test ./...` is the default unit-test pass. It is the right command for
+normal local iteration, CI, and quick verification unless the task explicitly
+needs subprocess/workflow/tmux/server/corpus coverage. Integration tests skip by
+default and only run when `KILROY_INTEGRATION=1` is set.
+
+Run the full integration-enabled suite only when explicitly choosing to pay that
+cost:
+
+```bash
+KILROY_INTEGRATION=1 go test -timeout=300s ./...
+```
+
+For targeted integration verification, keep the package and `-run` pattern
+specific:
+
+```bash
+KILROY_INTEGRATION=1 go test -count=1 -timeout=300s ./internal/attractor/engine -run '^TestRunWithConfig_HeartbeatEmitsDuringAgent$' -v
+```
+
+`./scripts/e2e.sh` is the deterministic E2E/contract script. It opts into
+integration tests internally before validating shipped DOT files:
+
+```bash
+./scripts/e2e.sh
+```
 
 ## Authoring workflows
 

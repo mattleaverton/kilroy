@@ -61,6 +61,7 @@ func TestCollectOutputs_CopiesFoundFiles(t *testing.T) {
 }
 
 func TestOutputContract_Integration_CollectsAfterRun(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

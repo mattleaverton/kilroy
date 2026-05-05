@@ -17,6 +17,7 @@ import (
 )
 
 func TestRun_LoopRestartCreatesNewLogDirectory(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -119,6 +120,7 @@ digraph G {
 }
 
 func TestLoopRestart_ResetsRetryBudgetPerIteration(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -223,6 +225,7 @@ digraph G {
 }
 
 func TestRun_LoopRestartLimitExceeded(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -284,6 +287,7 @@ digraph G {
 }
 
 func TestRun_LoopRestartLimitExceeded_WritesTerminalFinalJSON(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -373,6 +377,7 @@ digraph G {
 }
 
 func TestRun_LoopRestartBlockedForDeterministicFailureClass(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -451,6 +456,7 @@ digraph G {
 }
 
 func TestRun_LoopRestartCircuitBreakerOnRepeatedSignature(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -555,6 +561,7 @@ func TestClassifyFailureClass_StreamDisconnectIsTransient(t *testing.T) {
 }
 
 func TestRun_StuckCycleNodeVisitLimit(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -747,6 +754,7 @@ func (b *countingBackend) Run(ctx context.Context, exec *Execution, node *model.
 }
 
 func TestLoopRestart_PersistsContextKeys(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -854,6 +862,7 @@ digraph G {
 }
 
 func TestLoopRestart_PersistKeysProgressEvent(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

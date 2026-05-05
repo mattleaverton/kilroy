@@ -12,6 +12,7 @@ import (
 )
 
 func TestRun_GoalGateEnforcedAtExit_RoutesToRetryTarget(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -68,6 +69,7 @@ digraph G {
 }
 
 func TestRun_GoalGateUnsatisfied_NoRetryTargetFails(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

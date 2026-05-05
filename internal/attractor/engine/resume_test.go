@@ -13,6 +13,7 @@ import (
 )
 
 func TestResume_EngineOptionsAreFullyHydrated(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	repo := t.TempDir()
@@ -109,6 +110,7 @@ digraph P {
 }
 
 func TestResume_FromCheckpoint_RewindsBranchAndContinues(t *testing.T) {
+	requireIntegration(t)
 	// Keep logs under the test tempdir so ResumeFromBranch/guessing is deterministic.
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
@@ -190,6 +192,7 @@ digraph G {
 }
 
 func TestResumeFromBranch_FindsLogsRootAndReturnsResult(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 
 	repo := t.TempDir()

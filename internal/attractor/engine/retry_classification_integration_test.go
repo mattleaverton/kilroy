@@ -20,6 +20,7 @@ import (
 // completes via fallback edge routing (spec section 3.3) since the only edge
 // (condition="outcome=success") is selected as fallback when no condition matches.
 func TestRunWithConfig_CLIDeterministicFailure_DoesNotConsumeRetryBudget(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -64,6 +65,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIDeterministicFailure_BlocksStageRetryAndLoopRestart_WritesTerminalFinal(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -133,6 +135,7 @@ digraph G {
 }
 
 func TestLoopRestart_UsesToolFailureReason_ForBrowserTransientRouting(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	dot := []byte(`

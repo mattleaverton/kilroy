@@ -12,6 +12,7 @@ import (
 )
 
 func TestResume_LoopRestartUsesBaseLogsRoot(t *testing.T) {
+	requireIntegration(t)
 	t.Chdir(t.TempDir())
 
 	repo := t.TempDir()
@@ -27,7 +28,7 @@ digraph G {
   graph [goal="resume-restart", max_restarts="1"]
   start [shape=Mdiamond]
   check [shape=diamond]
-  work  [shape=parallelogram, timeout="1s", tool_command="/bin/bash -lc 'sleep 2'"]
+  work  [shape=parallelogram, timeout="200ms", tool_command="/bin/bash -lc 'sleep 1'"]
   exit  [shape=Msquare]
   start -> check
   check -> exit [condition="outcome=success"]

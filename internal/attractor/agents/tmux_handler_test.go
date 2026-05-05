@@ -83,6 +83,7 @@ func fakeAgentRoute(nodeID string) engine.AgentRoute {
 }
 
 func TestTmuxAgentHandler_FakeAgent_SuccessfulExecution(t *testing.T) {
+	requireIntegration(t)
 	scriptDir := t.TempDir()
 	script := writeFakeAgent(t, scriptDir, "FAKE_AGENT_OUTPUT_OK", 0)
 
@@ -156,6 +157,7 @@ func TestTmuxAgentHandler_FakeAgent_SuccessfulExecution(t *testing.T) {
 }
 
 func TestTmuxAgentHandler_FakeAgent_FailedExecution(t *testing.T) {
+	requireIntegration(t)
 	scriptDir := t.TempDir()
 	script := writeFakeAgent(t, scriptDir, "ERROR: something went wrong", 1)
 
@@ -205,6 +207,7 @@ func TestTmuxAgentHandler_FakeAgent_FailedExecution(t *testing.T) {
 }
 
 func TestTmuxAgentHandler_FakeAgent_WorksInWorkDir(t *testing.T) {
+	requireIntegration(t)
 	scriptDir := t.TempDir()
 	script := writeFakeAgentWithWork(t, scriptDir, "agent-output.txt", "hello from agent")
 

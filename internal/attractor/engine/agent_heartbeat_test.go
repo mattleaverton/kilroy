@@ -16,6 +16,7 @@ import (
 )
 
 func TestRunWithConfig_HeartbeatEmitsDuringAgent(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -27,15 +28,15 @@ func TestRunWithConfig_HeartbeatEmitsDuringAgent(t *testing.T) {
 set -euo pipefail
 echo '{"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"working"}]}}' >&1
 # Keep running past the heartbeat interval.
-sleep 3
+sleep 0.3
 echo '{"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"done"}]}}' >&1
 `), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// Set heartbeat to 1s so we get at least 1-2 heartbeats during the 3s sleep.
-	t.Setenv("KILROY_CODERGEN_HEARTBEAT_INTERVAL", "1s")
-	t.Setenv("KILROY_CODEX_IDLE_TIMEOUT", "10s")
+	// Set heartbeat below the script delay so at least one heartbeat fires.
+	t.Setenv("KILROY_CODERGEN_HEARTBEAT_INTERVAL", "100ms")
+	t.Setenv("KILROY_CODEX_IDLE_TIMEOUT", "2s")
 
 	cfg := &RunConfigFile{Version: 1}
 	cfg.Repo.Path = repo
@@ -121,6 +122,7 @@ func TestAgentHeartbeatInterval_StallTimeoutScaling(t *testing.T) {
 }
 
 func TestRunWithConfig_APIBackend_HeartbeatEmitsDuringAgentLoop(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -226,6 +228,7 @@ digraph G {
 }
 
 func TestRunWithConfig_APIBackend_SessionEventsPreventFalseStallWithoutHeartbeat(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -374,6 +377,7 @@ digraph G {
 // stalled (no new session events) even though the heartbeat goroutine is running.
 // The conditional heartbeat should NOT emit progress when event_count is static.
 func TestRunWithConfig_APIBackend_StallWatchdogFiresDespiteHeartbeatGoroutine(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -439,6 +443,7 @@ digraph G {
 // stalled (no stdout/stderr output) even though the heartbeat goroutine is running.
 // The conditional heartbeat should NOT emit progress when file sizes are static.
 func TestRunWithConfig_CLIBackend_StallWatchdogFiresDespiteHeartbeatGoroutine(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -491,6 +496,7 @@ digraph G {
 }
 
 func TestRunWithConfig_HeartbeatStopsAfterProcessExit(t *testing.T) {
+	requireIntegration(t)
 	events := runHeartbeatFixture(t)
 	endIdx := findEventIndex(events, "stage_attempt_end", "a")
 	if endIdx < 0 {

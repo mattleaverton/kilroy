@@ -23,6 +23,7 @@ func (h *preferBHandler) Execute(ctx context.Context, exec *Execution, node *mod
 }
 
 func TestRun_ConditionalHandler_PassesThroughPreferredLabelForRouting(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

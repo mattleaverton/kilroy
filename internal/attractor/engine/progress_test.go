@@ -75,6 +75,7 @@ func TestEngine_appendProgress_WritesNDJSONAndLiveSnapshot(t *testing.T) {
 }
 
 func TestProgressIncludesStatusIngestionDecisionEvent(t *testing.T) {
+	requireIntegration(t)
 	events := runStatusIngestionProgressFixture(t)
 	if !hasEvent(events, "status_ingestion_decision") {
 		t.Fatal("missing status_ingestion_decision event")

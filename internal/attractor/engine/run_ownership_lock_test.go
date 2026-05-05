@@ -74,6 +74,7 @@ func TestAcquireRunOwnership_ReclaimsStaleOwner(t *testing.T) {
 }
 
 func TestAcquireRunOwnership_UnreadableLockConflicts(t *testing.T) {
+	requireIntegration(t)
 	t.Parallel()
 
 	logsRoot := t.TempDir()

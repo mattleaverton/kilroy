@@ -36,7 +36,7 @@ jobs:
       - name: Build
         run: go build ./cmd/kilroy/
 
-      - name: Test
+      - name: Unit tests
         run: go test ./...
 
       - name: Validate graphs

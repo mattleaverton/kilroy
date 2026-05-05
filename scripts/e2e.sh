@@ -5,8 +5,8 @@ cd "$(dirname "$0")/.."
 
 # E2E suite: deterministic integration tests + DOT validation contract.
 
-echo "== go test ./... =="
-go test ./...
+echo "== KILROY_INTEGRATION=1 go test ./... =="
+KILROY_INTEGRATION=1 go test ./...
 
 echo
 
@@ -50,7 +50,7 @@ echo "All validations passed"
 
 # Optional: bounded fuzz runs for the two primary input surfaces.
 # These are not run by default (they require -fuzz flag); the seed corpus
-# is verified as part of `go test ./...` above via -run mode.
+# is verified as part of the integration-enabled `go test ./...` above via -run mode.
 #
 # To run extended fuzzing locally:
 #   go test -fuzz=FuzzParse       -fuzztime=30s ./internal/attractor/dot/

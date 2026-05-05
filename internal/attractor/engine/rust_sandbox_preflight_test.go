@@ -12,6 +12,8 @@ import (
 )
 
 func TestMaybeRunRustSandboxPreflight_RetrysOnCargoMetadataRegistryFailure(t *testing.T) {
+	requireIntegration(t)
+
 	worktree := t.TempDir()
 	stageDir := filepath.Join(t.TempDir(), "stage")
 	if err := os.MkdirAll(stageDir, 0o755); err != nil {

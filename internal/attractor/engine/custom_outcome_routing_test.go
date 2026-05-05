@@ -22,6 +22,7 @@ import (
 // the current outcome regardless of node shape. Custom outcomes that match
 // outgoing edge conditions are routing decisions, not failures.
 func TestRun_BoxNodeCustomOutcome_RoutesWithoutRetry(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -129,6 +130,7 @@ digraph G {
 // on non-terminal nodes, making the previous all-conditional graph pattern invalid.
 // The unconditional fallback edge is now the spec-compliant way to handle unexpected outcomes.
 func TestRun_BoxNodeCustomOutcome_NoMatchingEdge_UnconditionalFallbackRoutes(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -197,6 +199,7 @@ digraph G {
 // returning a custom outcome fans out to multiple matching conditional edges.
 // This is the consensus_task.dot pattern: check_dod -> dod_a, dod_b, dod_c.
 func TestRun_BoxNodeCustomOutcome_ImplicitFanOut(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -286,6 +289,7 @@ digraph G {
 // hasMatchingOutgoingCondition evaluates against the live run context, not
 // an empty context. Edges with context.* conditions must match correctly.
 func TestRun_BoxNodeCustomOutcome_ContextDependentCondition(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 

@@ -13,6 +13,7 @@ import (
 )
 
 func TestAnthropicCLIContract_InvocationArtifactIncludesStreamJSONAndVerbose(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)

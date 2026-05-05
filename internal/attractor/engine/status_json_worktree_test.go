@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunWithConfig_CLIBackend_WorktreeStatusJSON_IsTreatedAsStageStatus(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -91,6 +92,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_RunScopedStatusJSON_IsTreatedAsStageStatus(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -161,6 +163,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_StatusContractPath_HandlesNestedCD(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -270,6 +273,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_StatusContract_ClearsStaleWorktreeStatusBeforeStage(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -374,6 +378,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_StatusContractPromptPreambleWritten(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 

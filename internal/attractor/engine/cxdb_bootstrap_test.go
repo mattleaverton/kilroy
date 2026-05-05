@@ -243,6 +243,7 @@ func TestResolveUIURL_FallsThroughWhenNeitherEnvNorConfigSet(t *testing.T) {
 }
 
 func TestStartBackgroundCommand_KeepsLogOpenUntilWaitCompletes(t *testing.T) {
+	requireIntegration(t)
 	logPath := filepath.Join(t.TempDir(), "bg.log")
 	cmdPath := filepath.Join(t.TempDir(), "writer.sh")
 	if err := os.WriteFile(cmdPath, []byte(`#!/usr/bin/env bash
@@ -276,6 +277,8 @@ echo second-line
 }
 
 func TestEnsureCXDBReady_AutostartProcessTerminatedOnContextCancel(t *testing.T) {
+	requireIntegration(t)
+
 	if runtime.GOOS == "darwin" {
 		t.Skip("process group signaling is unreliable on macOS")
 	}
@@ -319,6 +322,8 @@ while true; do sleep 1; done
 }
 
 func TestEnsureCXDBReady_UIAutostartProcessTerminatedOnRunShutdown(t *testing.T) {
+	requireIntegration(t)
+
 	cxdbSrv := newCXDBTestServer(t)
 	logsRoot := t.TempDir()
 	pidPath := filepath.Join(logsRoot, "ui-autostart.pid")

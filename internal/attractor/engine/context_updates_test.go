@@ -26,6 +26,7 @@ func (h *setContextHandler) Execute(ctx context.Context, exec *Execution, node *
 }
 
 func TestRun_ContextUpdatesAreMergedAndSavedInCheckpoint(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

@@ -26,6 +26,7 @@ func testManager() *Manager {
 }
 
 func TestCreateAndDestroy(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 	s, err := mgr.CreateSession("test-create", "/tmp", "sleep 30", nil)
 	if err != nil {
@@ -54,6 +55,7 @@ func TestCreateSession_InvalidName(t *testing.T) {
 }
 
 func TestCreateSession_WithEnv(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 	env := map[string]string{"KILROY_TEST_VAR": "hello_from_test"}
 	s, err := mgr.CreateSession("test-env", "/tmp", "bash -c 'echo $KILROY_TEST_VAR && sleep 5'", env)
@@ -74,6 +76,7 @@ func TestCreateSession_WithEnv(t *testing.T) {
 }
 
 func TestSendInputAndCapture(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 	s, err := mgr.CreateSession("test-io", "/tmp", "bash", nil)
 	if err != nil {
@@ -99,6 +102,7 @@ func TestSendInputAndCapture(t *testing.T) {
 }
 
 func TestWaitForExit(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 	// Use sleep to avoid the immediate-exit health check failure.
 	s, err := mgr.CreateSession("test-exit", "/tmp", "sleep 0.5 && echo done", nil)
@@ -115,6 +119,7 @@ func TestWaitForExit(t *testing.T) {
 }
 
 func TestHealthCheck(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 
 	// Non-existent session.
@@ -131,6 +136,7 @@ func TestHealthCheck(t *testing.T) {
 }
 
 func TestListSessions(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 	s, _ := mgr.CreateSession("test-list", "/tmp", "sleep 30", nil)
 	defer mgr.DestroySession(s.Name)
@@ -152,6 +158,7 @@ func TestListSessions(t *testing.T) {
 }
 
 func TestSetAndGetEnvironment(t *testing.T) {
+	requireIntegration(t)
 	mgr := testManager()
 	s, _ := mgr.CreateSession("test-setenv", "/tmp", "sleep 30", nil)
 	defer mgr.DestroySession(s.Name)

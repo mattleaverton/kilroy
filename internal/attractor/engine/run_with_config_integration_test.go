@@ -35,6 +35,7 @@ echo "ok"
 }
 
 func TestRunWithConfig_RealProfileRejectsShimOverrideE2E(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	t.Setenv("KILROY_CODEX_PATH", "/tmp/fake/codex")
 
@@ -69,6 +70,7 @@ digraph G {
 }
 
 func TestRunWithConfig_TestShimRequiresExplicitGateAndExecutable(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	codexCLI := writeFakeCodexHelpCLI(t)
 
@@ -119,6 +121,7 @@ digraph G {
 // (package integrity / class resolution / auth / binary capability /
 // secrets), which is exercised here at the integration level.
 func TestPreflightWithConfig_WritesPrelaunchReport(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	codexCLI := writeFakeCodexHelpCLI(t)
@@ -175,6 +178,7 @@ digraph G {
 }
 
 func TestPreflightWithConfig_InitializesAndShutsDownCXDBWithoutRunStart(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)
@@ -239,6 +243,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_StatusContractEnvInjected(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -356,6 +361,7 @@ digraph G {
 }
 
 func TestRunWithConfig_CLIBackend_CapturesInvocationAndPersistsArtifactsToCXDB(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 
@@ -533,20 +539,20 @@ digraph G {
 	hasPrompt := false
 	var promptText string
 	wantArtifacts := map[string]bool{
-		"manifest.json":                  true,
-		"checkpoint.json":                true,
-		"final.json":                     true,
-		"prompt.md":                      true,
-		"response.md":                    true,
-		"status.json":                    true,
-		"events.ndjson":                  true,
-		"events.json":                    true,
-		"cli_invocation.json":            true,
-		"stdout.log":                     true,
-		"output.json":                    true,
-		"output_schema.json":             true,
-		"stage.tgz":                      true,
-		"run.tgz":                        true,
+		"manifest.json":       true,
+		"checkpoint.json":     true,
+		"final.json":          true,
+		"prompt.md":           true,
+		"response.md":         true,
+		"status.json":         true,
+		"events.ndjson":       true,
+		"events.json":         true,
+		"cli_invocation.json": true,
+		"stdout.log":          true,
+		"output.json":         true,
+		"output_schema.json":  true,
+		"stage.tgz":           true,
+		"run.tgz":             true,
 	}
 	seenArtifacts := map[string]bool{}
 	for _, tr := range turns {
@@ -626,6 +632,7 @@ digraph G {
 }
 
 func TestRunWithConfig_APIBackend_AgentLoop_WritesAgentEventsAndPassesReasoningEffort(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -704,6 +711,7 @@ digraph G {
 }
 
 func TestRunWithConfig_APIBackend_OneShot_WritesRequestAndResponseArtifacts(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
@@ -757,6 +765,7 @@ digraph G {
 // agent route resolution.
 
 func TestRunWithConfig_APIBackend_AutoStatusFalse_FailsWhenNoStatusWritten(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 

@@ -120,6 +120,7 @@ func initImplicitFanOutTestRepo(t *testing.T) string {
 // from a regular (non-parallel) node is dispatched in parallel when all edges
 // converge at a common downstream node.
 func TestRun_ImplicitFanOut_EdgeTopology(t *testing.T) {
+	requireIntegration(t)
 	repo := initImplicitFanOutTestRepo(t)
 
 	dotSrc := []byte(`
@@ -192,6 +193,7 @@ digraph G {
 // TestRun_ImplicitFanOut_WithTripleoctagonJoin verifies that implicit fan-out
 // correctly detects and uses an explicit tripleoctagon join node.
 func TestRun_ImplicitFanOut_WithTripleoctagonJoin(t *testing.T) {
+	requireIntegration(t)
 	repo := initImplicitFanOutTestRepo(t)
 
 	dotSrc := []byte(`
@@ -241,6 +243,7 @@ digraph G {
 // edges match the current outcome, they are dispatched as an implicit fan-out.
 // Edges that do not match the condition should NOT be dispatched.
 func TestRun_ImplicitFanOut_ConditionalEdges(t *testing.T) {
+	requireIntegration(t)
 	repo := initImplicitFanOutTestRepo(t)
 
 	// check is a diamond (conditional) node. After the preceding start node succeeds,
@@ -314,6 +317,7 @@ digraph G {
 }
 
 func TestRun_SingleEdge_NoImplicitFanOut(t *testing.T) {
+	requireIntegration(t)
 	repo := initImplicitFanOutTestRepo(t)
 
 	dotSrc := []byte(`
@@ -345,6 +349,7 @@ digraph G {
 }
 
 func TestRun_DifferentConditions_NoFanOut(t *testing.T) {
+	requireIntegration(t)
 	repo := initImplicitFanOutTestRepo(t)
 
 	dotSrc := []byte(`

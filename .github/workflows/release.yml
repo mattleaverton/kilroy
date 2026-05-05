@@ -50,7 +50,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run tests
+      - name: Run unit tests
         run: go test ./...
 
       - name: Validate GoReleaser config

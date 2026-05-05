@@ -12,6 +12,7 @@ import (
 )
 
 func TestRun_FailureDossierCapturedAndInjectedIntoPrompt(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 

@@ -17,6 +17,7 @@ import (
 )
 
 func TestToolGraph_Linear(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -61,6 +62,7 @@ func TestToolGraph_Linear(t *testing.T) {
 }
 
 func TestToolGraph_LinearVerify_HillClimber(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -107,6 +109,7 @@ func TestToolGraph_LinearVerify_HillClimber(t *testing.T) {
 }
 
 func TestToolGraph_Conditional(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -151,6 +154,7 @@ func TestToolGraph_Conditional(t *testing.T) {
 }
 
 func TestToolGraph_FailFast(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -195,6 +199,7 @@ func TestToolGraph_FailFast(t *testing.T) {
 }
 
 func TestToolGraph_NoCXDBConfig(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -230,6 +235,7 @@ func TestToolGraph_NoCXDBConfig(t *testing.T) {
 }
 
 func TestToolGraph_WorkspaceLifecycle(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -262,6 +268,7 @@ func TestToolGraph_WorkspaceLifecycle(t *testing.T) {
 }
 
 func TestToolGraph_ZeroConfig(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -314,6 +321,7 @@ func TestToolGraph_ZeroConfig(t *testing.T) {
 }
 
 func TestToolGraph_RunIDInjected(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -358,6 +366,7 @@ func TestToolGraph_RunIDInjected(t *testing.T) {
 }
 
 func TestToolGraph_DirtyRepoSucceedsWithDefaultConfig(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -394,6 +403,7 @@ func TestToolGraph_DirtyRepoSucceedsWithDefaultConfig(t *testing.T) {
 }
 
 func TestToolGraph_PartialConfigAutoDetectsProviders(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-partial-config")
 	repo := initTestRepo(t)
@@ -462,6 +472,7 @@ func TestToolGraph_PartialConfigAutoDetectsProviders(t *testing.T) {
 // Graph: start -> a (fails) -> b (handler on fail edge) -> done
 // When b runs, its predecessor is a with outcome "fail".
 func TestToolGraph_PredecessorEnvVars(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -518,6 +529,7 @@ func TestToolGraph_PredecessorEnvVars(t *testing.T) {
 // succeeded. When the first real node (check) runs, its predecessor is "start" with
 // outcome "success".
 func TestToolGraph_PredecessorEnvVarsSuccessPath(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

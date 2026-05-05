@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunWithConfig_CLIBackend_WorktreeLegacyFailDetails_PopulatesFailureReason(t *testing.T) {
+	requireIntegration(t)
 	cleanupStrayEngineArtifacts(t)
 	t.Cleanup(func() { cleanupStrayEngineArtifacts(t) })
 

@@ -76,6 +76,7 @@ func TestInputMaterialization_RecursiveChainIncludesAllFiles(t *testing.T) {
 }
 
 func TestInputMaterialization_DeepRecursionHasNoFixedDepthCap(t *testing.T) {
+	requireIntegration(t)
 	source := t.TempDir()
 	target := t.TempDir()
 	const count = 1500

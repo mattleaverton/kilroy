@@ -178,6 +178,7 @@ func TestHi(t *testing.T) {
 // Block 6's codec rewrite must keep this test green — any intentional
 // behavioral change should land alongside a deliberate update here.
 func TestRunImplement_E2E_FakeProvider(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not available; CLI-driver dispatch path requires tmux")
 	}

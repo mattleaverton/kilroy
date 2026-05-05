@@ -14,6 +14,7 @@ import (
 )
 
 func TestDecisionLogging_ConditionalRoute(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
@@ -118,6 +119,7 @@ func TestDecisionLogging_ConditionalRoute(t *testing.T) {
 }
 
 func TestDecisionLogging_HillClimber(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

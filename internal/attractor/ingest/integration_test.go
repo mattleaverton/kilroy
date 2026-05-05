@@ -11,6 +11,7 @@ import (
 // TestExtractAndValidateResearchDotFiles tests that existing research .dot files
 // can be extracted and validated by the engine.
 func TestExtractAndValidateResearchDotFiles(t *testing.T) {
+	requireIntegration(t)
 	repoRoot := findRepoRoot(t)
 
 	dotFiles := []string{

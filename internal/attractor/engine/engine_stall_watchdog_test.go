@@ -10,6 +10,7 @@ import (
 )
 
 func TestRun_StallWatchdog(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("sleep"); err != nil {
 		t.Skip("requires sleep binary")
 	}
@@ -37,6 +38,7 @@ func TestRun_StallWatchdog(t *testing.T) {
 }
 
 func TestRun_StallWatchdogInterruptsRetrySleep(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("false"); err != nil {
 		t.Skip("requires false binary")
 	}
@@ -70,6 +72,7 @@ func TestRun_StallWatchdogInterruptsRetrySleep(t *testing.T) {
 }
 
 func TestRun_StallWatchdogStopsRunLoopBeforeFailEdgeTraversal(t *testing.T) {
+	requireIntegration(t)
 	if _, err := exec.LookPath("false"); err != nil {
 		t.Skip("requires false binary")
 	}
@@ -109,6 +112,7 @@ func TestRun_StallWatchdogStopsRunLoopBeforeFailEdgeTraversal(t *testing.T) {
 }
 
 func TestRun_StallWatchdog_ParallelBranchProgressKeepsParentAlive(t *testing.T) {
+	requireIntegration(t)
 	err := runParallelWatchdogFixture(t, 500*time.Millisecond)
 	if err != nil {
 		t.Fatalf("expected no stall watchdog timeout, got %v", err)

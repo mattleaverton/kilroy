@@ -122,6 +122,7 @@ func readProgressEvents(t *testing.T, logsRoot string) []map[string]any {
 // of the bogus llm_provider/llm_model/agent_tool stylesheet attrs that may
 // be present.
 func TestTmuxAgentHandler_ClassAttribute_OverridesStylesheet(t *testing.T) {
+	requireIntegration(t)
 	scriptDir := t.TempDir()
 	// Fake claude binary captures the model arg passed to it so we can
 	// assert the policy-resolved value reaches the session, not the

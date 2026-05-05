@@ -11,6 +11,7 @@ import (
 )
 
 func TestRun_StatusJSON_FailureReasonRequiredForFail(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -57,6 +58,7 @@ digraph G {
 }
 
 func TestAgentStatusIngestion_CanonicalStageStatusWins(t *testing.T) {
+	requireIntegration(t)
 	out, source := runStatusIngestionFixture(t, true, true, false)
 	if source != "canonical" {
 		t.Fatalf("source=%q want canonical", source)
@@ -67,6 +69,7 @@ func TestAgentStatusIngestion_CanonicalStageStatusWins(t *testing.T) {
 }
 
 func TestAgentStatusIngestion_FallbackOnlyWhenCanonicalMissing(t *testing.T) {
+	requireIntegration(t)
 	out, source := runStatusIngestionFixture(t, false, true, false)
 	if source != "worktree" {
 		t.Fatalf("source=%q want worktree", source)
@@ -77,6 +80,7 @@ func TestAgentStatusIngestion_FallbackOnlyWhenCanonicalMissing(t *testing.T) {
 }
 
 func TestAgentStatusIngestion_InvalidFallbackIsRejected(t *testing.T) {
+	requireIntegration(t)
 	out, source := runStatusIngestionFixture(t, false, false, true)
 	if source != "" {
 		t.Fatalf("source=%q want empty", source)
@@ -87,6 +91,7 @@ func TestAgentStatusIngestion_InvalidFallbackIsRejected(t *testing.T) {
 }
 
 func TestAgentStatusIngestion_MissingFallbackIsDiagnosed(t *testing.T) {
+	requireIntegration(t)
 	out, source := runStatusIngestionFixture(t, false, false, false)
 	if source != "" {
 		t.Fatalf("source=%q want empty", source)

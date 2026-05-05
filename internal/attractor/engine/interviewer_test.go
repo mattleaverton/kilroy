@@ -548,6 +548,7 @@ func TestConsoleInterviewer_TimeoutRecovery_PendingResultCaptured(t *testing.T) 
 // repeated timeouts do NOT cause unbounded goroutine growth. With the
 // pendingResult pattern, at most 1 stranded goroutine should exist at a time.
 func TestConsoleInterviewer_RepeatedTimeouts_BoundedGoroutines(t *testing.T) {
+	requireIntegration(t)
 	rIn, wIn, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)

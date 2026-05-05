@@ -14,6 +14,7 @@ import (
 )
 
 func TestTerminalStatus_FailAttribute_RecordsFinalFail(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	dot := []byte(`
 digraph G {
@@ -47,6 +48,7 @@ digraph G {
 }
 
 func TestTerminalStatus_FailAttribute_OnFailureRecordsFinalFail(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	dot := []byte(`
 digraph G {
@@ -82,6 +84,7 @@ digraph G {
 }
 
 func TestTerminalStatus_McircleShape_RecordsFinalFail(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	dot := []byte(`
 digraph G {

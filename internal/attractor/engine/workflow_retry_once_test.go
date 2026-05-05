@@ -19,6 +19,7 @@ import (
 // declare max_node_visits, and the engine must abort after the agent has
 // been executed twice (original + one retry) when verify keeps failing.
 func TestImplementWorkflow_RetryOnce_FailsAfterTwoAttempts(t *testing.T) {
+	requireIntegration(t)
 	assertWorkflowDeclaresVisitCap(t, "implement")
 
 	dot := []byte(`
@@ -50,6 +51,7 @@ digraph implement {
 // implement variant, mirroring the fix workflow topology (with the extra
 // `diff` capture step on the success path).
 func TestFixWorkflow_RetryOnce_FailsAfterTwoAttempts(t *testing.T) {
+	requireIntegration(t)
 	assertWorkflowDeclaresVisitCap(t, "fix")
 
 	dot := []byte(`

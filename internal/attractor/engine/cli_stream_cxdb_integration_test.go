@@ -11,6 +11,7 @@ import (
 )
 
 func TestCLIStreamCXDB_DecomposesConversationTurns(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cxdbSrv := newCXDBTestServer(t)

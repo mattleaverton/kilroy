@@ -11,6 +11,7 @@ import (
 )
 
 func TestRun_RetriesOnFail_ThenSucceeds(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -57,6 +58,7 @@ digraph G {
 // tests the fix for the sentinel bug where explicit zero was conflated
 // with "not set" (V2.2 in the spec compliance audit).
 func TestRun_ExplicitMaxRetriesZero_NoRetries(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -107,6 +109,7 @@ digraph G {
 // TestRun_DefaultMaxRetryFallback verifies the retry precedence chain:
 // (1) node max_retries, (2) graph default_max_retry, (3) built-in default of 3.
 func TestRun_DefaultMaxRetryFallback(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -152,6 +155,7 @@ digraph G {
 }
 
 func TestRun_AllowPartialAfterRetryExhaustion(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

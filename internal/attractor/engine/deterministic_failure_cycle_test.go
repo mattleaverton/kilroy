@@ -21,6 +21,7 @@ import (
 // All tool nodes exit 1 to simulate a persistent provider failure.
 // The engine should detect the repeated failure signature and terminate.
 func TestRun_DeterministicFailureCycle_AbortsInfiniteLoop(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -70,6 +71,7 @@ digraph G {
 // cycle) still works correctly — we don't want the cycle breaker to be too
 // aggressive and block legitimate fail-routing.
 func TestRun_DeterministicFailure_SingleRouteToRecovery_StillWorks(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -141,6 +143,7 @@ func TestDeterministicFailureCycleBreaker_IgnoresCanceledClass(t *testing.T) {
 // accumulates across cycles: count=1 after first verify fail, count=2 after
 // second, count=3 triggers the breaker.
 func TestRun_DeterministicFailureCycle_ImplSucceedsVerifyFails(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -246,6 +249,7 @@ digraph G {
 // cycle breaker rather than immediately aborting — the main loop may have
 // user-designed recovery edges.
 func TestRun_StructuralFailure_AccumulatesInMainLoop(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

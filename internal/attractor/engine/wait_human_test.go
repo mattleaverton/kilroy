@@ -13,6 +13,7 @@ import (
 )
 
 func TestRun_WaitHuman_RoutesOnQueueInterviewerSelection(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

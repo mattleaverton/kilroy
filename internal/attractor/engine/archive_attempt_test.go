@@ -148,6 +148,7 @@ func (h *retryWithContentHandler) Execute(_ context.Context, exec *Execution, no
 }
 
 func TestRun_AttemptArchivesPreservedOnRetry(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

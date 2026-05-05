@@ -12,6 +12,7 @@ import (
 )
 
 func TestRunDB_ToolGraphRecordsLifecycleEvents(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

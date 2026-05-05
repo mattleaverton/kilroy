@@ -167,6 +167,7 @@ func (h *failThenSucceedHandler) Execute(_ context.Context, _ *Execution, _ *mod
 // (response.md, status.json) are moved into visit_1/ before the second execution,
 // so neither visit's artifacts are silently lost.
 func TestRun_PriorVisitArchivedOnReentry(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")

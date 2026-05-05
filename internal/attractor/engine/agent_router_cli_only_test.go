@@ -72,6 +72,7 @@ func TestCLIOnlyModelOverride_SwitchesBackendAndWarns(t *testing.T) {
 }
 
 func TestCLIOnlyModelOverride_RegularModelNoOverride(t *testing.T) {
+	requireIntegration(t)
 	// Set up router with openai configured as API backend.
 	runtimes := map[string]ProviderRuntime{
 		"openai": {Key: "openai", Backend: BackendAPI},

@@ -72,6 +72,7 @@ type runResult struct {
 // TestBlock8_TwelveSiblingRuns launches concurrent runs against a shared parent repo
 // and verifies isolation properties (no SQLITE_BUSY, no git lock errors, unique paths).
 func TestBlock8_TwelveSiblingRuns(t *testing.T) {
+	requireIntegration(t)
 	if testing.Short() {
 		t.Skip("Skipping stress test in short mode")
 	}

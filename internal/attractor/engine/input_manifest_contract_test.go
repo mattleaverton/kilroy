@@ -12,6 +12,7 @@ import (
 )
 
 func TestInputManifestContract_AgentEnvAndPreambleInjected(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	mustWriteInputFile(t, filepath.Join(repo, ".ai", "definition_of_done.md"), "line by line")
@@ -72,6 +73,7 @@ digraph G {
 }
 
 func TestInputManifestContract_DisabledSuppressesEnvPreambleAndEvents(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	t.Setenv(inputsManifestEnvKey, "/tmp/ambient-inputs-manifest.json")
@@ -143,6 +145,7 @@ digraph G {
 }
 
 func TestInputManifestContract_FollowReferencesFalseSkipsRecursiveClosure(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	mustWriteInputFile(t, filepath.Join(repo, ".ai", "definition_of_done.md"), "See [tests](../tests.md)")
@@ -183,6 +186,7 @@ digraph G {
 }
 
 func TestInputManifestContract_LineageRevisionFields(t *testing.T) {
+	requireIntegration(t)
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 	cfg := newInputMaterializationRunConfigForTest(t, repo)

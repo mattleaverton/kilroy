@@ -13,6 +13,7 @@ import (
 )
 
 func TestWorkspace_ToolCommandRunsInWorkspace(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

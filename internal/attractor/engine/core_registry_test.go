@@ -14,6 +14,7 @@ import (
 )
 
 func TestCoreRegistry_ToolOnlyGraph(t *testing.T) {
+	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()

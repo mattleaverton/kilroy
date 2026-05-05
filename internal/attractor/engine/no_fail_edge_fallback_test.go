@@ -11,6 +11,7 @@ import (
 )
 
 func TestRun_NoMatchingFailEdge_FallsBackToRetryTarget(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
@@ -65,6 +66,7 @@ digraph G {
 // unconditional edge on non-terminal nodes, so the previous all-conditional graph pattern
 // is now rejected at validation time. This test uses the correct pattern.
 func TestRun_NoMatchingFailEdge_NoRetryTarget_UnconditionalFallbackRoutesToExit(t *testing.T) {
+	requireIntegration(t)
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
 	runCmd(t, repo, "git", "config", "user.name", "tester")
