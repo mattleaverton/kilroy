@@ -393,6 +393,54 @@ func TestCascadeDelete_NodesDeletedWithRun(t *testing.T) {
 	}
 }
 
+func TestParentRunID_RoundTrip(t *testing.T) {
+	db := openTestDB(t)
+
+	// Insert a parent run
+	err := db.InsertRun(RunRecord{
+		RunID:     "parent-run-001",
+		GraphName: "parent-graph",
+		Status:    "running",
+		StartedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("InsertRun parent: %v", err)
+	}
+
+	// Insert a child run with ParentRunID set
+	err = db.InsertRun(RunRecord{
+		RunID:       "child-run-001",
+		GraphName:   "child-graph",
+		Status:      "running",
+		StartedAt:   time.Now(),
+		ParentRunID: "parent-run-001",
+	})
+	if err != nil {
+		t.Fatalf("InsertRun child: %v", err)
+	}
+
+	// Read back the child run and verify ParentRunID persists
+	child, err := db.GetRun("child-run-001")
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if child == nil {
+		t.Fatal("GetRun returned nil for child run")
+	}
+	if child.ParentRunID != "parent-run-001" {
+		t.Fatalf("ParentRunID = %q, want %q", child.ParentRunID, "parent-run-001")
+	}
+
+	// Verify parent run has empty ParentRunID (default)
+	parent, err := db.GetRun("parent-run-001")
+	if err != nil {
+		t.Fatalf("GetRun parent: %v", err)
+	}
+	if parent.ParentRunID != "" {
+		t.Fatalf("ParentRunID = %q, want empty string", parent.ParentRunID)
+	}
+}
+
 func init() {
 	// Suppress unused import warning.
 	_ = os.Stat

@@ -32,6 +32,7 @@ type RunSummary struct {
 	NodeCount     int               `json:"node_count"`
 	Invocation    []string          `json:"invocation,omitempty"`
 	Config        map[string]any    `json:"config,omitempty"`
+	ParentRunID   string            `json:"parent_run_id,omitempty"`
 }
 
 // LatestRun returns the most recently started run.
@@ -566,7 +567,7 @@ func (d *DB) queryRuns(clause string, args []any) ([]RunSummary, error) {
 	q := `SELECT r.run_id, r.graph_name, r.goal, r.status, r.logs_root,
 		r.worktree_dir, r.run_branch, r.repo_path, r.started_at, r.completed_at,
 		r.duration_ms, r.final_sha, r.failure_reason, r.labels_json, r.inputs_json,
-		r.warnings_json, r.invocation_json, r.config_json,
+		r.warnings_json, r.invocation_json, r.config_json, r.parent_run_id,
 		(SELECT COUNT(*) FROM node_executions ne WHERE ne.run_id = r.run_id) as node_count
 		FROM runs r ` + clause
 
@@ -580,12 +581,12 @@ func (d *DB) queryRuns(clause string, args []any) ([]RunSummary, error) {
 	for rows.Next() {
 		var s RunSummary
 		var startedAt string
-		var completedAt, finalSHA, failureReason, labelsJSON, inputsJSON, warningsJSON, invocationJSON, configJSON sql.NullString
+		var completedAt, finalSHA, failureReason, labelsJSON, inputsJSON, warningsJSON, invocationJSON, configJSON, parentRunID sql.NullString
 		var durationMS sql.NullInt64
 		if err := rows.Scan(&s.RunID, &s.GraphName, &s.Goal, &s.Status, &s.LogsRoot,
 			&s.WorktreeDir, &s.RunBranch, &s.RepoPath, &startedAt, &completedAt,
 			&durationMS, &finalSHA, &failureReason, &labelsJSON, &inputsJSON,
-			&warningsJSON, &invocationJSON, &configJSON, &s.NodeCount); err != nil {
+			&warningsJSON, &invocationJSON, &configJSON, &parentRunID, &s.NodeCount); err != nil {
 			return nil, err
 		}
 		s.StartedAt, _ = time.Parse(time.RFC3339Nano, startedAt)
@@ -598,6 +599,7 @@ func (d *DB) queryRuns(clause string, args []any) ([]RunSummary, error) {
 		}
 		s.FinalSHA = finalSHA.String
 		s.FailureReason = failureReason.String
+		s.ParentRunID = parentRunID.String
 		if labelsJSON.Valid {
 			_ = json.Unmarshal([]byte(labelsJSON.String), &s.Labels)
 		}

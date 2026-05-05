@@ -23,6 +23,7 @@ type RunRecord struct {
 	Labels      map[string]string
 	Invocation  []string
 	Config      map[string]any
+	ParentRunID string
 }
 
 // RecordRunStart satisfies engine.RunDBWriter. Delegates to InsertRun.
@@ -69,11 +70,11 @@ func (d *DB) InsertRun(r RunRecord) error {
 	configJSON, _ := json.Marshal(r.Config)
 	startedAt := r.StartedAt.UTC().Format(time.RFC3339Nano)
 	_, err := d.db.Exec(`INSERT OR REPLACE INTO runs
-		(run_id, graph_name, goal, status, logs_root, worktree_dir, run_branch, repo_path, started_at, dot_source, inputs_json, labels_json, invocation_json, config_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(run_id, graph_name, goal, status, logs_root, worktree_dir, run_branch, repo_path, started_at, dot_source, inputs_json, labels_json, invocation_json, config_json, parent_run_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.RunID, r.GraphName, r.Goal, r.Status, r.LogsRoot, r.WorktreeDir,
 		r.RunBranch, r.RepoPath, startedAt, r.DotSource, string(inputsJSON), string(labelsJSON),
-		string(invocationJSON), string(configJSON))
+		string(invocationJSON), string(configJSON), r.ParentRunID)
 	return err
 }
 
