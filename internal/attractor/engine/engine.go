@@ -1982,6 +1982,9 @@ func (e *Engine) writeManifest(baseSHA string) error {
 	if len(e.Options.Inputs) > 0 {
 		manifest["inputs"] = e.Options.Inputs
 	}
+	if pid := strings.TrimSpace(e.Options.ParentRunID); pid != "" {
+		manifest["parent_run_id"] = pid
+	}
 	return writeJSON(filepath.Join(e.LogsRoot, "manifest.json"), manifest)
 }
 

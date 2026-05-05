@@ -25,6 +25,7 @@ type manifest struct {
 	RepoPath      string `json:"repo_path"`
 	RunBranch     string `json:"run_branch"`
 	RunConfigPath string `json:"run_config_path"`
+	ParentRunID   string `json:"parent_run_id,omitempty"`
 
 	ModelDB struct {
 		OpenRouterModelInfoPath   string `json:"openrouter_model_info_path"`
@@ -240,6 +241,7 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 		RequireClean:     resolveRequireClean(cfg),
 		GitOps:           ov.GitOps,
 		ProviderRuntimes: cloneProviderRuntimeMap(providerRuntimes),
+		ParentRunID:      strings.TrimSpace(m.ParentRunID),
 	}
 	if err := opts.applyDefaults(); err != nil {
 		return nil, err
