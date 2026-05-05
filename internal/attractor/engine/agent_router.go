@@ -20,7 +20,6 @@ import (
 	"github.com/danshapiro/kilroy/internal/agent"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/llm"
@@ -31,7 +30,6 @@ import (
 
 type AgentRouter struct {
 	cfg     *RunConfigFile
-	catalog *modeldb.Catalog
 
 	providerRuntimes map[string]ProviderRuntime
 	apiClientFactory func(map[string]ProviderRuntime) (*llm.Client, error)
@@ -58,14 +56,13 @@ type nodeRoute struct {
 	className   string
 }
 
-func NewAgentRouter(cfg *RunConfigFile, catalog *modeldb.Catalog) *AgentRouter {
-	return NewAgentRouterWithRuntimes(cfg, catalog, nil)
+func NewAgentRouter(cfg *RunConfigFile) *AgentRouter {
+	return NewAgentRouterWithRuntimes(cfg, nil)
 }
 
-func NewAgentRouterWithRuntimes(cfg *RunConfigFile, catalog *modeldb.Catalog, runtimes map[string]ProviderRuntime) *AgentRouter {
+func NewAgentRouterWithRuntimes(cfg *RunConfigFile, runtimes map[string]ProviderRuntime) *AgentRouter {
 	return &AgentRouter{
 		cfg:              cfg,
-		catalog:          catalog,
 		providerRuntimes: cloneProviderRuntimeMap(runtimes),
 		apiClientFactory: newAPIClientFromProviderRuntimes,
 	}
@@ -87,8 +84,6 @@ func cloneProviderRuntimeMap(in map[string]ProviderRuntime) map[string]ProviderR
 }
 
 func (r *AgentRouter) Run(ctx context.Context, exec *Execution, node *model.Node, prompt string, resolved AgentRoute) (string, *runtime.Outcome, error) {
-	_ = r.catalog // used later for context window + pricing metadata
-
 	route, err := r.nodeRouteFromAgentRoute(node, resolved, true)
 	if err != nil {
 		return "", nil, err
@@ -887,32 +882,7 @@ func (r *AgentRouter) withFailoverText(
 	primaryProvider = normalizeProviderKey(primaryProvider)
 	primaryModel = strings.TrimSpace(primaryModel)
 
-	available := map[string]bool{}
-	if client != nil {
-		for _, p := range client.ProviderNames() {
-			available[normalizeProviderKey(p)] = true
-		}
-	}
-
 	cands := []providerModel{{Provider: primaryProvider, Model: primaryModel}}
-	order, failoverExplicit := failoverOrderFromRuntime(primaryProvider, r.providerRuntimes)
-	for _, p := range order {
-		p = normalizeProviderKey(p)
-		if p == "" || p == primaryProvider {
-			continue
-		}
-		if r.backendForProvider(p) != BackendAPI {
-			continue
-		}
-		if len(available) > 0 && !available[p] {
-			continue
-		}
-		m := pickFailoverModelFromRuntime(p, r.providerRuntimes, r.catalog, primaryModel)
-		if strings.TrimSpace(m) == "" {
-			continue
-		}
-		cands = append(cands, providerModel{Provider: p, Model: m})
-	}
 
 	var lastErr error
 	for i, c := range cands {
@@ -951,9 +921,6 @@ func (r *AgentRouter) withFailoverText(
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("llm call failed (no attempts made)")
-	}
-	if failoverExplicit && len(order) == 0 && shouldFailoverLLMError(lastErr) {
-		return "", cands[0], fmt.Errorf("no failover allowed by runtime config for provider %s: %w", primaryProvider, lastErr)
 	}
 	return "", cands[0], lastErr
 }
@@ -1050,264 +1017,16 @@ func isLocalBootstrapError(err error) bool {
 		strings.Contains(s, "tool read_file schema: getwd:")
 }
 
-func failoverOrderFromRuntime(primary string, runtimes map[string]ProviderRuntime) ([]string, bool) {
-	primary = normalizeProviderKey(primary)
-	if primary == "" || len(runtimes) == 0 {
-		return nil, false
-	}
-	rt, ok := runtimes[primary]
-	if !ok {
-		return nil, false
-	}
-	if len(rt.Failover) == 0 {
-		return nil, rt.FailoverExplicit
-	}
-	return append([]string{}, rt.Failover...), rt.FailoverExplicit
-}
 
-func pickFailoverModelFromRuntime(provider string, runtimes map[string]ProviderRuntime, catalog *modeldb.Catalog, fallbackModel string) string {
-	provider = normalizeProviderKey(provider)
-	if provider == "" {
-		return strings.TrimSpace(fallbackModel)
-	}
-	if provider == "zai" {
-		// ZAI coding endpoint model availability does not match OpenRouter's
-		// broader catalog variants; keep failover on a stable ZAI model.
-		return stabilizeZAIFailoverModel(fallbackModel)
-	}
-	if model := strings.TrimSpace(pickFailoverModel(provider, catalog)); model != "" {
-		return model
-	}
-	ids := modelIDsForProvider(catalog, provider)
-	if len(ids) > 0 {
-		return providerModelIDFromCatalogKey(provider, ids[0])
-	}
-	return strings.TrimSpace(fallbackModel)
-}
 
-func stabilizeZAIFailoverModel(fallbackModel string) string {
-	m := strings.TrimSpace(fallbackModel)
-	if m == "" {
-		return "glm-4.7"
-	}
-	lower := strings.ToLower(m)
-	switch {
-	case strings.HasPrefix(lower, "glm-"):
-		return m
-	case strings.HasPrefix(lower, "z-ai/"):
-		return strings.TrimSpace(m[len("z-ai/"):])
-	case strings.HasPrefix(lower, "z.ai/"):
-		return strings.TrimSpace(m[len("z.ai/"):])
-	default:
-		return "glm-4.7"
-	}
-}
 
-func pickFailoverModel(provider string, catalog *modeldb.Catalog) string {
-	provider = normalizeProviderKey(provider)
-	switch provider {
-	case "openai":
-		// Prefer the repo's pinned default, even if the catalog doesn't contain it yet.
-		if catalog != nil && catalog.Models != nil {
-			if _, ok := catalog.Models[modelmeta.DefaultOpenAIModel]; ok {
-				return modelmeta.DefaultOpenAIModel
-			}
-			if _, ok := catalog.Models["codex-mini-latest"]; ok {
-				return "codex-mini-latest"
-			}
-		}
-		return modelmeta.DefaultOpenAIModel
-	case "kimi":
-		// Keep failover to Kimi pinned to the known stable coding model.
-		return "kimi-k2.5"
-	case "anthropic":
-		best := ""
-		for _, id := range modelIDsForProvider(catalog, "anthropic") {
-			if best == "" || betterAnthropicModel(id, best) {
-				best = id
-			}
-		}
-		return providerModelIDFromCatalogKey("anthropic", best)
-	case "google":
-		// Prefer a known good "pro" model when present.
-		for _, want := range []string{
-			"gemini/gemini-3.1-pro-preview",
-			"google/gemini-3.1-pro-preview",
-			"gemini/gemini-3-pro-preview",
-			"google/gemini-3-pro-preview",
-		} {
-			if hasModelID(catalog, "google", want) {
-				return providerModelIDFromCatalogKey("google", want)
-			}
-		}
-		best := ""
-		for _, id := range modelIDsForProvider(catalog, "google") {
-			if best == "" || betterGoogleModel(id, best) {
-				best = id
-			}
-		}
-		return providerModelIDFromCatalogKey("google", best)
-	case "cerebras":
-		// Pin to Cerebras-hosted GLM-4.7 model ID.
-		return "zai-glm-4.7"
-	default:
-		return ""
-	}
-}
 
-func modelIDsForProvider(catalog *modeldb.Catalog, provider string) []string {
-	if catalog == nil || catalog.Models == nil {
-		return nil
-	}
-	provider = normalizeProviderKey(provider)
-	out := []string{}
-	for id, entry := range catalog.Models {
-		if normalizeProviderKey(entry.Provider) != provider {
-			continue
-		}
-		out = append(out, id)
-	}
-	return out
-}
 
-func hasModelID(catalog *modeldb.Catalog, provider string, id string) bool {
-	if catalog == nil || catalog.Models == nil {
-		return false
-	}
-	provider = normalizeProviderKey(provider)
-	entry, ok := catalog.Models[id]
-	if !ok {
-		return false
-	}
-	return normalizeProviderKey(entry.Provider) == provider
-}
 
-func providerModelIDFromCatalogKey(provider string, id string) string {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return ""
-	}
-	switch normalizeProviderKey(provider) {
-	case "google":
-		return strings.TrimPrefix(id, "gemini/")
-	case "anthropic":
-		if i := strings.LastIndex(id, "/"); i >= 0 {
-			return id[i+1:]
-		}
-		return id
-	default:
-		return id
-	}
-}
 
-func betterAnthropicModel(a string, b string) bool {
-	// Higher rank is better:
-	// 1) family: opus > sonnet > haiku
-	// 2) numeric tokens (version/date) lexicographically
-	// 3) prefer non-region keys
-	ra := anthropicFamilyRank(a)
-	rb := anthropicFamilyRank(b)
-	if ra != rb {
-		return ra > rb
-	}
-	cmp := compareIntSlices(numericTokens(a), numericTokens(b))
-	if cmp != 0 {
-		return cmp > 0
-	}
-	pa := strings.Contains(a, "/")
-	pb := strings.Contains(b, "/")
-	if pa != pb {
-		return !pa
-	}
-	return a > b
-}
 
-func anthropicFamilyRank(id string) int {
-	s := strings.ToLower(id)
-	switch {
-	case strings.Contains(s, "opus"):
-		return 3
-	case strings.Contains(s, "sonnet"):
-		return 2
-	case strings.Contains(s, "haiku"):
-		return 1
-	default:
-		return 0
-	}
-}
 
-func betterGoogleModel(a string, b string) bool {
-	ra := googleFamilyRank(a)
-	rb := googleFamilyRank(b)
-	if ra != rb {
-		return ra > rb
-	}
-	cmp := compareIntSlices(numericTokens(a), numericTokens(b))
-	if cmp != 0 {
-		return cmp > 0
-	}
-	return a > b
-}
 
-func googleFamilyRank(id string) int {
-	s := strings.ToLower(id)
-	switch {
-	case strings.Contains(s, "-pro"):
-		return 3
-	case strings.Contains(s, "flash"):
-		return 2
-	case strings.Contains(s, "lite"):
-		return 1
-	default:
-		return 0
-	}
-}
-
-func numericTokens(s string) []int {
-	out := []int{}
-	n := 0
-	in := false
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= '0' && c <= '9' {
-			in = true
-			n = n*10 + int(c-'0')
-			continue
-		}
-		if in {
-			out = append(out, n)
-			n = 0
-			in = false
-		}
-	}
-	if in {
-		out = append(out, n)
-	}
-	return out
-}
-
-func compareIntSlices(a []int, b []int) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
-	}
-	for i := 0; i < n; i++ {
-		if a[i] == b[i] {
-			continue
-		}
-		if a[i] < b[i] {
-			return -1
-		}
-		return 1
-	}
-	if len(a) == len(b) {
-		return 0
-	}
-	if len(a) < len(b) {
-		return -1
-	}
-	return 1
-}
 
 func resolveAgentLoopCommandTimeouts(execCtx *Execution, node *model.Node) (int, int) {
 	defaultCommandTimeoutMS := parsePositiveIntAttr(node, "default_command_timeout_ms")

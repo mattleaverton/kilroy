@@ -45,7 +45,7 @@ func TestClientForRoute_BindsClassCredentialBeforeCanonicalEnv(t *testing.T) {
 			},
 		},
 	}
-	r := NewAgentRouterWithRuntimes(nil, nil, runtimes)
+	r := NewAgentRouterWithRuntimes(nil, runtimes)
 	// Sentinel: if clientForRoute ever reaches ensureAPIClient on the
 	// class-routed path, this factory's error would surface as the
 	// returned error from clientForRoute. After the fix, the class path
@@ -110,7 +110,7 @@ func TestClientForRoute_NoEnsureAPIClient_WhenSnapshotIsAuthoritative(t *testing
 			},
 		},
 	}
-	r := NewAgentRouterWithRuntimes(nil, nil, runtimes)
+	r := NewAgentRouterWithRuntimes(nil, runtimes)
 	apiOnceCalls := 0
 	r.apiClientFactory = func(map[string]ProviderRuntime) (*llm.Client, error) {
 		apiOnceCalls++
@@ -142,7 +142,7 @@ func TestClientForRoute_NoEnsureAPIClient_WhenSnapshotIsAuthoritative(t *testing
 // go through the apiOnce-cached client. The freeze applies only to
 // class-routed runs.
 func TestClientForRoute_NilClassResult_FallsBackToEnsureAPIClient(t *testing.T) {
-	r := NewAgentRouterWithRuntimes(nil, nil, nil)
+	r := NewAgentRouterWithRuntimes(nil, nil)
 	called := 0
 	r.apiClientFactory = func(map[string]ProviderRuntime) (*llm.Client, error) {
 		called++

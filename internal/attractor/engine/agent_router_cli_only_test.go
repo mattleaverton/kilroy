@@ -22,7 +22,7 @@ func TestCLIOnlyModelOverride_SwitchesBackendAndWarns(t *testing.T) {
 	runtimes := map[string]ProviderRuntime{
 		"openai": {Key: "openai", Backend: BackendAPI},
 	}
-	router := NewAgentRouterWithRuntimes(nil, nil, runtimes)
+	router := NewAgentRouterWithRuntimes(nil, runtimes)
 
 	// Confirm baseline: openai backend is API.
 	if got := router.backendForProvider("openai"); got != BackendAPI {
@@ -76,7 +76,7 @@ func TestCLIOnlyModelOverride_RegularModelNoOverride(t *testing.T) {
 	runtimes := map[string]ProviderRuntime{
 		"openai": {Key: "openai", Backend: BackendAPI},
 	}
-	router := NewAgentRouterWithRuntimes(nil, nil, runtimes)
+	router := NewAgentRouterWithRuntimes(nil, runtimes)
 
 	// Create a node using a regular (non-CLI-only) model.
 	node := model.NewNode("regular-test")

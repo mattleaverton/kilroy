@@ -607,12 +607,12 @@ digraph G {
 // set on the node (spec §8: "only set properties that are missing"). So to
 // test that the stylesheet applies, the node must NOT have the property pre-set.
 func TestParityMatrix_Row18_StylesheetAppliesModelOverrideByShape(t *testing.T) {
-	// Test 1: Verify at parse/prepare level that stylesheet fills in missing llm_model.
+	// Test 1: Verify at parse/prepare level that stylesheet fills in missing agent_class.
 	g, _, err := Prepare([]byte(`
 digraph G {
   graph [
     goal="test",
-    model_stylesheet="box { llm_model: custom-model-42; llm_provider: openai; }"
+    model_stylesheet="box { agent_class: quick_easy; }"
   ]
   start  [shape=Mdiamond]
   exit   [shape=Msquare]
@@ -624,16 +624,13 @@ digraph G {
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	// Stylesheet should fill in box-shaped node's llm_model (was missing).
-	if got := g.Nodes["worker"].Attrs["llm_model"]; got != "custom-model-42" {
-		t.Fatalf("worker llm_model: got %q want %q", got, "custom-model-42")
-	}
-	if got := g.Nodes["worker"].Attrs["llm_provider"]; got != "openai" {
-		t.Fatalf("worker llm_provider: got %q want %q", got, "openai")
+	// Stylesheet should fill in box-shaped node's agent_class (was missing).
+	if got := g.Nodes["worker"].Attrs["agent_class"]; got != "quick_easy" {
+		t.Fatalf("worker agent_class: got %q want %q", got, "quick_easy")
 	}
 	// Diamond-shaped node should NOT be affected by box selector.
-	if got := g.Nodes["cond"].Attrs["llm_model"]; got == "custom-model-42" {
-		t.Fatalf("cond should not have llm_model=custom-model-42 (it's diamond, not box)")
+	if got := g.Nodes["cond"].Attrs["agent_class"]; got == "quick_easy" {
+		t.Fatalf("cond should not have agent_class=quick_easy (it's diamond, not box)")
 	}
 
 	// Test 2: End-to-end through Run() to verify stylesheet + execution.
@@ -642,7 +639,7 @@ digraph G {
 digraph G {
   graph [
     goal="test",
-    model_stylesheet="box { llm_model: e2e-test-model; llm_provider: openai; }"
+    model_stylesheet="box { agent_class: quick_easy; }"
   ]
   start  [shape=Mdiamond]
   exit   [shape=Msquare]

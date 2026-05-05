@@ -126,7 +126,7 @@ func TestAgentRouter_NoClass_FallsBackToStylesheet(t *testing.T) {
 	runtimes := map[string]ProviderRuntime{
 		"anthropic": {Key: "anthropic", Backend: BackendAPI},
 	}
-	router := NewAgentRouterWithRuntimes(nil, nil, runtimes)
+	router := NewAgentRouterWithRuntimes(nil, runtimes)
 
 	node := model.NewNode("test-node")
 	node.Attrs["llm_provider"] = "anthropic"
@@ -159,7 +159,7 @@ func TestAgentRouter_DispatcherResolvedSDKRoute_NotDowngradedByCfg(t *testing.T)
 	runtimes := map[string]ProviderRuntime{
 		"anthropic": {Key: "anthropic", Backend: BackendCLI},
 	}
-	router := NewAgentRouterWithRuntimes(cfg, nil, runtimes)
+	router := NewAgentRouterWithRuntimes(cfg, runtimes)
 
 	node := model.NewNode("sdk-node")
 	node.Attrs["llm_provider"] = "anthropic"

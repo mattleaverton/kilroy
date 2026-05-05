@@ -251,7 +251,7 @@ func TestNewResumeAgentBackend_LoadsProviderRuntimes(t *testing.T) {
 		},
 	}
 
-	backend, err := newResumeAgentBackend(cfg, nil)
+	backend, err := newResumeAgentBackend(cfg)
 	if err != nil {
 		t.Fatalf("newResumeAgentBackend: %v", err)
 	}

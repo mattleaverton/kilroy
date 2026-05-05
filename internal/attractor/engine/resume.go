@@ -165,7 +165,7 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 		if err != nil {
 			return nil, err
 		}
-		backend, err = newResumeAgentBackend(cfg, catalog)
+		backend, err = newResumeAgentBackend(cfg)
 		if err != nil {
 			return nil, err
 		}
@@ -489,14 +489,14 @@ func firstExistingPath(paths ...string) string {
 	return ""
 }
 
-func newResumeAgentBackend(cfg *RunConfigFile, catalog *modeldb.Catalog) (AgentBackend, error) {
+func newResumeAgentBackend(cfg *RunConfigFile) (AgentBackend, error) {
 	// Resume consumes snapshotted graph+config from a previously validated run,
 	// so we only need runtime materialization here (not full preflight validation).
 	runtimes, err := resolveProviderRuntimes(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return NewAgentRouterWithRuntimes(cfg, catalog, runtimes), nil
+	return NewAgentRouterWithRuntimes(cfg, runtimes), nil
 }
 
 func loadManifest(path string) (*manifest, error) {
