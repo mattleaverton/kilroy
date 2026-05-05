@@ -5,10 +5,10 @@ digraph dttf {
         default_max_retry=3,
         retry_target="impl_setup",
         model_stylesheet="
-            * { llm_model: gpt-5.4; llm_provider: openai; reasoning_effort: medium; }
-            .hard { llm_model: gpt-5.4; llm_provider: openai; reasoning_effort: high; }
-            .verify { llm_model: gpt-5.4; llm_provider: openai; reasoning_effort: medium; }
-            .review { llm_model: gpt-5.4; llm_provider: openai; reasoning_effort: high; }
+            * { agent_class: hard_coding; reasoning_effort: medium; }
+            .hard { reasoning_effort: high; }
+            .verify { reasoning_effort: medium; }
+            .review { reasoning_effort: high; }
         "
     ]
 

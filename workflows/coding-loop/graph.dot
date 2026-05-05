@@ -14,9 +14,9 @@ digraph coding_loop {
         inputs="spec",
         outputs="result.md",
         model_stylesheet="
-            * { llm_provider: anthropic; llm_model: claude-haiku-4.5; }
-            .implementer { llm_model: claude-sonnet-4.6; }
-            .reviewer { llm_model: claude-sonnet-4.6; }
+            * { agent_class: quick_easy; }
+            .implementer { agent_class: hard_coding; }
+            .reviewer { agent_class: hard_coding; }
         "
     ]
 

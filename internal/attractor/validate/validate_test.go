@@ -1437,6 +1437,94 @@ func TestValidate_StylesheetModelIDFix_PointsAtModeldbSuggest(t *testing.T) {
 	}
 }
 
+// --- Tests for stylesheet_raw_model_rejected ---
+
+func TestValidate_Stylesheet_AgentClassOnly_NoRawModelRejection(t *testing.T) {
+	g, err := dot.Parse(minimalGraphWithStylesheet(`* { agent_class: hard_coding; }`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	assertNoRule(t, diags, "stylesheet_raw_model_rejected")
+}
+
+func TestValidate_Stylesheet_LLMModel_RejectsAsRawModel(t *testing.T) {
+	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_model: claude-sonnet-4.6; }`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	assertHasRule(t, diags, "stylesheet_raw_model_rejected", SeverityError)
+	found := false
+	for _, d := range diags {
+		if d.Rule == "stylesheet_raw_model_rejected" && strings.Contains(d.Message, `"llm_model"`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected diagnostic to name llm_model; got %+v", diags)
+	}
+}
+
+func TestValidate_Stylesheet_LLMProvider_RejectsAsRawModel(t *testing.T) {
+	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_provider: anthropic; }`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	assertHasRule(t, diags, "stylesheet_raw_model_rejected", SeverityError)
+	found := false
+	for _, d := range diags {
+		if d.Rule == "stylesheet_raw_model_rejected" && strings.Contains(d.Message, `"llm_provider"`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected diagnostic to name llm_provider; got %+v", diags)
+	}
+}
+
+func TestValidate_Stylesheet_AgentTool_RejectsAsRawModel(t *testing.T) {
+	g, err := dot.Parse(minimalGraphWithStylesheet(`* { agent_tool: claude; }`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	assertHasRule(t, diags, "stylesheet_raw_model_rejected", SeverityError)
+	found := false
+	for _, d := range diags {
+		if d.Rule == "stylesheet_raw_model_rejected" && strings.Contains(d.Message, `"agent_tool"`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected diagnostic to name agent_tool; got %+v", diags)
+	}
+}
+
+func TestValidate_Stylesheet_CombinedRawKeys_RejectsBoth(t *testing.T) {
+	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_model: claude-sonnet-4.6; llm_provider: anthropic; }`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	var sawModel, sawProvider bool
+	for _, d := range diags {
+		if d.Rule != "stylesheet_raw_model_rejected" {
+			continue
+		}
+		if strings.Contains(d.Message, `"llm_model"`) {
+			sawModel = true
+		}
+		if strings.Contains(d.Message, `"llm_provider"`) {
+			sawProvider = true
+		}
+	}
+	if !sawModel || !sawProvider {
+		t.Fatalf("expected both llm_model and llm_provider diagnostics; sawModel=%v sawProvider=%v diags=%+v", sawModel, sawProvider, diags)
+	}
+}
+
 // TestPromptFile_ConflictLintRule_FiresWhenBothSet verifies that when a node
 // has both prompt_file and prompt/llm_prompt set and expandPromptFiles has NOT
 // run (RepoPath is empty, so prompt_file remains unresolved), the

@@ -5,9 +5,9 @@ digraph rogue_pipeline {
         default_max_retry=3,
         provenance_version="1",
         model_stylesheet="
-            * { llm_model: gpt-5.3-codex-spark; llm_provider: openai; }
-            .hard { llm_model: gpt-5.3-codex-spark; llm_provider: openai; }
-            .verify { llm_model: gpt-5.3-codex-spark; llm_provider: openai; }
+            * { agent_class: quick_easy; }
+            .hard { agent_class: hard_coding; }
+            .verify { agent_class: hard_coding; }
         "
     ]
 

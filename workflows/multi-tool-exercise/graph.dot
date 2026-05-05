@@ -6,7 +6,7 @@ digraph multi_tool_exercise {
         inputs="topic",
         outputs="combined-output.md",
         model_stylesheet="
-            * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
+            * { agent_class: hard_coding; }
         "
     ]
 

@@ -22,7 +22,7 @@ digraph coding_relay {
         inputs="prompt",
         outputs="result.md",
         model_stylesheet="
-            * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
+            * { agent_class: hard_coding; }
         "
     ]
 

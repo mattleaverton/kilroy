@@ -4,7 +4,7 @@ digraph fix {
         outputs="result.md,fix.patch",
         max_node_visits="3",
         model_stylesheet="
-            * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
+            * { agent_class: hard_coding; }
         "
     ]
 

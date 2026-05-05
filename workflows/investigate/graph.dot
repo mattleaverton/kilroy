@@ -3,7 +3,7 @@ digraph investigate {
         inputs="question",
         outputs="result.md",
         model_stylesheet="
-            * { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }
+            * { agent_class: deep_investigation; }
         "
     ]
 

@@ -73,6 +73,7 @@ func ValidateWithOptions(g *model.Graph, opts ValidateOptions, extraRules ...Lin
 	diags = append(diags, lintReachability(g)...)
 	diags = append(diags, lintConditionSyntax(g)...)
 	diags = append(diags, lintStylesheetSyntax(g)...)
+	diags = append(diags, lintStylesheetRejectRawModel(g)...)
 	diags = append(diags, lintStylesheetModelIDs(g, opts.Catalog)...)
 	diags = append(diags, lintAgentClassExists(g, opts.PolicyClasses)...)
 	diags = append(diags, lintRetryTargetsExist(g)...)
@@ -496,6 +497,41 @@ func lintStylesheetSyntax(g *model.Graph) []Diagnostic {
 		}}
 	}
 	return nil
+}
+
+// lintStylesheetRejectRawModel rejects raw model/provider/tool references in
+// the model_stylesheet. Workflows must use agent_class= for routing instead;
+// any gap in the policy class catalog is the policy's problem to fix, not a
+// workaround the workflow author should reach for.
+//
+// Diagnostic: stylesheet_raw_model_rejected (ERROR). One diagnostic per
+// offending key per rule.
+func lintStylesheetRejectRawModel(g *model.Graph) []Diagnostic {
+	raw := strings.TrimSpace(g.Attrs["model_stylesheet"])
+	if raw == "" {
+		return nil
+	}
+	rules, err := style.ParseStylesheet(raw)
+	if err != nil {
+		// Syntax errors are reported by lintStylesheetSyntax; skip here.
+		return nil
+	}
+	rejected := []string{"llm_model", "llm_provider", "agent_tool"}
+	var diags []Diagnostic
+	for _, r := range rules {
+		for _, key := range rejected {
+			if _, ok := r.Decls[key]; !ok {
+				continue
+			}
+			diags = append(diags, Diagnostic{
+				Rule:     "stylesheet_raw_model_rejected",
+				Severity: SeverityError,
+				Message:  fmt.Sprintf("model_stylesheet declares %q; raw model/provider/tool references are not allowed — use agent_class instead", key),
+				Fix:      "replace with agent_class=<class>; see 'kilroy policy list' for available classes",
+			})
+		}
+	}
+	return diags
 }
 
 // lintStylesheetModelIDs checks llm_model values in the model_stylesheet against
@@ -931,7 +967,9 @@ func lintPromptOnConditionalNodes(g *model.Graph) []Diagnostic {
 }
 
 func lintLLMProviderPresent(g *model.Graph) []Diagnostic {
-	// Kilroy metaspec: if llm_provider is missing after stylesheet resolution, fail.
+	// Agent nodes must declare a routing source: agent_class= (preferred),
+	// agent_tool=, or explicit llm_provider=. Without one of these the
+	// dispatcher cannot pick a backend and the run fails at launch.
 	var diags []Diagnostic
 	for id, n := range g.Nodes {
 		if n == nil {
@@ -940,13 +978,19 @@ func lintLLMProviderPresent(g *model.Graph) []Diagnostic {
 		if n.Shape() != "box" {
 			continue
 		}
+		if strings.TrimSpace(n.Attr("agent_class", "")) != "" {
+			continue
+		}
+		if strings.TrimSpace(n.Attr("agent_tool", "")) != "" {
+			continue
+		}
 		if strings.TrimSpace(n.Attr("llm_provider", "")) == "" {
 			diags = append(diags, Diagnostic{
 				Rule:     "llm_provider_required",
 				Severity: SeverityError,
-				Message:  "agent node missing llm_provider (Kilroy forbids provider auto-detection)",
+				Message:  "agent node missing routing source (set agent_class=, agent_tool=, or llm_provider=)",
 				NodeID:   id,
-				Fix:      "add llm_provider in a model_stylesheet (e.g. * [llm_provider=anthropic])",
+				Fix:      "set agent_class in the model_stylesheet (e.g. * { agent_class: hard_coding; }) or on the node",
 			})
 		}
 	}

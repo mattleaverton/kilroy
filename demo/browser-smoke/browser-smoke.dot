@@ -3,7 +3,7 @@ digraph browser_smoke {
         goal="Minimal browser retry/artifact smoke test",
         default_max_retry="1",
         model_stylesheet="
-            * { llm_model: gpt-5; llm_provider: openai; }
+            * { agent_class: quick_easy; }
         "
     ]
 

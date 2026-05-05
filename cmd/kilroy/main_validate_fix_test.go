@@ -55,7 +55,7 @@ func TestValidate_PlainText_SurfacesFix(t *testing.T) {
 				"  fix: ",
 				"kilroy modeldb suggest --provider anthropic",
 			},
-			wantExitCode: 0,
+			wantExitCode: 1,
 		},
 	}
 
