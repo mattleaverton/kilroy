@@ -7,6 +7,8 @@
 // The policy data itself ships as a TOML file embedded at build time.
 // It is read-only at runtime: no per-machine override, no remote fetch.
 // Updates are normal repo PRs.
+//
+//go:generate go run ./cmd/gen_classes_doc/main.go
 
 package policy
 
