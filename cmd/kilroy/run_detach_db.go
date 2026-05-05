@@ -46,17 +46,18 @@ func registerDetachedRunInDB(runID, graphPath, logsRoot, repoPath string, labels
 	}
 
 	if err := db.InsertRun(rundb.RunRecord{
-		RunID:      runID,
-		GraphName:  graphName,
-		Goal:       goal,
-		Status:     "running",
-		LogsRoot:   logsRoot,
-		RepoPath:   repoPath,
-		DotSource:  dotSrc,
-		Labels:     labels,
-		Inputs:     inputs,
-		Invocation: invocation,
-		StartedAt:  time.Now(),
+		RunID:       runID,
+		ParentRunID: os.Getenv("KILROY_PARENT_RUN_ID"),
+		GraphName:   graphName,
+		Goal:        goal,
+		Status:      "running",
+		LogsRoot:    logsRoot,
+		RepoPath:    repoPath,
+		DotSource:   dotSrc,
+		Labels:      labels,
+		Inputs:      inputs,
+		Invocation:  invocation,
+		StartedAt:   time.Now(),
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not pre-register run in database: %v\n", err)
 	}

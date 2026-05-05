@@ -195,6 +195,73 @@ func TestBuildCodexIsolatedEnv_PreservesToolchainPaths(t *testing.T) {
 	}
 }
 
+func TestBuildStageRuntimeEnv_SetsParentRunIDToCurrentRunID(t *testing.T) {
+	execCtx := &Execution{
+		Engine: &Engine{
+			Options: RunOptions{
+				RunID:       "current-run-123",
+				ParentRunID: "parent-run-456",
+			},
+		},
+		LogsRoot:     "/tmp/logs",
+		WorktreeDir:  "/tmp/worktree",
+	}
+
+	env := BuildStageRuntimeEnv(execCtx, "test-node")
+
+	// KILROY_PARENT_RUN_ID should be the current run's ID, not the run's ParentRunID
+	if got, want := env[parentRunIDEnvKey], "current-run-123"; got != want {
+		t.Errorf("KILROY_PARENT_RUN_ID: got %q, want %q (should be current RunID, not ParentRunID)", got, want)
+	}
+	// KILROY_RUN_ID should also be the current run's ID
+	if got, want := env[runIDEnvKey], "current-run-123"; got != want {
+		t.Errorf("KILROY_RUN_ID: got %q, want %q", got, want)
+	}
+}
+
+func TestBuildStageRuntimeEnv_RootRunStillEmitsParentRunID(t *testing.T) {
+	// Even a root run (with no parent) should emit KILROY_PARENT_RUN_ID
+	// so that child processes can inherit it
+	execCtx := &Execution{
+		Engine: &Engine{
+			Options: RunOptions{
+				RunID:       "root-run-789",
+				ParentRunID: "", // root run has no parent
+			},
+		},
+		LogsRoot:     "/tmp/logs",
+		WorktreeDir:  "/tmp/worktree",
+	}
+
+	env := BuildStageRuntimeEnv(execCtx, "test-node")
+
+	// KILROY_PARENT_RUN_ID should still be set to current run's ID
+	if got, want := env[parentRunIDEnvKey], "root-run-789"; got != want {
+		t.Errorf("KILROY_PARENT_RUN_ID: got %q, want %q (root run should still emit current RunID)", got, want)
+	}
+}
+
+func TestBuildStageRuntimeEnv_NilExecCtx(t *testing.T) {
+	env := BuildStageRuntimeEnv(nil, "test-node")
+	if len(env) != 0 {
+		t.Errorf("expected empty map for nil execCtx, got %v", env)
+	}
+}
+
+func TestBuildStageRuntimeEnv_NilEngine(t *testing.T) {
+	execCtx := &Execution{
+		Engine: nil,
+	}
+	env := BuildStageRuntimeEnv(execCtx, "test-node")
+	// Should not panic and should return empty map (no RunID set)
+	if _, ok := env[runIDEnvKey]; ok {
+		t.Error("expected KILROY_RUN_ID to not be set when Engine is nil")
+	}
+	if _, ok := env[parentRunIDEnvKey]; ok {
+		t.Error("expected KILROY_PARENT_RUN_ID to not be set when Engine is nil")
+	}
+}
+
 func TestBuildCodexIsolatedEnvWithName_RetryPreservesToolchainPaths(t *testing.T) {
 	home := t.TempDir()
 	cargoHome := filepath.Join(home, ".cargo")

@@ -689,6 +689,7 @@ func attractorRun(args []string) {
 
 	res, err := engine.RunWithConfig(ctx, dotSource, cfg, engine.RunOptions{
 		RunID:         runID,
+		ParentRunID:   os.Getenv("KILROY_PARENT_RUN_ID"),
 		LogsRoot:      logsRoot,
 		AllowTestShim: allowTestShim,
 		DisableCXDB:   noCXDB,

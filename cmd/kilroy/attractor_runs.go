@@ -837,6 +837,15 @@ func appendZombieProgressEvent(logsRoot, runID string) {
 
 // --- show ---
 
+// ChildSummary is a summary of a child run for display in parent run details.
+type ChildSummary struct {
+	RunID       string     `json:"run_id"`
+	GraphName   string     `json:"graph_name"`
+	Status      string     `json:"status"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
+
 // runShowDetail is the JSON payload for `runs show --json`.
 //
 // ProviderSelections is omitted (via omitempty) when the underlying DB has
@@ -862,6 +871,8 @@ type runShowDetail struct {
 	Invocation         []string                         `json:"invocation,omitempty"`
 	Outputs            []runShowOutputRef               `json:"outputs,omitempty"`
 	ProviderSelections []rundb.ProviderSelectionSummary `json:"provider_selections,omitempty"`
+	ParentRunID        string                           `json:"parent_run_id,omitempty"`
+	Children           []ChildSummary                   `json:"children,omitempty"`
 }
 
 // runShowOutputRef points at a declared output file on disk.
@@ -1001,6 +1012,22 @@ func attractorRunsShow(args []string) {
 			fmt.Fprintf(os.Stderr, "load provider selections: %v\n", err)
 			os.Exit(1)
 		}
+		// Query children runs.
+		childRuns, err := db.ListRuns(rundb.ListFilter{ParentRunID: run.RunID})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "load child runs: %v\n", err)
+			os.Exit(1)
+		}
+		children := make([]ChildSummary, 0, len(childRuns))
+		for _, c := range childRuns {
+			children = append(children, ChildSummary{
+				RunID:       c.RunID,
+				GraphName:   c.GraphName,
+				Status:      c.Status,
+				StartedAt:   c.StartedAt,
+				CompletedAt: c.CompletedAt,
+			})
+		}
 		detail := runShowDetail{
 			RunID:              run.RunID,
 			GraphName:          run.GraphName,
@@ -1020,11 +1047,20 @@ func attractorRunsShow(args []string) {
 			Invocation:         run.Invocation,
 			Outputs:            outputs,
 			ProviderSelections: selections,
+			ParentRunID:        run.ParentRunID,
+			Children:           children,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(detail)
 		return
+	}
+
+	// Query children for human-readable output.
+	childRuns, err := db.ListRuns(rundb.ListFilter{ParentRunID: run.RunID})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "load child runs: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Human-readable format.
@@ -1047,6 +1083,10 @@ func attractorRunsShow(args []string) {
 	if len(run.Labels) > 0 {
 		fmt.Printf("labels:       %s\n", formatLabels(run.Labels))
 	}
+	if run.ParentRunID != "" {
+		fmt.Printf("parent:       %s\n", run.ParentRunID)
+	}
+	fmt.Printf("children:     %d\n", len(childRuns))
 	if run.WorktreeDir != "" {
 		fmt.Printf("worktree:     %s\n", run.WorktreeDir)
 	}

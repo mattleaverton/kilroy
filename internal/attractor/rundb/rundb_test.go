@@ -441,6 +441,101 @@ func TestParentRunID_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestListRuns_FilterByParentRunID(t *testing.T) {
+	db := openTestDB(t)
+
+	// Insert a parent run A with two children
+	_ = db.InsertRun(RunRecord{
+		RunID:     "parent-001",
+		Status:    "running",
+		StartedAt: time.Now(),
+	})
+	_ = db.InsertRun(RunRecord{
+		RunID:       "child-001",
+		Status:      "success",
+		StartedAt:   time.Now(),
+		ParentRunID: "parent-001",
+	})
+	_ = db.InsertRun(RunRecord{
+		RunID:       "child-002",
+		Status:      "fail",
+		StartedAt:   time.Now(),
+		ParentRunID: "parent-001",
+	})
+
+	// Insert a parent run B with one child
+	_ = db.InsertRun(RunRecord{
+		RunID:     "parent-002",
+		Status:    "success",
+		StartedAt: time.Now(),
+	})
+	_ = db.InsertRun(RunRecord{
+		RunID:       "child-003",
+		Status:      "success",
+		StartedAt:   time.Now(),
+		ParentRunID: "parent-002",
+	})
+
+	// Insert a run with no parent (top-level run)
+	_ = db.InsertRun(RunRecord{
+		RunID:     "no-parent",
+		Status:    "success",
+		StartedAt: time.Now(),
+	})
+
+	// Table-driven test cases
+	tests := []struct {
+		name      string
+		parentID  string
+		wantCount int
+		wantIDs   map[string]bool
+	}{
+		{
+			name:      "matching parent A with two children",
+			parentID:  "parent-001",
+			wantCount: 2,
+			wantIDs:   map[string]bool{"child-001": true, "child-002": true},
+		},
+		{
+			name:      "matching parent B with one child",
+			parentID:  "parent-002",
+			wantCount: 1,
+			wantIDs:   map[string]bool{"child-003": true},
+		},
+		{
+			name:      "no match for top-level run filter",
+			parentID:  "no-parent",
+			wantCount: 0,
+			wantIDs:   map[string]bool{},
+		},
+		{
+			name:      "nonexistent parent returns empty",
+			parentID:  "nonexistent",
+			wantCount: 0,
+			wantIDs:   map[string]bool{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runs, err := db.ListRuns(ListFilter{ParentRunID: tt.parentID})
+			if err != nil {
+				t.Fatalf("ListRuns: %v", err)
+			}
+			if len(runs) != tt.wantCount {
+				t.Fatalf("len = %d, want %d", len(runs), tt.wantCount)
+			}
+
+			// Verify we got the expected runs
+			for _, r := range runs {
+				if !tt.wantIDs[r.RunID] {
+					t.Fatalf("unexpected run ID %q in results", r.RunID)
+				}
+			}
+		})
+	}
+}
+
 func init() {
 	// Suppress unused import warning.
 	_ = os.Stat

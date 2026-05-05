@@ -8,6 +8,7 @@ import (
 
 const (
 	runIDEnvKey              = "KILROY_RUN_ID"
+	parentRunIDEnvKey        = "KILROY_PARENT_RUN_ID"
 	nodeIDEnvKey             = "KILROY_NODE_ID"
 	logsRootEnvKey           = "KILROY_LOGS_ROOT"
 	stageLogsDirEnvKey       = "KILROY_STAGE_LOGS_DIR"
@@ -21,6 +22,7 @@ const (
 var baseNodeEnvStripKeys = []string{
 	"CLAUDECODE",
 	runIDEnvKey,
+	parentRunIDEnvKey,
 	nodeIDEnvKey,
 	logsRootEnvKey,
 	stageLogsDirEnvKey,
@@ -78,6 +80,9 @@ func BuildStageRuntimeEnv(execCtx *Execution, nodeID string) map[string]string {
 		if runID := strings.TrimSpace(execCtx.Engine.Options.RunID); runID != "" {
 			out[runIDEnvKey] = runID
 		}
+	if runID := strings.TrimSpace(execCtx.Engine.Options.RunID); runID != "" {
+		out[parentRunIDEnvKey] = runID
+	}
 	}
 	if id := strings.TrimSpace(nodeID); id != "" {
 		out[nodeIDEnvKey] = id
