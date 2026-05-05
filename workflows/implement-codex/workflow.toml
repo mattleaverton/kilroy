@@ -1,0 +1,56 @@
+# Implement workflow: stage context, run agent (class=hard_coding), verify
+# build+test, write a summary. Dogfood workhorse for kilroy's own v2 work.
+#
+# v2 workflow.toml schema (plan §5.2). Loader supports both shapes during
+# the transition; this manifest is on the v2 shape as of the schema
+# parser landing.
+
+[workflow]
+name              = "implement-codex"
+version           = "1"
+description       = """
+Implement a directed change with build+test verification. The agent stages
+the context, makes the change, the verify stage runs your build+test
+command, and a summary is written. Failed verify retries the agent once.
+"""
+agent_description = "Implement a directed change in a kilroy worktree; verifies via build+test."
+default_class     = "coding_codex_apikey"
+graph             = "graph.dot"
+
+[inputs.prompt]
+type        = "string"
+required    = true
+description = "What to implement. Tightly scoped and specific."
+
+[inputs.context_files]
+type        = "string"
+required    = false
+description = "Newline-separated absolute paths the agent should read for context."
+
+[inputs.verify_command]
+type        = "string"
+required    = false
+description = "Shell command run by the verify stage. Default builds and runs targeted tests."
+default     = "go build ./... && go test ./... -timeout 60s"
+
+[inputs.scope_directive]
+type        = "string"
+required    = false
+description = "Hard scope guardrail rendered into the agent's prompt."
+
+[outputs.result]
+type        = "path"
+description = "Structured run summary the agent (or summary.sh) writes."
+path        = "result.md"
+
+[side_effects]
+mutates_git    = true
+writes_files   = true
+network_egress = true
+idempotent     = false
+
+[nodes.agent]
+class = "coding_codex_apikey"
+
+[defaults]
+labels = { workflow = "implement" }

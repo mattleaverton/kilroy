@@ -1,6 +1,6 @@
 // Filesystem-based workflow discovery. Resolves workflow names to package
 // directories via search-path order — used by `kilroy run <name>` and the
-// `kilroy workflows list/describe` inspection commands. No embedding.
+// `kilroy workflows list/describe` inspection commands.
 
 package workflows
 
@@ -25,6 +25,8 @@ import (
 //     in-tree definitions without copying.
 //  2. <projectRoot>/.kilroy/workflows/  (when projectRoot != "")
 //  3. $XDG_CONFIG_HOME/kilroy/workflows/  (or ~/.config/kilroy/workflows/)
+//  4. $XDG_DATA_HOME/kilroy/workflows/   (or ~/.local/share/kilroy/workflows/ on Unix,
+//     %LOCALAPPDATA%\kilroy\workflows\ on Windows) — where install scripts copy built-ins.
 //
 // Empty entries (env var unset, no project root, no home dir) are
 // skipped silently. Duplicates are collapsed in their first appearance
@@ -59,7 +61,24 @@ func SearchPaths(projectRoot string) []string {
 	} else if home, err := os.UserHomeDir(); err == nil {
 		add(filepath.Join(home, ".config", "kilroy", "workflows"))
 	}
+	add(dataDir())
 	return out
+}
+
+// dataDir returns the platform-appropriate installed-workflows directory.
+func dataDir() string {
+	// Windows: %LOCALAPPDATA%\kilroy\workflows
+	if localAppData := os.Getenv("LOCALAPPDATA"); localAppData != "" {
+		return filepath.Join(localAppData, "kilroy", "workflows")
+	}
+	// Unix: $XDG_DATA_HOME/kilroy/workflows or ~/.local/share/kilroy/workflows
+	if xdgData := os.Getenv("XDG_DATA_HOME"); xdgData != "" {
+		return filepath.Join(xdgData, "kilroy", "workflows")
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".local", "share", "kilroy", "workflows")
+	}
+	return ""
 }
 
 // Discovered describes a workflow found by Discover.

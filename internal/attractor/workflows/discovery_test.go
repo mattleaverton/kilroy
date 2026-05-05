@@ -131,6 +131,8 @@ func TestDiscover_AggregatesAndShadows(t *testing.T) {
 	userRoot := t.TempDir()
 	t.Setenv("KILROY_WORKFLOW_PATHS", envRoot)
 	t.Setenv("XDG_CONFIG_HOME", userRoot)
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", "")
 
 	// Three workflows total: env-only, project-only, user-only.
 	envDir := makeWorkflow(t, envRoot, "alpha")

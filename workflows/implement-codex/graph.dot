@@ -1,0 +1,47 @@
+digraph implement {
+    graph [
+        inputs="prompt",
+        outputs="result.md",
+        max_node_visits="3",
+        model_stylesheet="
+            * { agent_class: coding_codex_apikey; }
+        "
+    ]
+
+    start         [shape=Mdiamond, label="Start"]
+    stage_context [shape=parallelogram, label="stage-context",
+                   tool_command="bash .kilroy/package/scripts/stage-context.sh"]
+    agent         [shape=box, label="implement", agent_tool="codex", agent_class="coding_codex_apikey",
+                   prompt="You are working in a kilroy worktree. Code changes are auto-committed at node end. Do not run git commit yourself. Your task is in .kilroy/INPUT.md under the ## prompt section. If a ## context_files section is present, those paths point at files the user wants you to read for context. If a ## scope_directive section is present, treat it as a hard guardrail: do not touch files outside the named scope. Do NOT run go test ./... — too noisy; use go test <package> -run <pattern> for targeted verification. Time-cap your work: if a single approach is not converging within ~15 minutes, write what you have to result.md with a BLOCKED: prefix and stop. Output: write result.md at the workspace root. Required sections: Summary (1-2 sentences), Files touched (list), Diff outline (bullets), Tests added (if any), Open questions. When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
+                   outputs="result.md"]
+    verify        [shape=parallelogram, label="verify",
+                   tool_command="bash .kilroy/package/scripts/verify.sh"]
+    summary       [shape=parallelogram, label="summary",
+                   tool_command="bash .kilroy/package/scripts/summary.sh",
+                   max_retries="0"]
+    done          [shape=Msquare, label="Done"]
+    failed        [shape=Msquare, terminal_status="fail", label="Failed",
+                   failure_reason="agent_did_not_write_result"]
+
+    // Failure paths route through `summary` so the run captures what
+    // happened in result.md before terminating. summary itself fails
+    // (exit 1, status=fail) when it had to synthesize a BLOCKED stub
+    // because the agent didn't write result.md — and the failed
+    // terminal then records FinalFail at the run level, so dashboards
+    // can trust final.json.
+    //
+    // max_node_visits=3 caps agent at 2 executions (original + the one
+    // retry advertised on the verify→agent edge). On a third visit
+    // attempt the engine halts with a stuck-cycle FinalFail before
+    // executing — enforcing the "retry once" contract regardless of
+    // whether failure signatures vary across attempts.status.
+    start         -> stage_context
+    stage_context -> agent          [condition="outcome=success"]
+    stage_context -> summary        [condition="outcome!=success"]
+    agent         -> verify         [condition="outcome=success"]
+    agent         -> summary        [condition="outcome!=success"]
+    verify        -> summary        [condition="outcome=success"]
+    verify        -> agent          [condition="outcome!=success", label="retry once"]
+    summary       -> done            [condition="outcome=success"]
+    summary       -> failed          [condition="outcome!=success"]
+}
