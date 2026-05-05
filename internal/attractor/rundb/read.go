@@ -74,13 +74,13 @@ func (d *DB) GetRun(runID string) (*RunSummary, error) {
 
 // ListFilter specifies filtering criteria for run listing.
 type ListFilter struct {
-	Status       string            // filter by status
-	Labels       map[string]string // filter by label key=value
-	GraphName    string            // filter by graph name pattern
-	Sort         string            // "newest" (default), "oldest", "longest"
-	Limit        int               // max results (0 = no limit)
-	Orphans      bool              // include only runs with terminal status whose logs_root is missing on disk
-	ParentRunID  string            // filter by parent run ID
+	Status      string            // filter by status
+	Labels      map[string]string // filter by label key=value
+	GraphName   string            // filter by graph name pattern
+	Sort        string            // "newest" (default), "oldest", "longest"
+	Limit       int               // max results (0 = no limit)
+	Orphans     bool              // include only runs with terminal status whose logs_root is missing on disk
+	ParentRunID string            // filter by parent run ID
 }
 
 // ListRuns returns runs matching the filter, newest first.

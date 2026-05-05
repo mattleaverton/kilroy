@@ -14,9 +14,11 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/agents/agentlog"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/tmux"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
 const kilroySocket = "kilroy"
@@ -104,43 +106,67 @@ func (h *TmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execut
 		}
 	}
 
-	// Session name: kilroy-{runID}-{nodeID} (unique per node execution).
+	// Resolve model: class-resolved value wins; otherwise legacy llm_model.
+	modelID := route.Model
+	if modelID == "" {
+		modelID = strings.TrimSpace(node.Attr("llm_model", ""))
+	}
+
+	// Build the session config using the transport layer.
 	runID := ""
 	if exec != nil && exec.Engine != nil {
 		runID = exec.Engine.Options.RunID
 	}
-	sessionName := buildSessionName(runID, node.ID)
+	runtimeEnv := engine.BuildStageRuntimeEnv(exec, node.ID)
+	statusContractEnv := map[string]string{}
+	if exec != nil {
+		statusContractEnv = engine.BuildStageStatusContract(exec.WorktreeDir, runID).EnvVars
+	}
 
-	// Build environment variables.
-	env := buildTmuxAgentEnv(tmpl, exec, node.ID)
-
-	// When a class resolved, materialize the credential via the per-driver
-	// binder. This applies env scrubs (claude_cli MUST scrub
-	// ANTHROPIC_API_KEY so the CLI uses the logged-in session, not the
-	// env key) and any required isolated config files (codex auth.json).
-	//
-	// EnvScrub is collected here and later used to wrap the tmux command
-	// in `env -u VAR1 -u VAR2 ...` — deleting from kilroy's env map is
-	// not enough because tmux new-session inherits the launcher env.
-	stageDir := filepath.Join(exec.LogsRoot, node.ID)
-	_ = os.MkdirAll(stageDir, 0o755)
-	var envScrub []string
+	var authSnapshot *binding.Snapshot
 	if route.ClassResult != nil {
-		bindResult, err := materializeCredential(route, exec, stageDir)
-		if err != nil {
-			return runtime.Outcome{
-				Status:        runtime.StatusFail,
-				FailureReason: fmt.Sprintf("credential bind: %v", err),
-			}, nil
-		}
-		for k, v := range bindResult.EnvSet {
-			env[k] = v
-		}
-		for _, name := range bindResult.EnvScrub {
-			delete(env, name)
-		}
-		envScrub = append(envScrub, bindResult.EnvScrub...)
-		for path, content := range bindResult.FilesToWrite {
+		authSnapshot = &route.ClassResult.AuthSnapshot
+	}
+
+	// Build session config using the transport layer.
+	transport := transport.NewTmuxTransport()
+	cfg, err := transport.BuildSession(
+		tmpl,
+		node.ID,
+		runID,
+		exec.WorktreeDir,
+		exec.LogsRoot,
+		route.Driver,
+		authSnapshot,
+		runtimeEnv,
+		statusContractEnv,
+		engine.BindSnapshot,
+		engineBindWrapper,
+	)
+	if err != nil {
+		return runtime.Outcome{
+			Status:        runtime.StatusFail,
+			FailureReason: fmt.Sprintf("build session: %v", err),
+		}, nil
+	}
+
+	// Execute using the pre-built session config.
+	return h.ExecuteAgentWithSession(ctx, exec, node, route, tmpl, toolName, prompt, modelID, cfg)
+}
+
+// ExecuteAgentWithSession executes an agent using a pre-built session configuration.
+// This allows the transport layer to build the session config separately from execution.
+func (h *TmuxAgentHandler) ExecuteAgentWithSession(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute, tmpl *templates.Template, toolName, prompt, modelID string, cfg transport.SessionConfig) (runtime.Outcome, error) {
+	// Extract values from session config.
+	sessionName := cfg.SessionName
+	env := cfg.Env
+	envScrub := cfg.EnvScrub
+	stageDir := transport.StageDir(exec.LogsRoot, node.ID)
+	_ = os.MkdirAll(stageDir, 0o755)
+
+	// Write credential files from bind result if present.
+	if cfg.BindResult != nil {
+		for path, content := range cfg.BindResult.FilesToWrite {
 			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 				return runtime.Outcome{
 					Status:        runtime.StatusFail,
@@ -156,12 +182,6 @@ func (h *TmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execut
 		}
 	}
 
-	// Resolve model: class-resolved value wins; otherwise legacy llm_model.
-	modelID := route.Model
-	if modelID == "" {
-		modelID = strings.TrimSpace(node.Attr("llm_model", ""))
-	}
-
 	// Surface the resolved provider + model to the template's
 	// PrepareSession via env. Multi-provider templates (opencode) read
 	// these to construct OPENCODE_CONFIG_CONTENT for the right provider
@@ -175,6 +195,10 @@ func (h *TmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execut
 	}
 
 	// Emit provider_selected event so tmux runs match the API path's surface.
+	runID := ""
+	if exec != nil && exec.Engine != nil {
+		runID = exec.Engine.Options.RunID
+	}
 	if exec != nil && exec.Engine != nil {
 		source := route.Source
 		if source == "" {
@@ -205,7 +229,7 @@ func (h *TmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execut
 	// tool-specific directories.
 	agentOutputPath := filepath.Join(stageDir, "agent_output.jsonl")
 	if tmpl.StructuredOutput {
-		command = command + " > " + shellQuoteSimple(agentOutputPath) + " 2>&1"
+		command = command + " > " + transport.ShellQuoteSimple(agentOutputPath) + " 2>&1"
 	}
 
 	// Wrap the command in `env -u VAR -u VAR2 ...` so the child process
@@ -488,84 +512,20 @@ func toolNameForDriver(driver string) string {
 	}
 }
 
-// buildTmuxAgentEnv constructs the environment variables passed to a tmux-run
-// agent session. It consolidates the tool template's defaults with the engine
-// runtime invariants (run/node IDs, worktree/logs paths, input env) and the
-// stage status contract paths so the engine-injected status-contract preamble
-// is actionable from inside the session. Without the status contract env vars,
-// agents spend tool calls hunting for KILROY_STAGE_STATUS_PATH.
-func buildTmuxAgentEnv(tmpl *templates.Template, exec *engine.Execution, nodeID string) map[string]string {
-	var env map[string]string
-	if tmpl != nil {
-		env = tmpl.BuildEnv()
-	}
-	if env == nil {
-		env = map[string]string{}
-	}
-	for k, v := range engine.BuildStageRuntimeEnv(exec, nodeID) {
-		env[k] = v
-	}
-	if exec != nil {
-		runID := ""
-		if exec.Engine != nil {
-			runID = exec.Engine.Options.RunID
-		}
-		for k, v := range engine.BuildStageStatusContract(exec.WorktreeDir, runID).EnvVars {
-			env[k] = v
-		}
-	}
-	return env
-}
-
-// buildSessionName creates a unique tmux session name for a node execution.
-func buildSessionName(runID, nodeID string) string {
-	name := "kilroy"
-	if runID != "" {
-		name += "-" + runID
-	}
-	name += "-" + nodeID
-	// Truncate and sanitize for tmux.
-	if len(name) > 128 {
-		name = name[:128]
-	}
-	return strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
-			return r
-		}
-		return '_'
-	}, name)
-}
-
-// shellQuoteSimple wraps a path in single quotes for shell redirection.
-func shellQuoteSimple(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
-
-// materializeCredential turns a class resolution into per-driver credential
-// artifacts: env vars to set, env vars to scrub from the child env, and
-// any per-stage files to write.
-//
-// The route's ClassResult.AuthSnapshot is the FROZEN identity from
-// prelaunch. We re-validate source liveness (env var still set, CLI
-// session still ok) via engine.BindSnapshot — which deliberately does
-// NOT reload auth.toml from the worktree. The freeze is authoritative:
-// if the worktree's project auth.toml diverges from what prelaunch
-// resolved against (e.g., the worktree branch lacks the file), that
-// drift must NOT be observable here. Then dispatches to the per-driver
-// materializer (engine/credential_binder.go).
-//
-// Critically, claude_cli's binder returns EnvScrub=["ANTHROPIC_API_KEY"]
-// (and codex_cli scrubs OPENAI_API_KEY) so the CLI uses the logged-in
-// subscription session rather than silently falling through to the env key.
-func materializeCredential(route engine.AgentRoute, exec *engine.Execution, stageDir string) (engine.BindResult, error) {
-	_ = exec
-	if route.ClassResult == nil {
-		return engine.BindResult{}, fmt.Errorf("materializeCredential: route has no ClassResult — only class-resolved routes carry an auth snapshot")
-	}
-	snap := route.ClassResult.AuthSnapshot
-	cred, err := engine.BindSnapshot(snap)
+// engineBindWrapper wraps engine.Bind to return transport.BindResult.
+// This adapter allows transport.MaterializeCredential to work with the
+// engine's binding functions without creating an import cycle.
+func engineBindWrapper(driver string, snap binding.Snapshot, cred binding.Credential, stageDir string) (transport.BindResult, error) {
+	engResult, err := engine.Bind(driver, snap, cred, stageDir)
 	if err != nil {
-		return engine.BindResult{}, err
+		return transport.BindResult{}, err
 	}
-	return engine.Bind(route.Driver, snap, cred, stageDir)
+	return transport.BindResult{
+		EnvSet:       engResult.EnvSet,
+		EnvScrub:     engResult.EnvScrub,
+		FilesToWrite: engResult.FilesToWrite,
+		SDKArg:       engResult.SDKArg,
+		SourceName:   engResult.SourceName,
+		SourceKind:   engResult.SourceKind,
+	}, nil
 }

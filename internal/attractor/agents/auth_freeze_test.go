@@ -9,6 +9,7 @@ package agents
 import (
 	"testing"
 
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/policy"
@@ -36,9 +37,7 @@ func TestMaterializeCredential_DoesNotReloadProjectAuthFromWorktree(t *testing.T
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("FROZEN_API_KEY", "snapshot-survived-config-strip")
 
-	worktreeDir := t.TempDir()
 	stageDir := t.TempDir()
-	exec := &engine.Execution{WorktreeDir: worktreeDir}
 
 	// Frozen snapshot: anthropic_sdk + env_var source. The driver's binder
 	// (BindAnthropicSDK) accepts env_var snapshots and produces an SDKArg
@@ -64,7 +63,7 @@ func TestMaterializeCredential_DoesNotReloadProjectAuthFromWorktree(t *testing.T
 		},
 	}
 
-	bindResult, err := materializeCredential(route, exec, stageDir)
+	bindResult, err := transport.MaterializeCredential(route.Driver, snap, stageDir, engine.BindSnapshot, testBindWrapper)
 	if err != nil {
 		t.Fatalf("materializeCredential: %v", err)
 	}
@@ -86,9 +85,7 @@ func TestMaterializeCredential_VanishedSourceFailsLoudly(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	// VANISHED_KEY deliberately not set.
 
-	worktreeDir := t.TempDir()
 	stageDir := t.TempDir()
-	exec := &engine.Execution{WorktreeDir: worktreeDir}
 
 	snap := binding.Snapshot{
 		ChainName: "frozen_chain",
@@ -107,7 +104,23 @@ func TestMaterializeCredential_VanishedSourceFailsLoudly(t *testing.T) {
 		},
 	}
 
-	if _, err := materializeCredential(route, exec, stageDir); err == nil {
+	if _, err := transport.MaterializeCredential(route.Driver, snap, stageDir, engine.BindSnapshot, testBindWrapper); err == nil {
 		t.Fatal("expected error for vanished env_var source, got nil")
 	}
+}
+
+// testBindWrapper wraps engine.Bind to return transport.BindResult.
+func testBindWrapper(driver string, snap binding.Snapshot, cred binding.Credential, stageDir string) (transport.BindResult, error) {
+	engResult, err := engine.Bind(driver, snap, cred, stageDir)
+	if err != nil {
+		return transport.BindResult{}, err
+	}
+	return transport.BindResult{
+		EnvSet:       engResult.EnvSet,
+		EnvScrub:     engResult.EnvScrub,
+		FilesToWrite: engResult.FilesToWrite,
+		SDKArg:       engResult.SDKArg,
+		SourceName:   engResult.SourceName,
+		SourceKind:   engResult.SourceKind,
+	}, nil
 }

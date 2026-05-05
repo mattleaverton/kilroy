@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
@@ -22,12 +24,20 @@ type agentHandlerImpl interface {
 	ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error)
 }
 
+// tmuxHandler is the interface for the tmux/CLI path. It extends
+// agentHandlerImpl with the session-based execution method.
+// *TmuxAgentHandler satisfies this interface.
+type tmuxHandler interface {
+	agentHandlerImpl
+	ExecuteAgentWithSession(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute, tmpl *templates.Template, toolName string, prompt string, modelID string, cfg transport.SessionConfig) (runtime.Outcome, error)
+}
+
 // Dispatcher is the single agent handler registered for shape=box nodes.
 // It resolves the agent route (engine.ResolveAgentRoute is the canonical
 // resolver) and delegates to either the tmux handler (CLI drivers) or
 // the codergen handler (API/SDK drivers).
 type Dispatcher struct {
-	Tmux      agentHandlerImpl
+	Tmux      tmuxHandler
 	Codergen  agentHandlerImpl
 	PolicyDep engine.PolicyDeps
 }

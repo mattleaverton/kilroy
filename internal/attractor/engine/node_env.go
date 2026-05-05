@@ -80,9 +80,9 @@ func BuildStageRuntimeEnv(execCtx *Execution, nodeID string) map[string]string {
 		if runID := strings.TrimSpace(execCtx.Engine.Options.RunID); runID != "" {
 			out[runIDEnvKey] = runID
 		}
-	if runID := strings.TrimSpace(execCtx.Engine.Options.RunID); runID != "" {
-		out[parentRunIDEnvKey] = runID
-	}
+		if runID := strings.TrimSpace(execCtx.Engine.Options.RunID); runID != "" {
+			out[parentRunIDEnvKey] = runID
+		}
 	}
 	if id := strings.TrimSpace(nodeID); id != "" {
 		out[nodeIDEnvKey] = id

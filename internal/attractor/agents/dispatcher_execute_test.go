@@ -8,6 +8,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
@@ -23,6 +25,12 @@ type recordingHandler struct {
 }
 
 func (r *recordingHandler) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
+	r.called = true
+	r.route = route
+	return r.outcome, nil
+}
+
+func (r *recordingHandler) ExecuteAgentWithSession(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute, tmpl *templates.Template, toolName string, prompt string, modelID string, cfg transport.SessionConfig) (runtime.Outcome, error) {
 	r.called = true
 	r.route = route
 	return r.outcome, nil

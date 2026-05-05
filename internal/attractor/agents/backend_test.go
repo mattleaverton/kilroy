@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agentbackend"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
@@ -507,6 +509,15 @@ func (h *testTmuxAgentHandler) Execute(ctx context.Context, exec *engine.Executi
 }
 
 func (h *testTmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
+	h.called = true
+	h.ctx = ctx
+	h.exec = exec
+	h.node = node
+	h.route = route
+	return h.outcome, h.err
+}
+
+func (h *testTmuxAgentHandler) ExecuteAgentWithSession(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute, tmpl *templates.Template, toolName string, prompt string, modelID string, cfg transport.SessionConfig) (runtime.Outcome, error) {
 	h.called = true
 	h.ctx = ctx
 	h.exec = exec

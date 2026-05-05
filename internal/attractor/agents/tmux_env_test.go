@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 )
 
@@ -24,7 +25,10 @@ func TestBuildTmuxAgentEnv_IncludesStageStatusContractAndRuntime(t *testing.T) {
 		},
 	}
 
-	env := buildTmuxAgentEnv(tmpl, execCtx, "node-alpha")
+	templateEnv := tmpl.BuildEnv()
+	runtimeEnv := engine.BuildStageRuntimeEnv(execCtx, "node-alpha")
+	statusContractEnv := engine.BuildStageStatusContract(execCtx.WorktreeDir, "run-001").EnvVars
+	env := transport.BuildTmuxAgentEnv(templateEnv, runtimeEnv, statusContractEnv)
 
 	cases := map[string]string{
 		"TOOL_DEFAULT":        "present",
@@ -53,12 +57,16 @@ func TestBuildTmuxAgentEnv_IncludesStageStatusContractAndRuntime(t *testing.T) {
 }
 
 func TestBuildTmuxAgentEnv_NilTemplateStartsClean(t *testing.T) {
+	workDir := t.TempDir()
+	logsRoot := t.TempDir()
 	execCtx := &engine.Execution{
-		WorktreeDir: t.TempDir(),
-		LogsRoot:    t.TempDir(),
+		WorktreeDir: workDir,
+		LogsRoot:    logsRoot,
 		Engine:      &engine.Engine{Options: engine.RunOptions{RunID: "run-nil-tmpl"}},
 	}
-	env := buildTmuxAgentEnv(nil, execCtx, "node")
+	runtimeEnv := engine.BuildStageRuntimeEnv(execCtx, "node")
+	statusContractEnv := engine.BuildStageStatusContract(workDir, "run-nil-tmpl").EnvVars
+	env := transport.BuildTmuxAgentEnv(nil, runtimeEnv, statusContractEnv)
 	if env == nil {
 		t.Fatal("env must not be nil even when template is nil")
 	}

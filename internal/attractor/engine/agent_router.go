@@ -18,20 +18,15 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/agent"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
 	"github.com/danshapiro/kilroy/internal/llm"
-	"github.com/danshapiro/kilroy/internal/llm/providers/anthropic"
-	"github.com/danshapiro/kilroy/internal/llm/providers/codexappserver"
-	"github.com/danshapiro/kilroy/internal/llm/providers/google"
-	"github.com/danshapiro/kilroy/internal/llm/providers/openai"
-	"github.com/danshapiro/kilroy/internal/llm/providers/openaicompat"
 	"github.com/danshapiro/kilroy/internal/llmclient"
 	"github.com/danshapiro/kilroy/internal/modelmeta"
 	"github.com/danshapiro/kilroy/internal/policy"
-	"github.com/danshapiro/kilroy/internal/providerspec"
 )
 
 type AgentRouter struct {
@@ -300,70 +295,54 @@ func (r *AgentRouter) clientForRoute(execCtx *Execution, provider string, classR
 	if classResult == nil {
 		return r.ensureAPIClient()
 	}
-	// 1. Materialize the SELECTED credential from the frozen snapshot.
-	//    BindSnapshot deliberately does NOT reload auth.toml — the
-	//    Snapshot's source identity is the contract, and re-reading the
-	//    project layer from the worktree would let drift override the
-	//    freeze. A vanished source (env var unset, CLI session expired)
-	//    is still caught here via the live DetectionView.
-	cred, err := BindSnapshot(classResult.AuthSnapshot)
+
+	worktreeDir := ""
+	if execCtx != nil {
+		worktreeDir = execCtx.WorktreeDir
+	}
+
+	cfg := transport.HTTPClientConfig{
+		Provider:    provider,
+		WorktreeDir: worktreeDir,
+		ClassResult: transport.ClassResult{
+			AuthSnapshot: classResult.AuthSnapshot,
+		},
+		ProviderRuntimes: toTransportProviderRuntimes(r.providerRuntimes),
+	}
+
+	c, err := transport.NewHTTPClient(cfg, BindSnapshot, DefaultBindingResolver)
 	if err != nil {
 		return nil, err
 	}
-	if cred.Value == "" {
-		return nil, fmt.Errorf("api path requires env_var credential, got %q", classResult.AuthSnapshot.Source.Kind)
+
+	// Emit failover events for observability
+	if c != nil {
+		emitFailoverEventsForClient(execCtx, provider, c, r.providerRuntimes)
 	}
 
-	// 2. Build a fresh client and install the bound-credential adapter
-	//    for the SELECTED provider FIRST. CRITICAL ORDERING: do not call
-	//    ensureAPIClient here — that path can hard-fail with "no
-	//    providers configured" when canonical env is unset, even though
-	//    our class-routed credential is valid (e.g., a user with only
-	//    *_API_KEY_KILROY configured). It can also load a different key
-	//    silently when canonical env IS set with a non-chain value.
-	//    The class-routed credential MUST be in place before any other
-	//    adapter for this provider is registered.
-	c := llm.NewClient()
-	if !overrideProviderAdapter(c, r.providerRuntimes, provider, cred.Value) {
-		return nil, fmt.Errorf(
-			"class-routed provider %q has no supported API adapter (provider not in run-config runtimes or unsupported protocol)",
-			provider)
-	}
+	return c, nil
+}
 
-	// 3. Failover providers are best-effort. We need a chain-aware
-	//    resolver to walk auth chains for OTHER providers, but failure
-	//    here MUST NOT block the primary call — that's the whole point
-	//    of class routing being authoritative.
-	var failoverResolver *binding.Resolver
-	if execCtx != nil {
-		if r2, rerr := DefaultBindingResolver(strings.TrimSpace(execCtx.WorktreeDir)); rerr == nil {
-			failoverResolver = r2
-		}
+// emitFailoverEventsForClient emits failover credential decision events
+// for all failover providers that were configured on the client.
+func emitFailoverEventsForClient(execCtx *Execution, primaryProvider string, c *llm.Client, runtimes map[string]ProviderRuntime) {
+	if execCtx == nil || execCtx.WorktreeDir == "" {
+		return
 	}
-	for otherProvider, rt := range r.providerRuntimes {
-		if otherProvider == provider {
+	failoverResolver, err := DefaultBindingResolver(strings.TrimSpace(execCtx.WorktreeDir))
+	if err != nil {
+		return
+	}
+	for otherProvider, rt := range runtimes {
+		if otherProvider == primaryProvider {
 			continue
 		}
 		if rt.Backend != BackendAPI {
 			continue
 		}
-		var decision failoverDecision
-		if failoverResolver != nil {
-			decision = resolveFailoverDecision(failoverResolver, otherProvider)
-		}
+		decision := resolveFailoverDecision(failoverResolver, otherProvider)
 		emitFailoverEvent(execCtx, otherProvider, decision)
-		if decision.bound {
-			overrideProviderAdapter(c, r.providerRuntimes, otherProvider, decision.value)
-			continue
-		}
-		// No chain (or chain failed): fall back to a canonical-env adapter
-		// from runtime config so failover to this provider still works
-		// when canonical env IS set. We register PER PROVIDER (not via
-		// the cached apiOnce path) so a missing canonical-env adapter
-		// for one failover provider doesn't block the whole client.
-		registerCanonicalEnvAdapter(c, otherProvider, rt)
 	}
-	return c, nil
 }
 
 // failoverDecision records what happened when we tried to resolve a
@@ -378,6 +357,18 @@ type failoverDecision struct {
 	sourceKind string
 	sourceName string
 	skipReason string // populated when bound=false; empty when no chain configured
+}
+
+// toTransportFailoverDecision converts a transport.FailoverDecision to the local type.
+func toTransportFailoverDecision(d transport.FailoverDecision) failoverDecision {
+	return failoverDecision{
+		bound:      d.Bound,
+		value:      d.Value,
+		chainName:  d.ChainName,
+		sourceKind: d.SourceKind,
+		sourceName: d.SourceName,
+		skipReason: d.SkipReason,
+	}
 }
 
 // emitFailoverEvent appends an `auth_failover_credential_decision` event
@@ -408,33 +399,32 @@ func emitFailoverEvent(execCtx *Execution, provider string, d failoverDecision) 
 	execCtx.Engine.appendProgress(ev)
 }
 
+// toTransportProviderRuntimes converts engine ProviderRuntime map to transport ProviderRuntime map.
+func toTransportProviderRuntimes(runtimes map[string]ProviderRuntime) map[string]transport.ProviderRuntime {
+	if runtimes == nil {
+		return nil
+	}
+	out := make(map[string]transport.ProviderRuntime, len(runtimes))
+	for k, rt := range runtimes {
+		out[k] = transport.ProviderRuntime{
+			Key:              rt.Key,
+			Backend:          transport.BackendKind(rt.Backend),
+			API:              rt.API,
+			APIHeadersMap:    rt.APIHeadersMap,
+			Failover:         rt.Failover,
+			FailoverExplicit: rt.FailoverExplicit,
+		}
+	}
+	return out
+}
+
 // resolveFailoverDecision walks the (provider, api_key) chain and
 // returns a structured decision distinguishing "no chain" from "chain
 // exhausted / ambiguous / unknown". Used by clientForRoute to drive
 // progress-event emission and adapter override.
 func resolveFailoverDecision(resolver *binding.Resolver, provider string) failoverDecision {
-	req := binding.Requirement{Provider: provider, Method: binding.MethodAPIKey}
-	snap, err := resolver.Resolve(req)
-	if err != nil {
-		// Distinguish "no chain configured" from real chain failures so
-		// the event stream can flag the latter as a wrong-billing risk.
-		var noChain *binding.ErrNoChainForRequirement
-		if errors.As(err, &noChain) {
-			return failoverDecision{}
-		}
-		return failoverDecision{skipReason: err.Error()}
-	}
-	cred, err := resolver.Bind(snap)
-	if err != nil {
-		return failoverDecision{skipReason: err.Error()}
-	}
-	return failoverDecision{
-		bound:      true,
-		value:      cred.Value,
-		chainName:  snap.ChainName,
-		sourceKind: string(snap.Source.Kind),
-		sourceName: snap.Source.Name,
-	}
+	td := transport.ResolveFailoverDecision(resolver, provider)
+	return toTransportFailoverDecision(td)
 }
 
 // overrideProviderAdapter registers a credential-aware adapter for the
@@ -445,35 +435,10 @@ func resolveFailoverDecision(resolver *binding.Resolver, provider string) failov
 // backends, or unsupported protocols return false — callers that need
 // the registration to succeed (e.g. the class-routed primary credential)
 // must check the result.
+//
+// Deprecated: Use transport.OverrideProviderAdapter instead.
 func overrideProviderAdapter(c *llm.Client, runtimes map[string]ProviderRuntime, provider, value string) bool {
-	rt, hasRT := runtimes[provider]
-	if !hasRT || rt.Backend != BackendAPI {
-		return false
-	}
-	baseURL := resolveBuiltInBaseURLOverride(provider, rt.API.DefaultBaseURL)
-	switch rt.API.Protocol {
-	case providerspec.ProtocolAnthropicMessages:
-		c.Register(anthropic.NewWithProvider(provider, value, baseURL))
-		return true
-	case providerspec.ProtocolOpenAIResponses:
-		c.Register(openai.NewWithProvider(provider, value, baseURL))
-		return true
-	case providerspec.ProtocolGoogleGenerateContent:
-		c.Register(google.NewWithProvider(provider, value, baseURL))
-		return true
-	case providerspec.ProtocolOpenAIChatCompletions:
-		c.Register(openaicompat.NewAdapter(openaicompat.Config{
-			Provider:     provider,
-			APIKey:       value,
-			BaseURL:      baseURL,
-			Path:         rt.API.DefaultPath,
-			OptionsKey:   rt.API.ProviderOptionsKey,
-			ExtraHeaders: rt.APIHeaders(),
-		}))
-		return true
-	}
-	// ProtocolCodexAppServer takes no api key (uses session); skip override.
-	return false
+	return transport.OverrideProviderAdapter(c, toTransportProviderRuntimes(runtimes), provider, value)
 }
 
 // registerCanonicalEnvAdapter registers the canonical-env adapter for one
@@ -484,37 +449,32 @@ func overrideProviderAdapter(c *llm.Client, runtimes map[string]ProviderRuntime,
 // no-op when the canonical env var is unset for this provider — that
 // failover candidate simply isn't available, but the primary class-routed
 // call is unaffected.
+//
+// Deprecated: Use transport.RegisterCanonicalEnvAdapter instead.
 func registerCanonicalEnvAdapter(c *llm.Client, provider string, rt ProviderRuntime) {
-	if rt.Backend != BackendAPI {
-		return
+	transport.RegisterCanonicalEnvAdapter(c, provider, toTransportProviderRuntime(rt))
+}
+
+// toTransportProviderRuntime converts a single ProviderRuntime to transport type.
+func toTransportProviderRuntime(rt ProviderRuntime) transport.ProviderRuntime {
+	return transport.ProviderRuntime{
+		Key:              rt.Key,
+		Backend:          transport.BackendKind(rt.Backend),
+		API:              rt.API,
+		APIHeadersMap:    rt.APIHeadersMap,
+		Failover:         rt.Failover,
+		FailoverExplicit: rt.FailoverExplicit,
 	}
-	if rt.API.Protocol == providerspec.ProtocolCodexAppServer {
-		c.Register(codexappserver.NewAdapter(codexappserver.AdapterOptions{Provider: provider}))
-		return
-	}
-	apiKeyEnv := strings.TrimSpace(rt.API.DefaultAPIKeyEnv)
-	if apiKeyEnv == "" {
-		return
-	}
-	apiKey := strings.TrimSpace(os.Getenv(apiKeyEnv))
-	if apiKey == "" {
-		return
-	}
-	overrideProviderAdapter(c, map[string]ProviderRuntime{provider: rt}, provider, apiKey)
 }
 
 // cloneLLMClient produces a shallow copy of an llm.Client suitable for
 // per-call adapter overrides. The underlying provider adapters are shared
 // (they're stateless per request); only the registry map is duplicated so
 // Register on the clone doesn't mutate the cached client.
+//
+// Deprecated: Use transport.CloneLLMClient instead.
 func cloneLLMClient(src *llm.Client) *llm.Client {
-	c := llm.NewClient()
-	for _, name := range src.ProviderNames() {
-		if a, ok := src.Provider(name); ok {
-			c.Register(a)
-		}
-	}
-	return c
+	return transport.CloneLLMClient(src)
 }
 
 func (r *AgentRouter) runAPI(ctx context.Context, execCtx *Execution, node *model.Node, provider string, modelID string, prompt string, classResult *policy.ResolveResult) (string, *runtime.Outcome, error) {

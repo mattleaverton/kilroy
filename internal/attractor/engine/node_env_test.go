@@ -203,8 +203,8 @@ func TestBuildStageRuntimeEnv_SetsParentRunIDToCurrentRunID(t *testing.T) {
 				ParentRunID: "parent-run-456",
 			},
 		},
-		LogsRoot:     "/tmp/logs",
-		WorktreeDir:  "/tmp/worktree",
+		LogsRoot:    "/tmp/logs",
+		WorktreeDir: "/tmp/worktree",
 	}
 
 	env := BuildStageRuntimeEnv(execCtx, "test-node")
@@ -229,8 +229,8 @@ func TestBuildStageRuntimeEnv_RootRunStillEmitsParentRunID(t *testing.T) {
 				ParentRunID: "", // root run has no parent
 			},
 		},
-		LogsRoot:     "/tmp/logs",
-		WorktreeDir:  "/tmp/worktree",
+		LogsRoot:    "/tmp/logs",
+		WorktreeDir: "/tmp/worktree",
 	}
 
 	env := BuildStageRuntimeEnv(execCtx, "test-node")

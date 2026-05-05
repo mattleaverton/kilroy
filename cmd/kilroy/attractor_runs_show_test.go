@@ -204,9 +204,9 @@ func TestRunsShow_JSONIncludesParentRunID(t *testing.T) {
 	}
 
 	var childResult struct {
-		RunID         string `json:"run_id"`
-		ParentRunID   string `json:"parent_run_id"`
-		Children      []any  `json:"children"`
+		RunID       string `json:"run_id"`
+		ParentRunID string `json:"parent_run_id"`
+		Children    []any  `json:"children"`
 	}
 	if err := json.Unmarshal([]byte(out), &childResult); err != nil {
 		t.Fatalf("parse JSON: %v\n%s", err, out)
