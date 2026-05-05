@@ -35,7 +35,7 @@ func (e *Engine) rundbRecordRunStart() {
 		e.Options.RunID, graphName, goal, "running",
 		e.LogsRoot, e.WorktreeDir, e.RunBranch, e.Options.RepoPath,
 		string(e.DotSource), e.Options.Inputs, e.Options.Labels,
-		e.Options.Invocation, configMap,
+		e.Options.Invocation, configMap, e.Options.ParentRunID,
 	); err != nil {
 		e.Warn("rundb: record run start: " + err.Error())
 	}

@@ -12,7 +12,8 @@ import (
 // recordingRunDBWriter captures RecordProviderSelection calls for
 // assertions; all other RunDBWriter methods no-op.
 type recordingRunDBWriter struct {
-	provider []providerSelectionCall
+	provider            []providerSelectionCall
+	capturedParentRunID string
 }
 
 type providerSelectionCall struct {
@@ -20,7 +21,8 @@ type providerSelectionCall struct {
 	attempt                                 int
 }
 
-func (r *recordingRunDBWriter) RecordRunStart(runID, graphName, goal, status, logsRoot, worktreeDir, runBranch, repoPath, dotSource string, inputs map[string]any, labels map[string]string, invocation []string, config map[string]any) error {
+func (r *recordingRunDBWriter) RecordRunStart(runID, graphName, goal, status, logsRoot, worktreeDir, runBranch, repoPath, dotSource string, inputs map[string]any, labels map[string]string, invocation []string, config map[string]any, parentRunID string) error {
+	r.capturedParentRunID = parentRunID
 	return nil
 }
 func (r *recordingRunDBWriter) RecordRunComplete(runID, status, failureReason, finalSHA string, warnings []string) error {
@@ -148,5 +150,26 @@ func TestRundbRecordProviderIfAgent_NonClass_UsesStaticAttrs(t *testing.T) {
 	// Legacy non-class path uses agent_tool as the backend literal.
 	if got.backend != "claude" {
 		t.Errorf("backend = %q, want claude (legacy agent_tool literal)", got.backend)
+	}
+}
+
+// TestRundbRecordRunStart_ParentRunID verifies that rundbRecordRunStart
+// passes ParentRunID from RunOptions through to RecordRunStart.
+func TestRundbRecordRunStart_ParentRunID(t *testing.T) {
+	logsRoot := t.TempDir()
+
+	graph := model.NewGraph("test")
+	rec := &recordingRunDBWriter{}
+	e := &Engine{
+		Graph:    graph,
+		LogsRoot: logsRoot,
+		Options:  RunOptions{RunID: "child-run", ParentRunID: "parent-xyz"},
+		RunDB:    rec,
+	}
+
+	e.rundbRecordRunStart()
+
+	if rec.capturedParentRunID != "parent-xyz" {
+		t.Errorf("capturedParentRunID = %q, want parent-xyz", rec.capturedParentRunID)
 	}
 }

@@ -131,6 +131,10 @@ type RunOptions struct {
 
 	// CLI arguments used to launch this run. Captured from os.Args.
 	Invocation []string
+
+	// ParentRunID is the run ID of the parent run that dispatched this run.
+	// Empty for top-level runs; populated for nested runs via tool_command.
+	ParentRunID string
 }
 
 func (o *RunOptions) applyDefaults() error {

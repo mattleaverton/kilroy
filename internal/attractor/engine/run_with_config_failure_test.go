@@ -21,7 +21,7 @@ type completedCall struct {
 	runID, status, failureReason, finalSHA string
 }
 
-func (f *fakeRunDBWriter) RecordRunStart(runID, graphName, goal, status, logsRoot, worktreeDir, runBranch, repoPath, dotSource string, inputs map[string]any, labels map[string]string, invocation []string, config map[string]any) error {
+func (f *fakeRunDBWriter) RecordRunStart(runID, graphName, goal, status, logsRoot, worktreeDir, runBranch, repoPath, dotSource string, inputs map[string]any, labels map[string]string, invocation []string, config map[string]any, parentRunID string) error {
 	return nil
 }
 

@@ -41,7 +41,7 @@ func seedRunWithResolutions(t *testing.T, runID string, resolutions map[string]s
 	}
 	defer db.Close()
 
-	if err := db.RecordRunStart(runID, "explain-test", "", "running", logsRoot, "", "", "", "", nil, map[string]string{"task": "explain-test"}, nil, nil); err != nil {
+	if err := db.RecordRunStart(runID, "explain-test", "", "running", logsRoot, "", "", "", "", nil, map[string]string{"task": "explain-test"}, nil, nil, ""); err != nil {
 		t.Fatalf("rundb RecordRunStart: %v", err)
 	}
 	if err := db.RecordRunComplete(runID, "success", "", "", nil); err != nil {

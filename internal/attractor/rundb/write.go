@@ -27,12 +27,12 @@ type RunRecord struct {
 }
 
 // RecordRunStart satisfies engine.RunDBWriter. Delegates to InsertRun.
-func (d *DB) RecordRunStart(runID, graphName, goal, status, logsRoot, worktreeDir, runBranch, repoPath, dotSource string, inputs map[string]any, labels map[string]string, invocation []string, config map[string]any) error {
+func (d *DB) RecordRunStart(runID, graphName, goal, status, logsRoot, worktreeDir, runBranch, repoPath, dotSource string, inputs map[string]any, labels map[string]string, invocation []string, config map[string]any, parentRunID string) error {
 	return d.InsertRun(RunRecord{
 		RunID: runID, GraphName: graphName, Goal: goal, Status: status,
 		LogsRoot: logsRoot, WorktreeDir: worktreeDir, RunBranch: runBranch,
 		RepoPath: repoPath, DotSource: dotSource, Inputs: inputs, Labels: labels,
-		Invocation: invocation, Config: config,
+		Invocation: invocation, Config: config, ParentRunID: parentRunID,
 		StartedAt: time.Now(),
 	})
 }
