@@ -514,7 +514,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot1 := filepath.Join(t.TempDir(), "logs-success")
-	code, out := runKilroy(t, bin, "run", "--graph", successGraph, "--config", cfg, "--run-id", "cli-success", "--logs-root", logsRoot1)
+	code, out := runKilroy(t, bin, "run", "--sync", "--graph", successGraph, "--config", cfg, "--run-id", "cli-success", "--logs-root", logsRoot1)
 	if code != 0 {
 		t.Fatalf("success exit code: got %d want 0\n%s", code, out)
 	}
@@ -530,7 +530,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot2 := filepath.Join(t.TempDir(), "logs-fail")
-	code, out = runKilroy(t, bin, "run", "--graph", failGraph, "--config", cfg, "--run-id", "cli-fail", "--logs-root", logsRoot2)
+	code, out = runKilroy(t, bin, "run", "--sync", "--graph", failGraph, "--config", cfg, "--run-id", "cli-fail", "--logs-root", logsRoot2)
 	if code != 1 {
 		t.Fatalf("fail exit code: got %d want 1\n%s", code, out)
 	}
@@ -629,7 +629,7 @@ func TestRun_StaleBuildConfirmAllowsProceeding(t *testing.T) {
 
 	missingGraph := filepath.Join(repo, "missing.dot")
 	missingConfig := filepath.Join(repo, "missing.yaml")
-	code, out := runKilroyInDir(t, repo, repoBin, "run", "--confirm-stale-build", "--graph", missingGraph, "--config", missingConfig)
+	code, out := runKilroyInDir(t, repo, repoBin, "run", "--sync", "--confirm-stale-build", "--graph", missingGraph, "--config", missingConfig)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -684,7 +684,7 @@ modeldb:
 `, repo, catalog)), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "real-reject-shim", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "real-reject-shim", "--logs-root", logsRoot)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -737,7 +737,7 @@ modeldb:
 	logsRoot := filepath.Join(t.TempDir(), "logs")
 	// Even with "n\n" piped on stdin, the auto-skip ignores it: stdin isn't
 	// a TTY so confirmCLIHeadlessWarning is never called.
-	code, out := runKilroyWithInput(t, bin, "n\n", "run", "--graph", graph, "--config", cfg, "--run-id", "cli-warning-autoskip", "--logs-root", logsRoot)
+	code, out := runKilroyWithInput(t, bin, "n\n", "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "cli-warning-autoskip", "--logs-root", logsRoot)
 	if code != 1 {
 		t.Fatalf("exit code: got %d want 1\n%s", code, out)
 	}
@@ -775,7 +775,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-link", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-link", "--logs-root", logsRoot)
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
@@ -810,7 +810,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-starting", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-starting", "--logs-root", logsRoot)
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}
@@ -835,7 +835,7 @@ digraph G {
 }
 `), 0o644)
 	logsRoot := filepath.Join(t.TempDir(), "logs")
-	code, out := runKilroy(t, bin, "run", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-autodiscover", "--logs-root", logsRoot)
+	code, out := runKilroy(t, bin, "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "cli-ui-autodiscover", "--logs-root", logsRoot)
 	if code != 0 {
 		t.Fatalf("exit code: got %d want 0\n%s", code, out)
 	}

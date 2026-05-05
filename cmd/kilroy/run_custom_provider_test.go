@@ -76,6 +76,7 @@ func TestRun_CustomProvider_DispatcherDelegatesToCodergen(t *testing.T) {
 	logsRoot := filepath.Join(t.TempDir(), "logs")
 	code, out := runKilroy(t, bin,
 		"run",
+		"--sync",
 		"--graph", graphPath,
 		"--config", cfgPath,
 		"--logs-root", logsRoot,
