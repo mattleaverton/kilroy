@@ -9,7 +9,6 @@ func validMinimalRunConfigForTest() *RunConfigFile {
 	cfg.Repo.Path = "/tmp/repo"
 	cfg.CXDB.BinaryAddr = "127.0.0.1:9009"
 	cfg.CXDB.HTTPBaseURL = "http://127.0.0.1:9010"
-	cfg.ModelDB.OpenRouterModelInfoPath = "/tmp/catalog.json"
 	return cfg
 }
 

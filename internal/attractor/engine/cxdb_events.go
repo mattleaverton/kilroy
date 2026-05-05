@@ -15,17 +15,15 @@ func (e *Engine) cxdbRunStarted(ctx context.Context, baseSHA string) error {
 		return nil
 	}
 	data := map[string]any{
-		"run_id":                 e.Options.RunID,
-		"timestamp_ms":           nowMS(),
-		"repo_path":              e.Options.RepoPath,
-		"base_sha":               baseSHA,
-		"run_branch":             e.RunBranch,
-		"logs_root":              e.LogsRoot,
-		"worktree_dir":           e.WorktreeDir,
-		"graph_name":             e.Graph.Name,
-		"goal":                   e.Graph.Attrs["goal"],
-		"modeldb_catalog_sha256": e.ModelCatalogSHA,
-		"modeldb_catalog_source": e.ModelCatalogSource,
+		"run_id":       e.Options.RunID,
+		"timestamp_ms": nowMS(),
+		"repo_path":    e.Options.RepoPath,
+		"base_sha":     baseSHA,
+		"run_branch":   e.RunBranch,
+		"logs_root":    e.LogsRoot,
+		"worktree_dir": e.WorktreeDir,
+		"graph_name":   e.Graph.Name,
+		"goal":         e.Graph.Attrs["goal"],
 	}
 	if len(e.DotSource) > 0 {
 		data["graph_dot"] = string(e.DotSource)
@@ -41,10 +39,6 @@ func (e *Engine) cxdbRunStarted(ctx context.Context, baseSHA string) error {
 	}
 	if _, err := os.Stat(inputRunManifestPath(e.LogsRoot)); err == nil {
 		_, _ = e.CXDB.PutArtifactFile(ctx, "", inputManifestFileName, inputRunManifestPath(e.LogsRoot))
-	}
-	openrouterCatalogPath := filepath.Join(e.LogsRoot, "modeldb", "openrouter_models.json")
-	if _, err := os.Stat(openrouterCatalogPath); err == nil {
-		_, _ = e.CXDB.PutArtifactFile(ctx, "", "modeldb/openrouter_models.json", openrouterCatalogPath)
 	}
 	if _, err := os.Stat(filepath.Join(e.LogsRoot, "graph.dot")); err == nil {
 		_, _ = e.CXDB.PutArtifactFile(ctx, "", "graph.dot", filepath.Join(e.LogsRoot, "graph.dot"))

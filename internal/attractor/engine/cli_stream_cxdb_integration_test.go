@@ -13,11 +13,6 @@ import (
 func TestCLIStreamCXDB_DecomposesConversationTurns(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	catalog := writeCatalogForPreflight(t, `{
-  "data": [
-    {"id": "anthropic/claude-sonnet-4-20250514"}
-  ]
-}`)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Fake claude CLI that emits realistic stream-json: two assistant messages,
@@ -69,8 +64,6 @@ echo '{"type":"result","subtype":"success","result":"done","session_id":"s1"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"anthropic": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = catalog
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := singleProviderDot("anthropic", "claude-sonnet-4-20250514")

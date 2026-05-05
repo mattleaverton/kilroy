@@ -14,15 +14,12 @@ func TestRunWithConfig_CheckpointExcludesConfiguredArtifacts(t *testing.T) {
 
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cfg := &RunConfigFile{Version: 1}
 	cfg.Repo.Path = repo
 	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.ArtifactPolicy.Checkpoint.ExcludeGlobs = []string{"**/.cargo_target*/**"}
 

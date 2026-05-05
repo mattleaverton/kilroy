@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/cxdb"
 	"github.com/danshapiro/kilroy/internal/policy"
@@ -22,9 +21,6 @@ type runBootstrap struct {
 	Options                 RunOptions
 	Registry                *HandlerRegistry
 	ResolvedArtifactPolicy  ResolvedArtifactPolicy
-	Catalog                 *modeldb.Catalog
-	ModelCatalogSource      string
-	ModelCatalogPath        string
 	Runtimes                map[string]ProviderRuntime
 	InputInferer            InputReferenceInferer
 	ResolvedWarning         string
@@ -70,9 +66,6 @@ func RunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfigFile, ov
 	eng.Context = NewContextWithGraphAttrs(boot.Graph)
 	eng.AgentBackend = NewAgentRouterWithRuntimes(boot.Config, boot.Runtimes)
 	eng.CXDB = sink
-	eng.ModelCatalogSHA = boot.Catalog.SHA256
-	eng.ModelCatalogSource = boot.ModelCatalogSource
-	eng.ModelCatalogPath = boot.ModelCatalogPath
 	eng.InputMaterializationPolicy = inputMaterializationPolicyFromConfig(boot.Config)
 	eng.InputReferenceInferer = boot.InputInferer
 	eng.InputInferenceCache = map[string][]InferredReference{}
@@ -130,24 +123,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		reg = NewDefaultRegistry()
 	}
 
-	// Load catalog early (best-effort) so that model ID lint rules fire during
-	// PrepareWithOptions. The full ResolveModelCatalog snapshot still runs later
-	// for execution repeatability; this early load uses the pinned file directly.
-	var earlyCatalog *modeldb.Catalog
-	if pinnedPath := strings.TrimSpace(cfg.ModelDB.OpenRouterModelInfoPath); pinnedPath != "" {
-		if cat, catErr := modeldb.LoadCatalogFromOpenRouterJSON(pinnedPath); catErr == nil {
-			earlyCatalog = cat
-		}
-		// On error, earlyCatalog remains nil — model ID checks are skipped,
-		// all other lint rules still run (degraded mode).
-	} else {
-		// No pinned path configured — fall back to the embedded catalog so
-		// model ID lint rules fire even without an explicit modeldb config.
-		if cat, catErr := modeldb.LoadEmbeddedCatalog(); catErr == nil {
-			earlyCatalog = cat
-		}
-	}
-
 	// Load embedded policy classes so the unknown_agent_class lint fires.
 	// On failure, fall back to nil (degraded mode: the check is skipped).
 	policyClasses, _ := policy.ClassNames()
@@ -157,7 +132,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		RepoPath:      cfg.Repo.Path,
 		GraphDir:      overrides.GraphDir,
 		KnownTypes:    reg.KnownTypes(),
-		Catalog:       earlyCatalog,
 		PolicyClasses: policyClasses,
 	})
 	if err != nil {
@@ -302,43 +276,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		return nil, err
 	}
 
-	// Resolve + snapshot the model catalog for this run (repeatability).
-	// When no catalog path is configured, fall back to the embedded catalog.
-	var (
-		catalog            *modeldb.Catalog
-		modelCatalogSource string
-		modelCatalogPath   string
-		resolvedWarning    string
-	)
-	if strings.TrimSpace(cfg.ModelDB.OpenRouterModelInfoPath) != "" {
-		resolved, resolveErr := modeldb.ResolveModelCatalog(
-			ctx,
-			cfg.ModelDB.OpenRouterModelInfoPath,
-			opts.LogsRoot,
-			modeldb.CatalogUpdatePolicy(strings.ToLower(strings.TrimSpace(cfg.ModelDB.OpenRouterModelInfoUpdatePolicy))),
-			cfg.ModelDB.OpenRouterModelInfoURL,
-			time.Duration(cfg.ModelDB.OpenRouterModelInfoFetchTimeoutMS)*time.Millisecond,
-		)
-		if resolveErr != nil {
-			return nil, resolveErr
-		}
-		cat, loadErr := loadCatalogForRun(resolved.SnapshotPath)
-		if loadErr != nil {
-			return nil, loadErr
-		}
-		catalog = cat
-		modelCatalogSource = resolved.Source
-		modelCatalogPath = resolved.SnapshotPath
-		resolvedWarning = strings.TrimSpace(resolved.Warning)
-	} else {
-		cat, loadErr := modeldb.LoadEmbeddedCatalog()
-		if loadErr != nil {
-			return nil, fmt.Errorf("no model catalog configured and embedded catalog unavailable: %w", loadErr)
-		}
-		catalog = cat
-		modelCatalogSource = "embedded"
-		modelCatalogPath = ""
-	}
+	var resolvedWarning string
 	// Pre-launch validation: cheap, no-LLM-cost checks (package integrity,
 	// class resolution, auth, CLI binary capability, secrets). This is
 	// the only validation pass on the launch path — the legacy
@@ -394,9 +332,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		Options:                 opts,
 		Registry:                reg,
 		ResolvedArtifactPolicy:  resolvedArtifactPolicy,
-		Catalog:                 catalog,
-		ModelCatalogSource:      modelCatalogSource,
-		ModelCatalogPath:        modelCatalogPath,
 		Runtimes:                runtimes,
 		InputInferer:            inputInferer,
 		ResolvedWarning:         resolvedWarning,
@@ -407,10 +342,6 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		CXDBBin:                 bin,
 		Startup:                 startup,
 	}, nil
-}
-
-func loadCatalogForRun(path string) (*modeldb.Catalog, error) {
-	return modeldb.LoadCatalogFromOpenRouterJSON(path)
 }
 
 func modelIDForNode(n *model.Node) string {

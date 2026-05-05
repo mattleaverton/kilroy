@@ -29,7 +29,7 @@ import (
 )
 
 type AgentRouter struct {
-	cfg     *RunConfigFile
+	cfg *RunConfigFile
 
 	providerRuntimes map[string]ProviderRuntime
 	apiClientFactory func(map[string]ProviderRuntime) (*llm.Client, error)
@@ -1016,17 +1016,6 @@ func isLocalBootstrapError(err error) bool {
 	return strings.Contains(s, "getwd: no such file or directory") ||
 		strings.Contains(s, "tool read_file schema: getwd:")
 }
-
-
-
-
-
-
-
-
-
-
-
 
 func resolveAgentLoopCommandTimeouts(execCtx *Execution, node *model.Node) (int, int) {
 	defaultCommandTimeoutMS := parsePositiveIntAttr(node, "default_command_timeout_ms")

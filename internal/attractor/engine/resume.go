@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/cxdb"
@@ -26,12 +25,6 @@ type manifest struct {
 	RunBranch     string `json:"run_branch"`
 	RunConfigPath string `json:"run_config_path"`
 	ParentRunID   string `json:"parent_run_id,omitempty"`
-
-	ModelDB struct {
-		OpenRouterModelInfoPath   string `json:"openrouter_model_info_path"`
-		OpenRouterModelInfoSHA256 string `json:"openrouter_model_info_sha256"`
-		OpenRouterModelInfoSource string `json:"openrouter_model_info_source"`
-	} `json:"modeldb"`
 
 	CXDB struct {
 		HTTPBaseURL      string `json:"http_base_url"`
@@ -142,25 +135,12 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 	// If we have a run config, resume with the real agent router and CXDB sink.
 	var backend AgentBackend = &SimulatedAgentBackend{}
 	var sink *CXDBSink
-	var catalog *modeldb.Catalog
 	var startup *CXDBStartupInfo
 	var inputInferer InputReferenceInferer
 	var inputInfererInitWarning string
 	var providerRuntimes map[string]ProviderRuntime
 	if cfg != nil {
-		// Resume MUST use the run's snapshotted catalog.
-		snapshotPath := firstExistingPath(
-			strings.TrimSpace(m.ModelDB.OpenRouterModelInfoPath),
-			filepath.Join(logsRoot, "modeldb", "openrouter_models.json"),
-		)
-		if strings.TrimSpace(snapshotPath) == "" {
-			return nil, fmt.Errorf("resume: missing per-run model catalog snapshot: %s", filepath.Join(logsRoot, "modeldb", "openrouter_models.json"))
-		}
-		cat, err := loadCatalogForRun(snapshotPath)
-		if err != nil {
-			return nil, err
-		}
-		catalog = cat
+		var err error
 		providerRuntimes, err = resolveProviderRuntimes(cfg)
 		if err != nil {
 			return nil, err
@@ -260,19 +240,6 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 	eng.ArtifactPolicy = resolvedArtifactPolicy
 	eng.AgentBackend = backend
 	eng.CXDB = sink
-	eng.ModelCatalogSHA = func() string {
-		if catalog == nil {
-			return ""
-		}
-		return catalog.SHA256
-	}()
-	eng.ModelCatalogSource = strings.TrimSpace(m.ModelDB.OpenRouterModelInfoSource)
-	eng.ModelCatalogPath = func() string {
-		if catalog == nil {
-			return ""
-		}
-		return catalog.Path
-	}()
 	eng.InputMaterializationPolicy = inputMaterializationPolicyFromConfig(cfg)
 	eng.InputReferenceInferer = inputInferer
 	eng.InputInferenceCache = loadInputInferenceCache(inputInferenceCachePath(logsRoot))

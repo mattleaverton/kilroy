@@ -21,7 +21,6 @@ func TestRunWithConfig_CLIBackend_OpenAIIdleTimeoutKillsProcessGroup(t *testing.
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -53,8 +52,6 @@ done
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`

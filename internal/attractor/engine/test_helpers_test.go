@@ -41,8 +41,6 @@ func testPreflightConfigForProviders(repo string, catalog string, providers map[
 	for provider, backend := range providers {
 		cfg.LLM.Providers[provider] = ProviderConfig{Backend: backend}
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = catalog
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	return cfg
 }

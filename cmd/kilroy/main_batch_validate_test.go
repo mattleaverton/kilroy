@@ -159,20 +159,17 @@ func TestAttractorValidateBatch_ThreeFiles(t *testing.T) {
 	}
 }
 
-// TestValidate_Batch_RunsCatalogCheck verifies that --batch runs the
-// model-ID catalog check. A graph whose model_stylesheet declares a
-// non-canonical Anthropic model ID (claude-opus-4-6 with dashed version)
-// must produce a stylesheet_noncanonical_model_id ERROR. Written inline at
-// runtime so the repo's pre-commit DOT validator doesn't reject the
-// intentionally-bad fixture.
-func TestValidate_Batch_RunsCatalogCheck(t *testing.T) {
+// TestValidate_Batch_RejectsRawModelStylesheet verifies that --batch runs the
+// stylesheet vocabulary lint. A graph whose model_stylesheet declares
+// llm_model/llm_provider must produce a stylesheet_raw_model_rejected ERROR.
+func TestValidate_Batch_RejectsRawModelStylesheet(t *testing.T) {
 	bin := buildKilroyBinary(t)
-	bad := filepath.Join(t.TempDir(), "bad_model.dot")
+	bad := filepath.Join(t.TempDir(), "bad_stylesheet.dot")
 	src := `digraph G {
-  graph [model_stylesheet="* { llm_provider: anthropic; llm_model: claude-opus-4-6; }"]
+  graph [model_stylesheet="* { llm_provider: anthropic; llm_model: claude-opus-4.6; }"]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
-  work  [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
+  work  [shape=box, agent_class="hard_coding", prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
   start -> work
   work -> exit [condition="outcome=success"]
 }`
@@ -182,7 +179,7 @@ func TestValidate_Batch_RunsCatalogCheck(t *testing.T) {
 
 	code, out := runKilroy(t, bin, "validate", "--batch", bad, "--json")
 	if code != 1 {
-		t.Fatalf("expected exit code 1 (catalog error), got %d\n%s", code, out)
+		t.Fatalf("expected exit code 1 (lint error), got %d\n%s", code, out)
 	}
 
 	var results []struct {
@@ -200,13 +197,13 @@ func TestValidate_Batch_RunsCatalogCheck(t *testing.T) {
 	}
 	found := false
 	for _, e := range results[0].Errors {
-		if e.Rule == "stylesheet_noncanonical_model_id" {
+		if e.Rule == "stylesheet_raw_model_rejected" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected stylesheet_noncanonical_model_id error, got errors: %+v", results[0].Errors)
+		t.Fatalf("expected stylesheet_raw_model_rejected error, got errors: %+v", results[0].Errors)
 	}
 }
 

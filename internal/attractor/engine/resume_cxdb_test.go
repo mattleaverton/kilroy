@@ -20,8 +20,6 @@ func TestResumeFromCXDB_FindsLogsRootFromTurns(t *testing.T) {
 	runCmd(t, repo, "git", "commit", "-m", "init")
 
 	logsRoot := t.TempDir()
-	pinned := filepath.Join(t.TempDir(), "pinned.json")
-	_ = os.WriteFile(pinned, []byte(`{"data":[{"id":"openai/gpt-5.4"}]}`), 0o644)
 
 	cxdbSrv := newCXDBTestServer(t)
 
@@ -35,8 +33,6 @@ func TestResumeFromCXDB_FindsLogsRootFromTurns(t *testing.T) {
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
 	cfg.LLM.CLIProfile = "test_shim"
 	cfg.LLM.Providers = map[string]ProviderConfig{"openai": {Backend: BackendCLI, Executable: cli}}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`

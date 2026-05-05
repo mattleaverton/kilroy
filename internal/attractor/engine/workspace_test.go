@@ -16,7 +16,6 @@ func TestWorkspace_ToolCommandRunsInWorkspace(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// Create a committed file in the repo that the tool command will read.
 	_ = os.WriteFile(filepath.Join(repo, "workspace-marker.txt"), []byte("found_it"), 0o644)
@@ -35,7 +34,7 @@ func TestWorkspace_ToolCommandRunsInWorkspace(t *testing.T) {
 }`)
 	_ = os.WriteFile(filepath.Join(graphDir, "graph.dot"), dot, 0o644)
 
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/danshapiro/kilroy/internal/attractor/cond"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/attractor/style"
 )
@@ -40,10 +39,6 @@ type LintRule interface {
 
 // ValidateOptions carries optional parameters for ValidateWithOptions.
 type ValidateOptions struct {
-	// Catalog is the modeldb catalog used to validate llm_model values in the
-	// model_stylesheet against known model IDs. When nil, model ID catalog checks
-	// are skipped (the stylesheet_syntax check still runs).
-	Catalog *modeldb.Catalog
 	// PolicyClasses is the set of class names defined in policy.toml. When
 	// non-nil, agent_class= attributes on shape=box nodes are checked against
 	// this set; unknown classes produce an unknown_agent_class diagnostic.
@@ -57,8 +52,8 @@ func Validate(g *model.Graph, extraRules ...LintRule) []Diagnostic {
 	return ValidateWithOptions(g, ValidateOptions{}, extraRules...)
 }
 
-// ValidateWithOptions runs all built-in lint rules plus catalog-aware checks
-// (when opts.Catalog is non-nil) and any extra rules against the graph.
+// ValidateWithOptions runs all built-in lint rules plus class-catalog checks
+// (when opts.PolicyClasses is non-nil) and any extra rules against the graph.
 func ValidateWithOptions(g *model.Graph, opts ValidateOptions, extraRules ...LintRule) []Diagnostic {
 	var diags []Diagnostic
 	if g == nil {
@@ -74,7 +69,6 @@ func ValidateWithOptions(g *model.Graph, opts ValidateOptions, extraRules ...Lin
 	diags = append(diags, lintConditionSyntax(g)...)
 	diags = append(diags, lintStylesheetSyntax(g)...)
 	diags = append(diags, lintStylesheetRejectRawModel(g)...)
-	diags = append(diags, lintStylesheetModelIDs(g, opts.Catalog)...)
 	diags = append(diags, lintAgentClassExists(g, opts.PolicyClasses)...)
 	diags = append(diags, lintRetryTargetsExist(g)...)
 	diags = append(diags, lintGoalGateHasRetry(g)...)
@@ -529,74 +523,6 @@ func lintStylesheetRejectRawModel(g *model.Graph) []Diagnostic {
 				Message:  fmt.Sprintf("model_stylesheet declares %q; raw model/provider/tool references are not allowed — use agent_class instead", key),
 				Fix:      "replace with agent_class=<class>; see 'kilroy policy list' for available classes",
 			})
-		}
-	}
-	return diags
-}
-
-// lintStylesheetModelIDs checks llm_model values in the model_stylesheet against
-// the modeldb catalog. When catalog is nil, the check is skipped silently.
-//
-// Diagnostics emitted:
-//   - stylesheet_unknown_model (WARNING): model ID is not found in the catalog for
-//     the declared provider.
-//   - stylesheet_noncanonical_model_id (ERROR): model ID is found only after
-//     normalizing dashes to dots in version numbers (Anthropic native format).
-//     The canonical catalog form (with dots) must be used instead.
-func lintStylesheetModelIDs(g *model.Graph, catalog *modeldb.Catalog) []Diagnostic {
-	if catalog == nil {
-		return nil
-	}
-	raw := strings.TrimSpace(g.Attrs["model_stylesheet"])
-	if raw == "" {
-		return nil
-	}
-	rules, err := style.ParseStylesheet(raw)
-	if err != nil {
-		// Syntax errors are already reported by lintStylesheetSyntax; skip here.
-		return nil
-	}
-
-	var diags []Diagnostic
-	// Track already-reported (provider, modelID) pairs to avoid duplicate warnings.
-	seen := map[string]bool{}
-	for _, r := range rules {
-		modelID, hasModel := r.Decls["llm_model"]
-		if !hasModel || strings.TrimSpace(modelID) == "" {
-			continue
-		}
-		modelID = strings.TrimSpace(modelID)
-		provider := strings.TrimSpace(r.Decls["llm_provider"])
-
-		key := provider + "|" + modelID
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-
-		if provider == "" {
-			// Without a provider we cannot do a targeted catalog lookup; skip.
-			continue
-		}
-
-		status := modeldb.LookupModelForProvider(catalog, provider, modelID)
-		switch status {
-		case modeldb.ModelNotFound:
-			diags = append(diags, Diagnostic{
-				Rule:     "stylesheet_unknown_model",
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("model_stylesheet: model %q not found in catalog for provider %q", modelID, provider),
-				Fix:      fmt.Sprintf("check the model ID spelling; run `kilroy modeldb suggest --provider %s` for the canonical list (Anthropic uses dots in versions, e.g. claude-sonnet-4.6)", provider),
-			})
-		case modeldb.ModelFoundNonCanonical:
-			diags = append(diags, Diagnostic{
-				Rule:     "stylesheet_noncanonical_model_id",
-				Severity: SeverityError,
-				Message:  fmt.Sprintf("model_stylesheet: model %q uses non-canonical format; version suffixes must use dots not dashes (e.g. claude-opus-4.6 not claude-opus-4-6)", modelID),
-				Fix:      fmt.Sprintf("replace dashes in the version number suffix with dots: claude-opus-4-6 → claude-opus-4.6 (or run `kilroy modeldb suggest --provider %s` for the canonical list)", provider),
-			})
-		case modeldb.ModelFoundCanonical, modeldb.ModelProviderUnknown:
-			// No warning: canonical match or catalog has no data for this provider.
 		}
 	}
 	return diags

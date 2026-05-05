@@ -18,7 +18,6 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/cond"
 	"github.com/danshapiro/kilroy/internal/attractor/dot"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/attractor/style"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
@@ -229,11 +228,6 @@ type Engine struct {
 	// Canonical run activity log (run.log). Nil until run starts.
 	RunLog *RunLog
 
-	// Model catalog snapshot metadata (metaspec).
-	ModelCatalogSHA    string
-	ModelCatalogSource string
-	ModelCatalogPath   string
-
 	// Input materialization policy + inference runtime.
 	InputMaterializationPolicy InputMaterializationPolicy
 	InputReferenceInferer      InputReferenceInferer
@@ -371,10 +365,6 @@ type PrepareOptions struct {
 	// the TypeKnownRule lint rule is added to validation so that nodes with
 	// explicit type= attributes not in this set produce a warning.
 	KnownTypes []string
-	// Catalog is an optional modeldb catalog. When non-nil, model ID catalog
-	// checks (stylesheet_unknown_model, stylesheet_noncanonical_model_id) are
-	// enabled. When nil, those checks are silently skipped.
-	Catalog *modeldb.Catalog
 	// PolicyClasses is an optional list of class names defined in policy.toml.
 	// When non-nil, agent_class= attributes on agent nodes are checked against
 	// this set; unknown classes produce an unknown_agent_class lint error.
@@ -444,7 +434,6 @@ func PrepareWithOptions(dotSource []byte, opts PrepareOptions) (*model.Graph, []
 		extraRules = append(extraRules, validate.NewTypeKnownRule(opts.KnownTypes))
 	}
 	diags := validate.ValidateWithOptions(g, validate.ValidateOptions{
-		Catalog:       opts.Catalog,
 		PolicyClasses: opts.PolicyClasses,
 	}, extraRules...)
 	var errs []string
@@ -1961,11 +1950,6 @@ func (e *Engine) writeManifest(baseSHA string) error {
 			}
 			return filepath.Join(e.LogsRoot, "run_config.json")
 		}(),
-		"modeldb": map[string]any{
-			"openrouter_model_info_path":   e.ModelCatalogPath,
-			"openrouter_model_info_sha256": e.ModelCatalogSHA,
-			"openrouter_model_info_source": e.ModelCatalogSource,
-		},
 		"cxdb": func() map[string]any {
 			if e.CXDB == nil || e.CXDB.Client == nil {
 				return map[string]any{}

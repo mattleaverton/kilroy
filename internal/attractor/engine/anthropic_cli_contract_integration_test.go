@@ -15,11 +15,6 @@ import (
 func TestAnthropicCLIContract_InvocationArtifactIncludesStreamJSONAndVerbose(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	catalog := writeCatalogForPreflight(t, `{
-  "data": [
-    {"id": "anthropic/claude-sonnet-4-20250514"}
-  ]
-}`)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "claude")
@@ -46,8 +41,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"anthropic": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = catalog
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := singleProviderDot("anthropic", "claude-sonnet-4-20250514")

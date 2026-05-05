@@ -233,18 +233,15 @@ func runChildPipeline(ctx context.Context, exec *Execution, childDotfile string,
 	_ = os.MkdirAll(childLogsRoot, 0o755)
 
 	childEng := &Engine{
-		Graph:              childGraph,
-		Options:            exec.Engine.Options,
-		DotSource:          dotSource,
-		WorktreeDir:        exec.WorktreeDir,
-		LogsRoot:           childLogsRoot,
-		Context:            exec.Context.Clone(),
-		Registry:           exec.Engine.Registry,
-		AgentBackend:       exec.Engine.AgentBackend,
-		Interviewer:        exec.Engine.Interviewer,
-		ModelCatalogSHA:    exec.Engine.ModelCatalogSHA,
-		ModelCatalogSource: exec.Engine.ModelCatalogSource,
-		ModelCatalogPath:   exec.Engine.ModelCatalogPath,
+		Graph:        childGraph,
+		Options:      exec.Engine.Options,
+		DotSource:    dotSource,
+		WorktreeDir:  exec.WorktreeDir,
+		LogsRoot:     childLogsRoot,
+		Context:      exec.Context.Clone(),
+		Registry:     exec.Engine.Registry,
+		AgentBackend: exec.Engine.AgentBackend,
+		Interviewer:  exec.Engine.Interviewer,
 	}
 
 	res, err := runSubgraphUntil(ctx, childEng, startID, exitID)

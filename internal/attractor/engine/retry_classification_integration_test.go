@@ -22,14 +22,13 @@ import (
 func TestRunWithConfig_CLIDeterministicFailure_DoesNotConsumeRetryBudget(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	callCountFile := filepath.Join(t.TempDir(), "calls.txt")
 	t.Setenv("KILROY_CALL_COUNT_FILE", callCountFile)
 	codexCLI := writeDeterministicFailingCodexCLI(t)
 
-	cfg := testOpenAICLIConfig(repo, pinned, cxdbSrv, codexCLI)
+	cfg := testOpenAICLIConfig(repo, cxdbSrv, codexCLI)
 	// Graph: node "a" fails deterministically, only edge is condition="outcome=success".
 	// No unconditional edge exists — routing gap after the fail. The key assertion
 	// is that the CLI was invoked only once (deterministic failure blocks retry).
@@ -67,14 +66,13 @@ digraph G {
 func TestRunWithConfig_CLIDeterministicFailure_BlocksStageRetryAndLoopRestart_WritesTerminalFinal(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	callCountFile := filepath.Join(t.TempDir(), "calls.txt")
 	t.Setenv("KILROY_CALL_COUNT_FILE", callCountFile)
 	codexCLI := writeDeterministicFailingCodexCLI(t)
 
-	cfg := testOpenAICLIConfig(repo, pinned, cxdbSrv, codexCLI)
+	cfg := testOpenAICLIConfig(repo, cxdbSrv, codexCLI)
 	dot := []byte(`
 digraph G {
   graph [goal="test loop restart gate", default_max_retry="3", max_restarts="5"]
@@ -169,7 +167,7 @@ digraph G {
 	}
 }
 
-func testOpenAICLIConfig(repo string, pinned string, cxdbSrv *cxdbTestServer, codexCLI string) *RunConfigFile {
+func testOpenAICLIConfig(repo string, cxdbSrv *cxdbTestServer, codexCLI string) *RunConfigFile {
 	cfg := &RunConfigFile{Version: 1}
 	cfg.Repo.Path = repo
 	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
@@ -178,8 +176,6 @@ func testOpenAICLIConfig(repo string, pinned string, cxdbSrv *cxdbTestServer, co
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: codexCLI},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	return cfg
 }

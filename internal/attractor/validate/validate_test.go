@@ -6,7 +6,6 @@ import (
 
 	"github.com/danshapiro/kilroy/internal/attractor/dot"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 )
 
 func TestValidate_StartAndExitNodeRules(t *testing.T) {
@@ -1287,24 +1286,8 @@ digraph G {
 	assertNoRule(t, diags, "status_fallback_in_prompt")
 }
 
-// --- Tests for G12: stylesheet model ID catalog validation ---
-
-// buildTestCatalog creates a minimal in-memory catalog for testing.
-func buildTestCatalog() *modeldb.Catalog {
-	return &modeldb.Catalog{
-		Models: map[string]modeldb.ModelEntry{
-			"anthropic/claude-opus-4.6":   {Provider: "anthropic"},
-			"anthropic/claude-sonnet-4.5": {Provider: "anthropic"},
-			"openai/gpt-5.4":              {Provider: "openai"},
-		},
-		CoveredProviders: map[string]bool{
-			"anthropic": true,
-			"openai":    true,
-		},
-	}
-}
-
-// minimalGraph returns a valid minimal graph with a model_stylesheet attribute set.
+// minimalGraphWithStylesheet returns a valid minimal graph with a
+// model_stylesheet attribute set.
 func minimalGraphWithStylesheet(stylesheet string) []byte {
 	return []byte(`digraph G {
   graph [model_stylesheet="` + stylesheet + `"]
@@ -1313,128 +1296,6 @@ func minimalGraphWithStylesheet(stylesheet string) []byte {
   a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="x"]
   start -> a -> exit
 }`)
-}
-
-// TestValidate_G12_UnknownModelID_EmitsWarning checks that a completely unknown
-// model ID in the stylesheet produces a stylesheet_unknown_model WARNING.
-func TestValidate_G12_UnknownModelID_EmitsWarning(t *testing.T) {
-	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_provider: anthropic; llm_model: claude-opus-999-nonexistent; }`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	catalog := buildTestCatalog()
-	diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
-	assertHasRule(t, diags, "stylesheet_unknown_model", SeverityWarning)
-}
-
-// TestValidate_G12_DashedAnthropicModelID_EmitsNonCanonicalError checks that
-// claude-opus-4-6 (dashed version number) produces a stylesheet_noncanonical_model_id
-// ERROR because the catalog canonical form is claude-opus-4.6 (dotted).
-func TestValidate_G12_DashedAnthropicModelID_EmitsNonCanonicalError(t *testing.T) {
-	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_provider: anthropic; llm_model: claude-opus-4-6; }`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	catalog := buildTestCatalog()
-	diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
-	assertHasRule(t, diags, "stylesheet_noncanonical_model_id", SeverityError)
-	assertNoRule(t, diags, "stylesheet_unknown_model")
-}
-
-// TestValidate_G12_CanonicalModelID_NoWarning checks that a valid canonical model
-// ID in the stylesheet produces no stylesheet_unknown_model or
-// stylesheet_noncanonical_model_id warnings.
-func TestValidate_G12_CanonicalModelID_NoWarning(t *testing.T) {
-	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_provider: anthropic; llm_model: claude-opus-4.6; }`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	catalog := buildTestCatalog()
-	diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
-	assertNoRule(t, diags, "stylesheet_unknown_model")
-	assertNoRule(t, diags, "stylesheet_noncanonical_model_id")
-}
-
-// TestValidate_G12_NoStylesheet_NoWarning checks that when no model_stylesheet is
-// present the catalog check produces no diagnostics.
-func TestValidate_G12_NoStylesheet_NoWarning(t *testing.T) {
-	g, err := dot.Parse([]byte(`
-digraph G {
-  start [shape=Mdiamond]
-  exit  [shape=Msquare]
-  a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="x"]
-  start -> a -> exit
-}
-`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	catalog := buildTestCatalog()
-	diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
-	assertNoRule(t, diags, "stylesheet_unknown_model")
-	assertNoRule(t, diags, "stylesheet_noncanonical_model_id")
-}
-
-// TestValidate_G12_NilCatalog_NoWarning checks that when no catalog is provided
-// the model ID checks are silently skipped.
-func TestValidate_G12_NilCatalog_NoWarning(t *testing.T) {
-	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_provider: anthropic; llm_model: claude-totally-bogus; }`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	diags := ValidateWithOptions(g, ValidateOptions{Catalog: nil})
-	assertNoRule(t, diags, "stylesheet_unknown_model")
-	assertNoRule(t, diags, "stylesheet_noncanonical_model_id")
-}
-
-// TestValidate_G12_UnknownProvider_NoWarning checks that when the catalog does not
-// cover the provider, no unknown-model warning is emitted (the catalog has no opinion).
-func TestValidate_G12_UnknownProvider_NoWarning(t *testing.T) {
-	g, err := dot.Parse(minimalGraphWithStylesheet(`* { llm_provider: cerebras; llm_model: llama-4-scout; }`))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	catalog := buildTestCatalog() // cerebras not covered
-	diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
-	assertNoRule(t, diags, "stylesheet_unknown_model")
-	assertNoRule(t, diags, "stylesheet_noncanonical_model_id")
-}
-
-// TestValidate_StylesheetModelIDFix_PointsAtModeldbSuggest checks that the Fix
-// strings on both stylesheet model-ID rules direct users at
-// `kilroy modeldb suggest --provider <P>` so they can find canonical IDs.
-func TestValidate_StylesheetModelIDFix_PointsAtModeldbSuggest(t *testing.T) {
-	cases := []struct {
-		name       string
-		stylesheet string
-		wantRule   string
-	}{
-		{"unknown", `* { llm_provider: anthropic; llm_model: claude-totally-bogus; }`, "stylesheet_unknown_model"},
-		{"noncanonical", `* { llm_provider: anthropic; llm_model: claude-opus-4-6; }`, "stylesheet_noncanonical_model_id"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			g, err := dot.Parse(minimalGraphWithStylesheet(tc.stylesheet))
-			if err != nil {
-				t.Fatalf("parse: %v", err)
-			}
-			catalog := buildTestCatalog()
-			diags := ValidateWithOptions(g, ValidateOptions{Catalog: catalog})
-			var found *Diagnostic
-			for i := range diags {
-				if diags[i].Rule == tc.wantRule {
-					found = &diags[i]
-					break
-				}
-			}
-			if found == nil {
-				t.Fatalf("expected diagnostic %q; got %+v", tc.wantRule, diags)
-			}
-			if !strings.Contains(found.Fix, "kilroy modeldb suggest --provider anthropic") {
-				t.Fatalf("Fix missing modeldb-suggest reference: %q", found.Fix)
-			}
-		})
-	}
 }
 
 // --- Tests for stylesheet_raw_model_rejected ---

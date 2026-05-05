@@ -40,7 +40,6 @@ func runStatusIngestionFixtureWithLogs(t *testing.T, canonical, worktree, invali
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 	stageStatusPath := filepath.Join(logsRoot, "a", "status.json")
 
@@ -78,8 +77,6 @@ func runStatusIngestionFixtureWithLogs(t *testing.T, canonical, worktree, invali
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -137,7 +134,6 @@ func runHeartbeatFixture(t *testing.T) []map[string]any {
 
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -161,8 +157,6 @@ echo '{"item":{"type":"message","role":"assistant","content":[{"type":"output_te
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`

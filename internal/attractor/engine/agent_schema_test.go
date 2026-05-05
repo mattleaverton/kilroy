@@ -40,7 +40,6 @@ func TestRunWithConfig_CLIBackend_OpenAISchemaFallback(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -89,8 +88,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -134,7 +131,6 @@ func TestRunWithConfig_CLIBackend_OpenAIStateDBFallbackRetry(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -181,8 +177,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -224,7 +218,6 @@ func TestRunWithConfig_CLIBackend_OpenAITimeoutRetryOnceThenSuccess(t *testing.T
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -281,8 +274,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -339,7 +330,6 @@ func TestRunWithConfig_CLIBackend_OpenAITimeoutRetryStopsAfterOneRetry(t *testin
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -372,8 +362,6 @@ sleep 5
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -501,7 +489,6 @@ func runOpenAIUnknownKeysFallback(t *testing.T) (*Result, map[string]any, map[st
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -549,8 +536,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`

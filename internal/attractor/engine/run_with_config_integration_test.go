@@ -46,8 +46,6 @@ func TestRunWithConfig_RealProfileRejectsShimOverrideE2E(t *testing.T) {
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 
 	dot := []byte(`
 digraph G {
@@ -82,8 +80,6 @@ func TestRunWithConfig_TestShimRequiresExplicitGateAndExecutable(t *testing.T) {
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: codexCLI},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 
 	dot := []byte(`
 digraph G {
@@ -135,8 +131,6 @@ func TestPreflightWithConfig_WritesPrelaunchReport(t *testing.T) {
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: codexCLI},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -189,8 +183,6 @@ func TestPreflightWithConfig_InitializesAndShutsDownCXDBWithoutRunStart(t *testi
 	cfg.Repo.Path = repo
 	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -253,7 +245,6 @@ func TestRunWithConfig_CLIBackend_StatusContractEnvInjected(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -305,8 +296,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -373,7 +362,6 @@ func TestRunWithConfig_CLIBackend_CapturesInvocationAndPersistsArtifactsToCXDB(t
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	cli := filepath.Join(t.TempDir(), "codex")
@@ -437,8 +425,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -533,10 +519,6 @@ digraph G {
 	if ctxID == "" {
 		t.Fatalf("manifest missing cxdb.context_id: %v", manifest["cxdb"])
 	}
-	modeldbInfo, _ := manifest["modeldb"].(map[string]any)
-	if strings.TrimSpace(anyToString(modeldbInfo["openrouter_model_info_path"])) == "" {
-		t.Fatalf("manifest missing modeldb.openrouter_model_info_path: %v", manifest["modeldb"])
-	}
 
 	turns := cxdbSrv.Turns(ctxID)
 	if len(turns) == 0 {
@@ -554,7 +536,6 @@ digraph G {
 		"manifest.json":                  true,
 		"checkpoint.json":                true,
 		"final.json":                     true,
-		"modeldb/openrouter_models.json": true,
 		"prompt.md":                      true,
 		"response.md":                    true,
 		"status.json":                    true,
@@ -648,7 +629,6 @@ func TestRunWithConfig_APIBackend_AgentLoop_WritesAgentEventsAndPassesReasoningE
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	var mu sync.Mutex
@@ -689,8 +669,6 @@ func TestRunWithConfig_APIBackend_AgentLoop_WritesAgentEventsAndPassesReasoningE
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendAPI, Failover: []string{}},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -729,7 +707,6 @@ func TestRunWithConfig_APIBackend_OneShot_WritesRequestAndResponseArtifacts(t *t
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -751,8 +728,6 @@ func TestRunWithConfig_APIBackend_OneShot_WritesRequestAndResponseArtifacts(t *t
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendAPI, Failover: []string{}},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -785,7 +760,6 @@ func TestRunWithConfig_APIBackend_AutoStatusFalse_FailsWhenNoStatusWritten(t *te
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -807,8 +781,6 @@ func TestRunWithConfig_APIBackend_AutoStatusFalse_FailsWhenNoStatusWritten(t *te
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendAPI, Failover: []string{}},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`

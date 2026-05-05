@@ -19,7 +19,6 @@ func TestRunWithConfig_HeartbeatEmitsDuringAgent(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Create a mock codex CLI that produces output slowly (to keep alive past heartbeat).
@@ -46,8 +45,6 @@ echo '{"item":{"type":"message","role":"assistant","content":[{"type":"output_te
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -127,7 +124,6 @@ func TestRunWithConfig_APIBackend_HeartbeatEmitsDuringAgentLoop(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Mock OpenAI server that takes 2 requests (tool call + final) with a delay.
@@ -177,8 +173,6 @@ func TestRunWithConfig_APIBackend_HeartbeatEmitsDuringAgentLoop(t *testing.T) {
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendAPI, Failover: []string{}},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`
@@ -235,7 +229,6 @@ func TestRunWithConfig_APIBackend_SessionEventsPreventFalseStallWithoutHeartbeat
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	requestCount := 0
@@ -321,8 +314,6 @@ func TestRunWithConfig_APIBackend_SessionEventsPreventFalseStallWithoutHeartbeat
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendAPI, Failover: []string{}},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.RuntimePolicy.StallTimeoutMS = &stallTimeout
 	cfg.RuntimePolicy.StallCheckIntervalMS = &stallCheck
@@ -386,7 +377,6 @@ func TestRunWithConfig_APIBackend_StallWatchdogFiresDespiteHeartbeatGoroutine(t 
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Mock OpenAI server that hangs on the first request, simulating a stalled
@@ -416,8 +406,6 @@ func TestRunWithConfig_APIBackend_StallWatchdogFiresDespiteHeartbeatGoroutine(t 
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendAPI, Failover: []string{}},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.RuntimePolicy.StallTimeoutMS = &stallTimeout
 	cfg.RuntimePolicy.StallCheckIntervalMS = &stallCheck
@@ -454,7 +442,6 @@ func TestRunWithConfig_CLIBackend_StallWatchdogFiresDespiteHeartbeatGoroutine(t 
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Create a mock codex CLI that hangs without producing any output.
@@ -476,8 +463,6 @@ func TestRunWithConfig_CLIBackend_StallWatchdogFiresDespiteHeartbeatGoroutine(t 
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.RuntimePolicy.StallTimeoutMS = &stallTimeout
 	cfg.RuntimePolicy.StallCheckIntervalMS = &stallCheck

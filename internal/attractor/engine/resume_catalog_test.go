@@ -10,58 +10,6 @@ import (
 	"time"
 )
 
-func TestResume_WithRunConfig_RequiresPerRunModelCatalogSnapshot_OpenRouterName(t *testing.T) {
-	repo := t.TempDir()
-	runCmd(t, repo, "git", "init")
-	runCmd(t, repo, "git", "config", "user.name", "tester")
-	runCmd(t, repo, "git", "config", "user.email", "tester@example.com")
-	_ = os.WriteFile(filepath.Join(repo, "README.md"), []byte("hello\n"), 0o644)
-	runCmd(t, repo, "git", "add", "-A")
-	runCmd(t, repo, "git", "commit", "-m", "init")
-
-	logsRoot := t.TempDir()
-	pinned := filepath.Join(t.TempDir(), "pinned.json")
-	_ = os.WriteFile(pinned, []byte(`{"data":[{"id":"openai/gpt-5","supported_parameters":["tools"]}]}`), 0o644)
-	cxdbSrv := newCXDBTestServer(t)
-
-	cli := filepath.Join(t.TempDir(), "codex")
-	_ = os.WriteFile(cli, []byte("#!/usr/bin/env bash\nset -euo pipefail\n\necho '{\"type\":\"done\",\"text\":\"ok\"}'\n"), 0o755)
-	cfg := &RunConfigFile{Version: 1}
-	cfg.Repo.Path = repo
-	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
-	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.LLM.CLIProfile = "test_shim"
-	cfg.LLM.Providers = map[string]ProviderConfig{"openai": {Backend: BackendCLI, Executable: cli}}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
-	cfg.Git.RunBranchPrefix = "attractor/run"
-
-	dot := []byte(`
-digraph G {
-  graph [goal="test"]
-  start [shape=Mdiamond]
-  exit  [shape=Msquare]
-  failed [shape=Msquare, terminal_status="fail"]
-  a [shape=box, llm_provider=openai, llm_model=gpt-5, prompt="say hi"]
-  start -> a
-  a -> exit   [condition="outcome=success"]
-  a -> failed [condition="outcome!=success"]
-}
-`)
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	_, err := RunWithConfig(ctx, dot, cfg, RunOptions{RunID: "resume-modeldb", LogsRoot: logsRoot, AllowTestShim: true})
-	if err != nil {
-		t.Fatalf("RunWithConfig: %v", err)
-	}
-
-	// Delete the per-run snapshot and verify resume refuses.
-	_ = os.Remove(filepath.Join(logsRoot, "modeldb", "openrouter_models.json"))
-	if _, err := Resume(ctx, logsRoot); err == nil {
-		t.Fatalf("expected error, got nil")
-	}
-}
-
 func TestResume_WithRunConfig_LoadErrorIsNotSilentlyIgnored(t *testing.T) {
 	repo := t.TempDir()
 	runCmd(t, repo, "git", "init")
@@ -84,8 +32,6 @@ func TestResume_WithRunConfig_LoadErrorIsNotSilentlyIgnored(t *testing.T) {
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
 	cfg.LLM.CLIProfile = "test_shim"
 	cfg.LLM.Providers = map[string]ProviderConfig{"openai": {Backend: BackendCLI, Executable: cli}}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	dot := []byte(`

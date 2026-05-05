@@ -16,7 +16,6 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/agents"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/tmux"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
-	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
@@ -128,8 +127,6 @@ func main() {
 		attractorIngest(args[1:])
 	case "serve":
 		attractorServe(args[1:])
-	case "modeldb":
-		attractorModelDB(args[1:])
 	case "attractor":
 		fmt.Fprintln(os.Stderr, "kilroy attractor: removed — use top-level commands. Run `kilroy --help`.")
 		os.Exit(2)
@@ -246,7 +243,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Server / model metadata:")
 	fmt.Fprintln(os.Stderr, "  kilroy serve [--addr <host:port>]")
-	fmt.Fprintln(os.Stderr, "  kilroy modeldb suggest [--refresh] [--ttl <duration>] [--provider <name>]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  kilroy --version    |    kilroy <command> --help    (per-command flags)")
 }
@@ -880,20 +876,12 @@ func attractorValidate(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	// Load the embedded model catalog so that stylesheet model ID lint rules
-	// fire. On failure, fall back to nil catalog (degraded mode: model ID
-	// checks are skipped; all other rules still run).
-	cat, catErr := modeldb.LoadEmbeddedCatalog()
-	if catErr != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: model catalog unavailable, model ID checks skipped: %v\n", catErr)
-		cat = nil
-	}
 	classes, classErr := policy.ClassNames()
 	if classErr != nil {
 		fmt.Fprintf(os.Stderr, "WARNING: policy classes unavailable, unknown_agent_class check skipped: %v\n", classErr)
 		classes = nil
 	}
-	_, diags, err := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat, PolicyClasses: classes})
+	_, diags, err := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{PolicyClasses: classes})
 	if err != nil {
 		for _, d := range diags {
 			fmt.Fprintf(os.Stderr, "%s: %s (%s)\n", d.Severity, d.Message, d.Rule)
@@ -931,15 +919,6 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 		os.Exit(1)
 	}
 
-	// Load embedded model catalog so stylesheet model ID lint rules fire in
-	// batch mode (mirrors the --graph fallback in run_with_config.go:144-148).
-	// On failure, fall back to nil catalog (degraded mode: model ID checks
-	// skipped; all other rules still run).
-	cat, catErr := modeldb.LoadEmbeddedCatalog()
-	if catErr != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: model catalog unavailable, model ID checks skipped: %v\n", catErr)
-		cat = nil
-	}
 	classes, classErr := policy.ClassNames()
 	if classErr != nil {
 		fmt.Fprintf(os.Stderr, "WARNING: policy classes unavailable, unknown_agent_class check skipped: %v\n", classErr)
@@ -963,7 +942,7 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 			results = append(results, res)
 			continue
 		}
-		_, diags, prepErr := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat, PolicyClasses: classes})
+		_, diags, prepErr := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{PolicyClasses: classes})
 		// Collect diagnostics even when Prepare returns an error.
 		for _, d := range diags {
 			switch d.Severity {

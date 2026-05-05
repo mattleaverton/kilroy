@@ -15,7 +15,6 @@ import (
 func TestKimiCodingAndZai_APIIntegration(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writeProviderCatalogForTest(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	var mu sync.Mutex
@@ -57,8 +56,6 @@ func TestKimiCodingAndZai_APIIntegration(t *testing.T) {
 		cfg.Repo.Path = repo
 		cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
 		cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-		cfg.ModelDB.OpenRouterModelInfoPath = pinned
-		cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 		cfg.Git.RunBranchPrefix = "attractor/run"
 		cfg.LLM.Providers = map[string]ProviderConfig{
 			provider: {
@@ -114,7 +111,6 @@ digraph G {
 func TestKimiAgentLoop_UsesNativeKimiProviderRouting(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writeProviderCatalogForTest(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	var mu sync.Mutex
@@ -148,8 +144,6 @@ func TestKimiAgentLoop_UsesNativeKimiProviderRouting(t *testing.T) {
 	cfg.Repo.Path = repo
 	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"kimi": {
@@ -205,7 +199,6 @@ digraph G {
 func TestKimiCoding_APIIntegration_EnforcesStreamingAndMinMaxTokensContract(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writeProviderCatalogForTest(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	var seenContract bool
@@ -230,8 +223,6 @@ func TestKimiCoding_APIIntegration_EnforcesStreamingAndMinMaxTokensContract(t *t
 	cfg.Repo.Path = repo
 	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"kimi": {
@@ -276,7 +267,6 @@ digraph G {
 func TestKimiAgentLoop_ToolRoundTrip_DoesNotDropToolResponses(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writeProviderCatalogForTest(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	var mu sync.Mutex
@@ -327,8 +317,6 @@ func TestKimiAgentLoop_ToolRoundTrip_DoesNotDropToolResponses(t *testing.T) {
 	cfg.Repo.Path = repo
 	cfg.CXDB.BinaryAddr = cxdbSrv.BinaryAddr()
 	cfg.CXDB.HTTPBaseURL = cxdbSrv.URL()
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"kimi": {

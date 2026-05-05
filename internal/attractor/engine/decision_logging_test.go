@@ -17,7 +17,6 @@ func TestDecisionLogging_ConditionalRoute(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// Graph with conditional routing: process succeeds, routing through check
 	// which routes to path_a (outcome=success) and NOT path_b (outcome=fail).
@@ -36,7 +35,7 @@ func TestDecisionLogging_ConditionalRoute(t *testing.T) {
   path_a -> done [condition="outcome=success"]
   path_b -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -122,7 +121,6 @@ func TestDecisionLogging_HillClimber(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// Hill-climber: verify fails until attempt 3, routing back to implement each time.
 	// The unconditional fallback verify->implement satisfies validation and acts as the
@@ -145,7 +143,7 @@ func TestDecisionLogging_HillClimber(t *testing.T) {
   verify -> implement [condition="outcome=fail"]
   verify -> implement
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 

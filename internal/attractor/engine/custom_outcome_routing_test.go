@@ -28,7 +28,6 @@ func TestRun_BoxNodeCustomOutcome_RoutesWithoutRetry(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Shim CLI that writes a custom outcome "needs_dod" to status.json.
@@ -51,8 +50,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	// Graph: check_dod is a box node that returns outcome=needs_dod.
@@ -138,7 +135,6 @@ func TestRun_BoxNodeCustomOutcome_NoMatchingEdge_UnconditionalFallbackRoutes(t *
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Shim CLI that writes a custom outcome "unknown_value" -- no conditional edge matches this.
@@ -161,8 +157,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	// The box node returns "unknown_value": neither "needs_dod" nor "has_dod" matches.
@@ -209,7 +203,6 @@ func TestRun_BoxNodeCustomOutcome_ImplicitFanOut(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Shim CLI that returns outcome=needs_dod.
@@ -232,8 +225,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	// Multiple conditional edges match outcome=needs_dod -> implicit fan-out to dod_a and dod_b.
@@ -301,7 +292,6 @@ func TestRun_BoxNodeCustomOutcome_ContextDependentCondition(t *testing.T) {
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
 
-	pinned := writePinnedCatalog(t)
 	cxdbSrv := newCXDBTestServer(t)
 
 	// Shim CLI that writes a custom outcome "route_me" and sets a context var.
@@ -324,8 +314,6 @@ echo '{"type":"done","text":"ok"}'
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai": {Backend: BackendCLI, Executable: cli},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.Git.RunBranchPrefix = "attractor/run"
 
 	// Edge condition uses both outcome AND context.phase — must use live context.

@@ -229,8 +229,6 @@ func newInputManifestContractConfig(t *testing.T, repo string, cliPath string) *
 			Executable: cliPath,
 		},
 	}
-	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	requireClean := false
 	cfg.Git.RequireClean = &requireClean
 	enabled := true

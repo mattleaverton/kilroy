@@ -403,9 +403,6 @@ func writeRunConfigWithCXDBExtras(t *testing.T, repo string, cxdbURL string, cxd
 		sb.WriteString(extra)
 		sb.WriteString("\n")
 	}
-	sb.WriteString("modeldb:\n")
-	sb.WriteString("  openrouter_model_info_path: " + catalogPath + "\n")
-	sb.WriteString("  openrouter_model_info_update_policy: pinned\n")
 	b := []byte(sb.String())
 	_ = os.WriteFile(path, b, 0o644)
 	return path
@@ -651,7 +648,6 @@ func TestRun_StaleBuildConfirmAllowsProceeding(t *testing.T) {
 func TestRun_RealProfileRejectsShimOverride(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
-	catalog := writePinnedCatalog(t)
 	t.Setenv("KILROY_CODEX_PATH", "/tmp/fake/codex")
 
 	graph := filepath.Join(t.TempDir(), "openai.dot")
@@ -678,10 +674,7 @@ llm:
   providers:
     openai:
       backend: cli
-modeldb:
-  openrouter_model_info_path: %s
-  openrouter_model_info_update_policy: pinned
-`, repo, catalog)), 0o644)
+`, repo)), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
 	code, out := runKilroy(t, bin, "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "real-reject-shim", "--logs-root", logsRoot)
@@ -702,7 +695,6 @@ modeldb:
 func TestRun_CLIProviderWarningAutoSkippedOnNonTTY(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
-	catalog := writePinnedCatalog(t)
 	t.Setenv("KILROY_CODEX_PATH", "/tmp/fake/codex")
 
 	graph := filepath.Join(t.TempDir(), "openai.dot")
@@ -729,10 +721,7 @@ llm:
   providers:
     openai:
       backend: cli
-modeldb:
-  openrouter_model_info_path: %s
-  openrouter_model_info_update_policy: pinned
-`, repo, catalog)), 0o644)
+`, repo)), 0o644)
 
 	logsRoot := filepath.Join(t.TempDir(), "logs")
 	// Even with "n\n" piped on stdin, the auto-skip ignores it: stdin isn't

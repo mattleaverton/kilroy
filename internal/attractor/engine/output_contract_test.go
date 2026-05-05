@@ -64,7 +64,6 @@ func TestOutputContract_Integration_CollectsAfterRun(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	dot := []byte(`digraph output_test {
   graph [goal="Test output contract", outputs="result.txt"]
@@ -74,7 +73,7 @@ func TestOutputContract_Integration_CollectsAfterRun(t *testing.T) {
   start -> produce
   produce -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

@@ -156,12 +156,11 @@ default_class = "hard_coding"
 	}
 }
 
-// TestWorkflowsValidate_RunsCatalogCheck verifies that `workflows validate
-// <name>` runs the model-ID catalog check. A workflow whose graph.dot
-// declares a non-canonical Anthropic model ID in its model_stylesheet must
-// produce a stylesheet_noncanonical_model_id ERROR in dot_issues and a
-// status of "fail".
-func TestWorkflowsValidate_RunsCatalogCheck(t *testing.T) {
+// TestWorkflowsValidate_RejectsRawModelStylesheet verifies that `workflows
+// validate <name>` rejects raw model references in stylesheets. A workflow
+// whose graph.dot declares llm_model/llm_provider in model_stylesheet must
+// produce a stylesheet_raw_model_rejected ERROR in dot_issues and status fail.
+func TestWorkflowsValidate_RejectsRawModelStylesheet(t *testing.T) {
 	bin := buildTestBinary(t)
 	pkgRoot := t.TempDir()
 	dir := filepath.Join(pkgRoot, "badmodel")
@@ -172,16 +171,16 @@ func TestWorkflowsValidate_RunsCatalogCheck(t *testing.T) {
 [workflow]
 name        = "badmodel"
 version     = "1"
-description = "Test workflow with a non-canonical model ID in its stylesheet"
+description = "Test workflow with raw model stylesheet"
 graph       = "graph.dot"
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	src := `digraph G {
-  graph [model_stylesheet="* { llm_provider: anthropic; llm_model: claude-opus-4-6; }"]
+  graph [model_stylesheet="* { llm_provider: anthropic; llm_model: claude-sonnet-4.6; }"]
   start [shape=Mdiamond]
   exit  [shape=Msquare]
-  work  [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
+  work  [shape=box, agent_class="hard_coding", prompt="Do the work. Write $KILROY_STAGE_STATUS_PATH (fallback: $KILROY_STAGE_STATUS_FALLBACK_PATH) with outcome=success when done."]
   start -> work
   work -> exit [condition="outcome=success"]
 }`
@@ -205,13 +204,13 @@ graph       = "graph.dot"
 	}
 	found := false
 	for _, d := range got.DOTIssues {
-		if d.Rule == "stylesheet_noncanonical_model_id" {
+		if d.Rule == "stylesheet_raw_model_rejected" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Fatalf("expected stylesheet_noncanonical_model_id in dot_issues, got: %+v", got.DOTIssues)
+		t.Fatalf("expected stylesheet_raw_model_rejected in dot_issues, got: %+v", got.DOTIssues)
 	}
 }
 

@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "updated_utc": "2026-02-26T00:00:00Z",
+  "repositories": {
+    "openai_codex": {
+      "url": "https://github.com/openai/codex",
+      "commit": "e4456840f56813e9fbc400d5e6e668abeb125899",
+      "local_clone": "../codex"
+    },
+    "google_gemini_cli": {
+      "url": "https://github.com/google-gemini/gemini-cli",
+      "commit": "537e56ffae2df937f5763f01663df67b8277fa4b",
+      "local_clone": "../gemini-cli"
+    }
+  },
+  "claude_reference": {
+    "type": "gist",
+    "url": "https://gist.github.com/navanchauhan/45448a396b206ed01c159cea81b01c2e",
+    "file": "claude-intel-gist.md",
+    "version": "687b74353a8db29147ce2506f71a2ae9f1262a2e",
+    "sha256": "8d9e5bc760ae677f1f9ea1ae647f14e1284c7838b2094657e93a3c87c6085181"
+  },
+  "byte_parity_files": [
+    {
+      "source": "openai_codex",
+      "local": "Sources/OmniAIAgent/Resources/CodexPrompts/prompt.md",
+      "upstream": "codex-rs/core/prompt.md",
+      "sha256": "0fae66723e9ba38083bd5a26f83f5c6c944954daaea3436084ab75eb8fdf46c8"
+    },
+    {
+      "source": "openai_codex",
+      "local": "Sources/OmniAIAgent/Resources/CodexPrompts/gpt_5_codex_prompt.md",
+      "upstream": "codex-rs/core/gpt_5_codex_prompt.md",
+      "sha256": "42842be69650ae563d212695e8d3f3591534908fd8ca33b63f742daf41f88b65"
+    },
+    {
+      "source": "openai_codex",
+      "local": "Sources/OmniAIAgent/Resources/CodexPrompts/gpt_5_2_prompt.md",
+      "upstream": "codex-rs/core/gpt_5_2_prompt.md",
+      "sha256": "c9b2fa097ac69cae82c3d2ae12271083890a96521c55ad8dc14cae5168ad3f39"
+    },
+    {
+      "source": "openai_codex",
+      "local": "Sources/OmniAIAgent/Resources/CodexPrompts/gpt_5_1_prompt.md",
+      "upstream": "codex-rs/core/gpt_5_1_prompt.md",
+      "sha256": "a2e9567a159ee2c777c540caae2e6e697942dbc89f5fb45e77dce36c73d7455d"
+    },
+    {
+      "source": "openai_codex",
+      "local": "Sources/OmniAIAgent/Resources/CodexPrompts/gpt-5.1-codex-max_prompt.md",
+      "upstream": "codex-rs/core/gpt-5.1-codex-max_prompt.md",
+      "sha256": "1b3dd697043a7f613c691a3721a450251626685b3e97ac3ad3d35ea62758a31e"
+    },
+    {
+      "source": "openai_codex",
+      "local": "Sources/OmniAIAgent/Resources/CodexPrompts/apply_patch_tool_instructions.md",
+      "upstream": "codex-rs/apply-patch/apply_patch_tool_instructions.md",
+      "sha256": "061ad07965f437292a604be2518a6fe445c19324946f9e827fffa0a3e8695d94"
+    }
+  ],
+  "derived_parity_surfaces": [
+    {
+      "surface": "claude_prompt_and_tools",
+      "local_files": [
+        "Sources/OmniAIAgent/Providers/ClaudeSystemPrompt.swift",
+        "Sources/OmniAIAgent/Tools/ClaudeParityTools.swift"
+      ],
+      "source": "claude_reference"
+    },
+    {
+      "surface": "gemini_prompt_and_tools",
+      "local_files": [
+        "Sources/OmniAIAgent/Providers/GeminiSystemPrompt.swift",
+        "Sources/OmniAIAgent/Tools/GeminiParityTools.swift"
+      ],
+      "source": "google_gemini_cli"
+    },
+    {
+      "surface": "codex_tools",
+      "local_files": [
+        "Sources/OmniAIAgent/Tools/CodexParityTools.swift"
+      ],
+      "source": "openai_codex"
+    }
+  ]
+}

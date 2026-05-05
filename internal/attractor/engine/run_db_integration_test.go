@@ -15,7 +15,6 @@ func TestRunDB_ToolGraphRecordsLifecycleEvents(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// Open a test RunDB.
 	dbPath := filepath.Join(t.TempDir(), "test-runs.db")
@@ -34,7 +33,7 @@ func TestRunDB_ToolGraphRecordsLifecycleEvents(t *testing.T) {
   start -> step_a -> step_b
   step_b -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

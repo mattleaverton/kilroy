@@ -23,8 +23,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +42,7 @@ modeldb:
   "version": 1,
   "repo": {"path": "/tmp/repo"},
   "cxdb": {"binary_addr": "127.0.0.1:9009", "http_base_url": "http://127.0.0.1:9010"},
-  "llm": {"providers": {"anthropic": {"backend": "cli"}}},
-  "modeldb": {"openrouter_model_info_path": "/tmp/catalog.json"}
+  "llm": {"providers": {"anthropic": {"backend": "cli"}}}
 }`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +69,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 unknown_top_level: true
 `), 0o644); err != nil {
 		t.Fatal(err)
@@ -103,8 +98,6 @@ llm:
     openai:
       backend: api
       backnd: cli
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +119,6 @@ func TestLoadRunConfigFile_RejectsUnknownJSONTopLevelKey(t *testing.T) {
   "repo": {"path": "/tmp/repo"},
   "cxdb": {"binary_addr": "127.0.0.1:9009", "http_base_url": "http://127.0.0.1:9010"},
   "llm": {"providers": {"openai": {"backend": "api"}}},
-  "modeldb": {"openrouter_model_info_path": "/tmp/catalog.json"},
   "unknown_top_level": true
 }`), 0o644); err != nil {
 		t.Fatal(err)
@@ -157,8 +149,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -172,43 +162,6 @@ modeldb:
 	}
 	if got, want := cfg.Task, "implement feature x"; got != want {
 		t.Fatalf("task=%q want %q", got, want)
-	}
-}
-
-func TestLoadRunConfigFile_ModelDBOpenRouterKeys(t *testing.T) {
-	dir := t.TempDir()
-	yml := filepath.Join(dir, "run.yaml")
-	if err := os.WriteFile(yml, []byte(`
-version: 1
-repo:
-  path: /tmp/repo
-cxdb:
-  binary_addr: 127.0.0.1:9009
-  http_base_url: http://127.0.0.1:9010
-llm:
-  providers:
-    openai:
-      backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/openrouter.json
-  openrouter_model_info_update_policy: pinned
-  openrouter_model_info_url: https://openrouter.ai/api/v1/models
-  openrouter_model_info_fetch_timeout_ms: 3456
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadRunConfigFile(yml)
-	if err != nil {
-		t.Fatalf("LoadRunConfigFile(yaml): %v", err)
-	}
-	if got, want := cfg.ModelDB.OpenRouterModelInfoPath, "/tmp/openrouter.json"; got != want {
-		t.Fatalf("openrouter_model_info_path=%q want %q", got, want)
-	}
-	if got, want := cfg.ModelDB.OpenRouterModelInfoUpdatePolicy, "pinned"; got != want {
-		t.Fatalf("openrouter_model_info_update_policy=%q want %q", got, want)
-	}
-	if got, want := cfg.ModelDB.OpenRouterModelInfoFetchTimeoutMS, 3456; got != want {
-		t.Fatalf("openrouter_model_info_fetch_timeout_ms=%d want %d", got, want)
 	}
 }
 
@@ -247,8 +200,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -286,8 +237,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -313,8 +262,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -341,8 +288,6 @@ llm:
   providers:
     openai:
       backend: cli
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -376,8 +321,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 inputs:
   materialize:
     enabled: true
@@ -432,8 +375,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `)
 		cfg, err := loadRunConfigFromBytesForTest(t, yml)
 		if err != nil {
@@ -463,8 +404,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 inputs:
   materialize:
     infer_with_llm: true
@@ -482,7 +421,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -508,7 +446,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     include: [docs/required.md]
@@ -526,7 +463,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     default_include: [docs/optional/*.md]
@@ -545,7 +481,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     include: []
@@ -557,7 +492,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     default_include: []
@@ -579,7 +513,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -596,7 +529,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -619,7 +551,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -647,7 +578,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -673,7 +603,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -699,7 +628,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     imports:
@@ -717,7 +645,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     include: [docs/required.md]
@@ -752,7 +679,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     fan_in:
@@ -771,7 +697,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     fan_in:
@@ -796,7 +721,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 inputs:
   materialize:
     fan_in:
@@ -816,7 +740,6 @@ func TestLoadRunConfigFile_InputMaterializationImportsConflict_JSONExplicitEmpty
   "repo": {"path": "/tmp/repo"},
   "cxdb": {"binary_addr":"127.0.0.1:9009","http_base_url":"http://127.0.0.1:9010"},
   "llm": {"providers": {"openai": {"backend":"api"}}},
-  "modeldb": {"openrouter_model_info_path":"/tmp/catalog.json"},
   "inputs": {"materialize": {"include": [], "imports": [{"pattern":"docs/required.md"}]}}
 }`), 0o644); err != nil {
 		t.Fatalf("write run.json: %v", err)
@@ -833,7 +756,6 @@ version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
 llm: { providers: { openai: { backend: api } } }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 `))
 	if err != nil {
 		t.Fatalf("LoadRunConfigFile: %v", err)
@@ -848,7 +770,6 @@ func TestLoadRunConfig_CustomAPIProviderRequiresProtocol(t *testing.T) {
 version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 llm:
   providers:
     acme:
@@ -865,7 +786,6 @@ func TestLoadRunConfig_KimiAPIProtocolAccepted(t *testing.T) {
 version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 llm:
   providers:
     kimi:
@@ -890,7 +810,6 @@ func TestLoadRunConfig_ZAIAliasAcceptedWithAPIProtocol(t *testing.T) {
 version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 llm:
   providers:
     z-ai:
@@ -909,7 +828,6 @@ func TestLoadRunConfig_BackwardCompatibleBuiltinProvidersStillValid(t *testing.T
 version: 1
 repo: { path: /tmp/repo }
 cxdb: { binary_addr: 127.0.0.1:9009, http_base_url: http://127.0.0.1:9010 }
-modeldb: { openrouter_model_info_path: /tmp/catalog.json }
 llm:
   providers:
     openai: { backend: api }
@@ -926,7 +844,6 @@ func TestBackwardCompatibility_OpenAIAnthropicGoogleStillValid(t *testing.T) {
 	cfg.Repo.Path = "/tmp/repo"
 	cfg.CXDB.BinaryAddr = "127.0.0.1:9009"
 	cfg.CXDB.HTTPBaseURL = "http://127.0.0.1:9010"
-	cfg.ModelDB.OpenRouterModelInfoPath = "/tmp/catalog.json"
 	cfg.LLM.Providers = map[string]ProviderConfig{
 		"openai":    {Backend: BackendAPI},
 		"anthropic": {Backend: BackendAPI},
@@ -953,8 +870,6 @@ llm:
   providers:
     openai:
       backend: cli
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -983,8 +898,6 @@ llm:
     openai:
       backend: cli
       executable: /tmp/fake/codex
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1011,8 +924,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 preflight:
   prompt_probes:
     transports: ["strem"]
@@ -1043,8 +954,6 @@ llm:
   providers:
     openai:
       backend: api
-modeldb:
-  openrouter_model_info_path: /tmp/catalog.json
 preflight:
   prompt_probes:
     timeout_ms: -1

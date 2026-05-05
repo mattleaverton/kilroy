@@ -20,7 +20,6 @@ import (
 func TestRun_CustomProvider_DispatcherDelegatesToCodergen(t *testing.T) {
 	bin := buildKilroyBinary(t)
 	repo := initTestRepo(t)
-	catalog := writePinnedCatalog(t)
 
 	// Fake OpenAI-compat chat-completions server. minimal valid response
 	// for one assistant turn — enough for the agent loop to terminate
@@ -51,10 +50,7 @@ func TestRun_CustomProvider_DispatcherDelegatesToCodergen(t *testing.T) {
 		"        api_key_env: MINIMAX_API_KEY\n" +
 		"        base_url: " + srv.URL + "\n" +
 		"        path: /v1/chat/completions\n" +
-		"        profile_family: openai\n" +
-		"modeldb:\n" +
-		"  openrouter_model_info_path: " + catalog + "\n" +
-		"  openrouter_model_info_update_policy: pinned\n"
+		"        profile_family: openai\n"
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write cfg: %v", err)
 	}

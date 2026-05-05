@@ -17,7 +17,6 @@ func TestCoreRegistry_ToolOnlyGraph(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	dot := []byte(`digraph core_only {
   graph [goal="Test core registry with tool-only graph"]
@@ -27,7 +26,7 @@ func TestCoreRegistry_ToolOnlyGraph(t *testing.T) {
   start -> greet
   greet -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

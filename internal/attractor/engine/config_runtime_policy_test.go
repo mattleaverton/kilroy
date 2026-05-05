@@ -20,7 +20,6 @@ func TestRuntimePolicy_DefaultsAndValidation(t *testing.T) {
 	cfg.Repo.Path = "/tmp/repo"
 	cfg.CXDB.BinaryAddr = "127.0.0.1:1"
 	cfg.CXDB.HTTPBaseURL = "http://127.0.0.1:1"
-	cfg.ModelDB.OpenRouterModelInfoPath = "/tmp/catalog.json"
 
 	zero := 0
 	cfg.RuntimePolicy.MaxLLMRetries = &zero

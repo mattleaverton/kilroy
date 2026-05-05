@@ -20,7 +20,6 @@ func TestToolGraph_Linear(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	dot := []byte(`digraph linear {
   graph [goal="Test linear traversal"]
@@ -32,7 +31,7 @@ func TestToolGraph_Linear(t *testing.T) {
   start -> step_a -> step_b -> step_c
   step_c -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -65,7 +64,6 @@ func TestToolGraph_LinearVerify_HillClimber(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// Create a counter file in the repo — verify succeeds on 3rd attempt
 	counterFile := filepath.Join(repo, "attempt_counter")
@@ -91,7 +89,7 @@ func TestToolGraph_LinearVerify_HillClimber(t *testing.T) {
   verify -> done [condition="outcome=success"]
   verify -> implement
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -112,7 +110,6 @@ func TestToolGraph_Conditional(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// process writes a marker file; path_a and path_b check for it
 	dot := []byte(`digraph conditional {
@@ -126,7 +123,7 @@ func TestToolGraph_Conditional(t *testing.T) {
   check -> path_a
   path_a -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -157,7 +154,6 @@ func TestToolGraph_FailFast(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// A node that fails with no outgoing edge causes the run to fail.
 	dot := []byte(`digraph fail_fast {
@@ -168,7 +164,7 @@ func TestToolGraph_FailFast(t *testing.T) {
   start -> failing_step
   failing_step -> done [condition="outcome!=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -202,7 +198,6 @@ func TestToolGraph_NoCXDBConfig(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	dot := []byte(`digraph no_cxdb {
   graph [goal="Test running without CXDB config"]
@@ -216,8 +211,6 @@ func TestToolGraph_NoCXDBConfig(t *testing.T) {
 	cfg := &RunConfigFile{}
 	cfg.Version = 1
 	cfg.Repo.Path = repo
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.LLM.CLIProfile = "test_shim"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -240,7 +233,6 @@ func TestToolGraph_WorkspaceLifecycle(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	dot := []byte(`digraph workspace {
   graph [goal="Test workspace setup and cleanup in flow"]
@@ -252,7 +244,7 @@ func TestToolGraph_WorkspaceLifecycle(t *testing.T) {
   start -> setup -> work -> verify
   verify -> done [condition="outcome=success"]
 }`)
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -325,7 +317,6 @@ func TestToolGraph_RunIDInjected(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	markerFile := filepath.Join(t.TempDir(), "run_id_check.txt")
 
 	dot := []byte(fmt.Sprintf(`digraph run_id {
@@ -336,7 +327,7 @@ func TestToolGraph_RunIDInjected(t *testing.T) {
   start -> check
   check -> done [condition="outcome=success"]
 }`, markerFile))
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -370,7 +361,6 @@ func TestToolGraph_DirtyRepoSucceedsWithDefaultConfig(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	// Make the repo dirty with an uncommitted file.
 	if err := os.WriteFile(filepath.Join(repo, "dirty.txt"), []byte("uncommitted"), 0o644); err != nil {
@@ -386,7 +376,7 @@ func TestToolGraph_DirtyRepoSucceedsWithDefaultConfig(t *testing.T) {
   step -> done [condition="outcome=success"]
 }`)
 	// Config does NOT set require_clean — the default (false) should allow the run.
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -408,7 +398,6 @@ func TestToolGraph_PartialConfigAutoDetectsProviders(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-partial-config")
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 
 	dot := []byte(`digraph partial {
   graph [goal="Test partial config with auto-detected providers"]
@@ -423,8 +412,6 @@ func TestToolGraph_PartialConfigAutoDetectsProviders(t *testing.T) {
 	cfg := &RunConfigFile{}
 	cfg.Version = 1
 	cfg.Repo.Path = repo
-	cfg.ModelDB.OpenRouterModelInfoPath = pinned
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.LLM.CLIProfile = "test_shim"
 	applyConfigDefaults(cfg)
 	// Simulate what loadOrBuildConfig does: auto-detect and apply.
@@ -478,7 +465,6 @@ func TestToolGraph_PredecessorEnvVars(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	outFile := filepath.Join(t.TempDir(), "predecessor_check.txt")
 
 	dot := []byte(fmt.Sprintf(`digraph predecessor_env {
@@ -493,7 +479,7 @@ func TestToolGraph_PredecessorEnvVars(t *testing.T) {
   b -> done [condition="outcome=success"]
 }`, outFile))
 
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -535,7 +521,6 @@ func TestToolGraph_PredecessorEnvVarsSuccessPath(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	repo := initTestRepo(t)
 	logsRoot := t.TempDir()
-	pinned := writePinnedCatalog(t)
 	outFile := filepath.Join(t.TempDir(), "predecessor_success_check.txt")
 
 	dot := []byte(fmt.Sprintf(`digraph predecessor_success_env {
@@ -547,7 +532,7 @@ func TestToolGraph_PredecessorEnvVarsSuccessPath(t *testing.T) {
   check -> done [condition="outcome=success"]
 }`, outFile))
 
-	cfg := minimalToolGraphConfig(repo, pinned)
+	cfg := minimalToolGraphConfig(repo)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -582,12 +567,10 @@ func TestToolGraph_PredecessorEnvVarsSuccessPath(t *testing.T) {
 }
 
 // minimalToolGraphConfig returns a RunConfigFile suitable for tool-node-only graphs.
-func minimalToolGraphConfig(repoPath, pinnedCatalogPath string) *RunConfigFile {
+func minimalToolGraphConfig(repoPath string) *RunConfigFile {
 	cfg := &RunConfigFile{}
 	cfg.Version = 1
 	cfg.Repo.Path = repoPath
-	cfg.ModelDB.OpenRouterModelInfoPath = pinnedCatalogPath
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 	cfg.LLM.CLIProfile = "test_shim"
 	return cfg
 }

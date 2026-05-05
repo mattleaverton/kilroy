@@ -155,8 +155,6 @@ func newInputMaterializationRunConfigForTest(t *testing.T, repo string) *RunConf
 	cfg.CXDB.HTTPBaseURL = "http://127.0.0.1:9"
 	cfg.LLM.CLIProfile = "real"
 	cfg.LLM.Providers = map[string]ProviderConfig{}
-	cfg.ModelDB.OpenRouterModelInfoPath = writePinnedCatalog(t)
-	cfg.ModelDB.OpenRouterModelInfoUpdatePolicy = "pinned"
 
 	requireClean := false
 	cfg.Git.RequireClean = &requireClean
