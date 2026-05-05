@@ -20,6 +20,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
 	"github.com/danshapiro/kilroy/internal/config"
+	"github.com/danshapiro/kilroy/internal/policy"
 )
 
 func workflowsCmd(args []string) {
@@ -529,8 +530,16 @@ func workflowsValidate(args []string) {
 		cat = nil
 	}
 
+	// Load embedded policy classes so the agent_class lookup lint fires.
+	// On failure, skip the check rather than blocking validate.
+	classes, classErr := policy.ClassNames()
+	if classErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: policy classes unavailable, unknown_agent_class check skipped: %v\n", classErr)
+		classes = nil
+	}
+
 	// DOT-level validation (semantic rules, terminal-edge gates, etc.).
-	for _, diag := range validate.ValidateWithOptions(g, validate.ValidateOptions{Catalog: cat}) {
+	for _, diag := range validate.ValidateWithOptions(g, validate.ValidateOptions{Catalog: cat, PolicyClasses: classes}) {
 		out.DOTIssues = append(out.DOTIssues, validateDOTIssue{
 			Severity: severityString(diag.Severity),
 			Rule:     diag.Rule,

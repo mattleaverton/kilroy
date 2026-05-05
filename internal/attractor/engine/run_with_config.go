@@ -12,6 +12,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/modeldb"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 	"github.com/danshapiro/kilroy/internal/cxdb"
+	"github.com/danshapiro/kilroy/internal/policy"
 )
 
 type runBootstrap struct {
@@ -147,12 +148,17 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 		}
 	}
 
+	// Load embedded policy classes so the unknown_agent_class lint fires.
+	// On failure, fall back to nil (degraded mode: the check is skipped).
+	policyClasses, _ := policy.ClassNames()
+
 	// Prepare graph (parse + transforms + validate).
 	g, _, err := PrepareWithOptions(dotSource, PrepareOptions{
-		RepoPath:   cfg.Repo.Path,
-		GraphDir:   overrides.GraphDir,
-		KnownTypes: reg.KnownTypes(),
-		Catalog:    earlyCatalog,
+		RepoPath:      cfg.Repo.Path,
+		GraphDir:      overrides.GraphDir,
+		KnownTypes:    reg.KnownTypes(),
+		Catalog:       earlyCatalog,
+		PolicyClasses: policyClasses,
 	})
 	if err != nil {
 		return nil, err

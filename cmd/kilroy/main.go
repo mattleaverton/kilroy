@@ -23,6 +23,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
 	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/dotenv"
+	"github.com/danshapiro/kilroy/internal/policy"
 	"github.com/danshapiro/kilroy/internal/providerspec"
 	"github.com/danshapiro/kilroy/internal/version"
 
@@ -887,7 +888,12 @@ func attractorValidate(args []string) {
 		fmt.Fprintf(os.Stderr, "WARNING: model catalog unavailable, model ID checks skipped: %v\n", catErr)
 		cat = nil
 	}
-	_, diags, err := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat})
+	classes, classErr := policy.ClassNames()
+	if classErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: policy classes unavailable, unknown_agent_class check skipped: %v\n", classErr)
+		classes = nil
+	}
+	_, diags, err := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat, PolicyClasses: classes})
 	if err != nil {
 		for _, d := range diags {
 			fmt.Fprintf(os.Stderr, "%s: %s (%s)\n", d.Severity, d.Message, d.Rule)
@@ -934,6 +940,11 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 		fmt.Fprintf(os.Stderr, "WARNING: model catalog unavailable, model ID checks skipped: %v\n", catErr)
 		cat = nil
 	}
+	classes, classErr := policy.ClassNames()
+	if classErr != nil {
+		fmt.Fprintf(os.Stderr, "WARNING: policy classes unavailable, unknown_agent_class check skipped: %v\n", classErr)
+		classes = nil
+	}
 
 	results := make([]batchFileResult, 0, len(files))
 	anyErrors := false
@@ -952,7 +963,7 @@ func attractorValidateBatch(files []string, jsonOutput bool) {
 			results = append(results, res)
 			continue
 		}
-		_, diags, prepErr := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat})
+		_, diags, prepErr := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{Catalog: cat, PolicyClasses: classes})
 		// Collect diagnostics even when Prepare returns an error.
 		for _, d := range diags {
 			switch d.Severity {

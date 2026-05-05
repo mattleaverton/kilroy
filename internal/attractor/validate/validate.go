@@ -3,6 +3,7 @@ package validate
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/danshapiro/kilroy/internal/attractor/cond"
@@ -43,6 +44,11 @@ type ValidateOptions struct {
 	// model_stylesheet against known model IDs. When nil, model ID catalog checks
 	// are skipped (the stylesheet_syntax check still runs).
 	Catalog *modeldb.Catalog
+	// PolicyClasses is the set of class names defined in policy.toml. When
+	// non-nil, agent_class= attributes on shape=box nodes are checked against
+	// this set; unknown classes produce an unknown_agent_class diagnostic.
+	// When nil, the agent_class lookup check is skipped.
+	PolicyClasses []string
 }
 
 // Validate runs all built-in lint rules and any extra rules against the graph.
@@ -68,6 +74,7 @@ func ValidateWithOptions(g *model.Graph, opts ValidateOptions, extraRules ...Lin
 	diags = append(diags, lintConditionSyntax(g)...)
 	diags = append(diags, lintStylesheetSyntax(g)...)
 	diags = append(diags, lintStylesheetModelIDs(g, opts.Catalog)...)
+	diags = append(diags, lintAgentClassExists(g, opts.PolicyClasses)...)
 	diags = append(diags, lintRetryTargetsExist(g)...)
 	diags = append(diags, lintGoalGateHasRetry(g)...)
 	diags = append(diags, lintGoalGateMissingNodeRetryTarget(g)...)
@@ -555,6 +562,54 @@ func lintStylesheetModelIDs(g *model.Graph, catalog *modeldb.Catalog) []Diagnost
 		case modeldb.ModelFoundCanonical, modeldb.ModelProviderUnknown:
 			// No warning: canonical match or catalog has no data for this provider.
 		}
+	}
+	return diags
+}
+
+// lintAgentClassExists checks that every shape=box agent node referencing a
+// non-empty agent_class= attribute names a class actually defined in
+// policy.toml. Unknown class names route through to a runtime ErrUnknownClass
+// inside policy.Resolve — this lint surfaces the typo at validate time
+// instead. When classes is nil the check is skipped (degraded mode for
+// callers that did not load the policy data).
+//
+// An empty agent_class is intentionally not flagged here: legacy stylesheet
+// paths still set llm_provider/llm_model, and a separate lint owns that path.
+func lintAgentClassExists(g *model.Graph, classes []string) []Diagnostic {
+	if classes == nil {
+		return nil
+	}
+	known := make(map[string]bool, len(classes))
+	for _, name := range classes {
+		known[name] = true
+	}
+
+	ids := make([]string, 0, len(g.Nodes))
+	for id := range g.Nodes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var diags []Diagnostic
+	for _, id := range ids {
+		n := g.Nodes[id]
+		if n == nil || n.Shape() != "box" {
+			continue
+		}
+		className := strings.TrimSpace(n.Attr("agent_class", ""))
+		if className == "" {
+			continue
+		}
+		if known[className] {
+			continue
+		}
+		diags = append(diags, Diagnostic{
+			Rule:     "unknown_agent_class",
+			Severity: SeverityError,
+			NodeID:   id,
+			Message:  fmt.Sprintf("node %q references agent_class %q which is not defined in policy.toml", id, className),
+			Fix:      "run 'kilroy policy list' to see available classes; if a new class is needed, propose adding it to internal/policy/data/policy.toml",
+		})
 	}
 	return diags
 }

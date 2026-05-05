@@ -375,6 +375,11 @@ type PrepareOptions struct {
 	// checks (stylesheet_unknown_model, stylesheet_noncanonical_model_id) are
 	// enabled. When nil, those checks are silently skipped.
 	Catalog *modeldb.Catalog
+	// PolicyClasses is an optional list of class names defined in policy.toml.
+	// When non-nil, agent_class= attributes on agent nodes are checked against
+	// this set; unknown classes produce an unknown_agent_class lint error.
+	// When nil, the check is silently skipped.
+	PolicyClasses []string
 }
 
 // Prepare parses/transforms/validates a graph.
@@ -438,7 +443,10 @@ func PrepareWithOptions(dotSource []byte, opts PrepareOptions) (*model.Graph, []
 	if len(opts.KnownTypes) > 0 {
 		extraRules = append(extraRules, validate.NewTypeKnownRule(opts.KnownTypes))
 	}
-	diags := validate.ValidateWithOptions(g, validate.ValidateOptions{Catalog: opts.Catalog}, extraRules...)
+	diags := validate.ValidateWithOptions(g, validate.ValidateOptions{
+		Catalog:       opts.Catalog,
+		PolicyClasses: opts.PolicyClasses,
+	}, extraRules...)
 	var errs []string
 	for _, d := range diags {
 		if d.Severity == validate.SeverityError {

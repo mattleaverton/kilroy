@@ -15,6 +15,7 @@ package policy
 import (
 	_ "embed"
 	"fmt"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 
@@ -73,6 +74,22 @@ type Deprecation struct {
 	Since   string `toml:"since"`
 	Sunset  string `toml:"sunset,omitempty"`
 	Message string `toml:"message"`
+}
+
+// ClassNames returns the sorted set of class names from the embedded
+// policy data. Used by validate (and other prelaunch callers) to surface
+// unknown agent_class= references at lint time rather than runtime.
+func ClassNames() ([]string, error) {
+	d, err := Load()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(d.Classes))
+	for name := range d.Classes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 // Load returns the embedded policy data, parsed once. Callers must not
