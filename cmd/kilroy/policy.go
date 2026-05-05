@@ -16,6 +16,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
+	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
@@ -462,6 +463,18 @@ func policyResolve(args []string) {
 		}
 		projectRoot = root
 	}
+
+	// Load project config (non-fatal if missing).
+	cfg, cfgErr := config.LoadConfig(projectRoot)
+	if cfgErr != nil {
+		var noCfg *config.ErrNoConfig
+		if !errors.As(cfgErr, &noCfg) {
+			fmt.Fprintf(os.Stderr, "config load: %v\n", cfgErr)
+			os.Exit(1)
+		}
+		cfg = config.Config{}
+	}
+	_ = cfg
 
 	resolver, rErr := engine.DefaultBindingResolver(projectRoot)
 	if rErr != nil {

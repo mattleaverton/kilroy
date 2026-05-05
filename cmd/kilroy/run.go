@@ -6,12 +6,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
+	"github.com/danshapiro/kilroy/internal/config"
 )
 
 // runCmd implements `kilroy run` with two argument shapes:
@@ -61,6 +63,18 @@ func runCmd(args []string) {
 		fmt.Fprintf(os.Stderr, "kilroy run: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Load project config (non-fatal if missing).
+	cfg, cfgErr := config.LoadConfig(projectRoot)
+	if cfgErr != nil {
+		var noCfg *config.ErrNoConfig
+		if !errors.As(cfgErr, &noCfg) {
+			fmt.Fprintf(os.Stderr, "kilroy run: config load: %v\n", cfgErr)
+			os.Exit(1)
+		}
+		cfg = config.Config{}
+	}
+	_ = cfg
 
 	pkg, err := workflows.Find(name, projectRoot)
 	if err != nil {
