@@ -254,6 +254,7 @@ func attractorRun(args []string) {
 	var runID string
 	var logsRoot string
 	var detach bool
+	var syncFlag bool
 	var waitForRun bool
 	var pretty bool
 	var allowTestShim bool
@@ -270,6 +271,8 @@ func attractorRun(args []string) {
 		switch args[i] {
 		case "--detach":
 			detach = true
+		case "--sync":
+			syncFlag = true
 		case "--wait":
 			waitForRun = true
 		case "--pretty":
@@ -353,6 +356,10 @@ func attractorRun(args []string) {
 
 	if graphPath == "" && packagePath == "" {
 		usage()
+		os.Exit(1)
+	}
+	if syncFlag && detach {
+		fmt.Fprintln(os.Stderr, "error: --sync and --detach are mutually exclusive")
 		os.Exit(1)
 	}
 	if err := ensureFreshKilroyBuild(confirmStaleBuild); err != nil {
@@ -478,7 +485,7 @@ func attractorRun(args []string) {
 		noCXDB = true
 	}
 
-	if detach {
+	if !syncFlag {
 		cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, false)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -580,6 +587,10 @@ func attractorRun(args []string) {
 			childArgs = append(childArgs, "--label", spec)
 		}
 		childArgs = append(childArgs, skipCLIHeadlessWarningFlag)
+		// The detached child must run the engine synchronously (foreground).
+		// Without --sync, the child would also enter the !syncFlag branch and
+		// spawn yet another detached process, causing infinite recursion.
+		childArgs = append(childArgs, "--sync")
 
 		// Pre-register the run in the DB with status=running so that
 		// `runs list`, `runs show`, and `runs wait --latest --label ...` can

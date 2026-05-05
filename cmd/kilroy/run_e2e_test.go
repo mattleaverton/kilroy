@@ -241,6 +241,7 @@ tool = "claude"
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin,
 		"run", "implement",
+		"--sync",
 		"--no-cxdb",
 		"--workspace", repo,
 		"--input", inputsPath,
