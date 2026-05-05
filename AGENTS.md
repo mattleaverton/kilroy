@@ -21,25 +21,47 @@ You are a **director**. Your job is to plan work, dispatch parallel runs of Kilr
    - **Out of scope** — explicit non-goals
    - **Report** — what to put in `result.md`
 3. **Dispatch.** Pick the workflow that fits the task (see below). Launch with `kilroy run <workflow> --input-file prompt=/path/to/T-XXX.md --label …`. Run multiple in parallel when independent.
-4. **Oversee.** `kilroy runs list` to see status. `kilroy runs show <id>` for details. Use `kilroy status --latest --watch` to follow a single run live.
+4. **Oversee.** `kilroy runs list --label wave=N` to see your wave's status. `kilroy runs show <id> --json` for details. `kilroy status --latest --watch` to follow a single run live. `kilroy runs wait <id> --timeout 1h` to block on a single run.
 5. **Integrate.** When a run finishes:
-   - Find the agent's commit: `git log --pretty='format:%h %s' main..HEAD | grep -vE 'attractor\(|critic:'`
-   - Cherry-pick onto the working branch
+   - Find the agent's code commit: `git log --pretty='format:%h %s' feat/v2-reframe..attractor/run/<run-id> | grep -vE 'attractor\(|critic:'` — the per-stage `attractor(<run-id>): agent` commit captures the change
+   - Cherry-pick onto the working branch (`git cherry-pick --no-commit <hash>` so you can clean noise before committing)
    - Drop noise files (`result.md`, `cmd/kilroy/result.md`, `cmd/kilroy/E2E_MARKER.md`, `.gitignore` re-additions)
-   - Build + test locally
-   - Squash with a clean commit message
+   - Build + test locally (use `go vet` between iterations; full suite only at the end)
+   - Commit with a clean message — squash multi-commit work into one logical commit if needed
+
+### Tagging conventions
+
+Always tag dispatched runs so you can filter and audit them later. Standard labels:
+
+- `scope=<short-slug>` — what work area this run targets
+- `wave=<N>` — which dispatch wave this is part of (helps when multiple are in flight)
+- `task=<id>` — the task ID from your spec file (e.g. `task=A`, `task=137`)
+- `workflow=<name>` — auto-set by `kilroy run` from the workflow name; you can override
+
+`kilroy runs list --label scope=foo --pretty` and `kilroy runs list --label wave=3 --status running` are how you survey state across many parallel runs.
 
 ## Workflow selection
 
-| Workflow | When | Iterations |
-|---|---|---|
-| `implement` | Surgical edit, well-scoped change with build+test verification (e.g. fix this test, add this flag, rename this function) | Single-shot + verify + retry-once |
-| `fix` | Bug fix with reproduction. Small scope, focused root-cause work | Single-shot + verify + retry-once |
-| `investigate` | Research/code-spelunking question. No code changes. Returns a research artifact | Read-only, deep_investigation class |
-| `coding-relay` | Multi-step refactor with iterative planner→coder→critic→status loop. Right when scope is bounded but spans multiple commits | 6 iterations max |
-| `review` | Review a change. Stages diff, reads context, returns a structured review | Single-shot |
+| Workflow | When | Iterations | Default class |
+|---|---|---|---|
+| `implement` | Surgical edit, well-scoped change with build+test verification (e.g. fix this test, add this flag, rename this function) | Single-shot + verify + retry-once | `hard_coding` |
+| `fix` | Bug fix with reproduction. Small scope, focused root-cause work | Single-shot + verify + retry-once | `hard_coding` |
+| `investigate` | Research/code-spelunking question. No code changes. Returns a research artifact | Read-only | `deep_investigation` |
+| `coding-relay` | Multi-step refactor with iterative planner→coder→critic→status loop. Right when scope is bounded but spans multiple commits | 6 iterations max | `hard_coding` (mixed) |
+| `review` | Review a change. Stages diff, reads context, returns a structured review | Single-shot | `hard_coding` |
+| `coding-loop` | Light code-then-review loop for less-demanding tasks | Loop until satisfied | `quick_easy` |
+| `multi-tool-exercise` | Drives multiple tools in one run; integration shape | Single-shot | `hard_coding` |
+| `build-test` | Runs build+test only; useful as a child pipeline | Single-shot | `hard_coding` |
 
-`coding-relay` uses kimi-k2 via opencode for the coder stage, anthropic SDK for planner, codex for critic. Hitting the 6-iter cap is a normal trajectory, not a failure — iter 5 typically has the work, iter 6 is polish.
+### Picking the right one
+
+- **One file or one focused change** → `implement`. Smallest spec; verifies via `go build && go test`.
+- **A bug with a known repro** → `fix`. Same shape as implement, framed around the failure.
+- **"How does X work?" or "Where is Y?"** → `investigate`. No code, returns a research artifact you can use to spec the next task.
+- **Multi-file refactor or feature** → `coding-relay`. Uses kimi-k2 via opencode for the coder stage (paid), anthropic SDK for planner, codex CLI for critic. Hitting the 6-iter cap is normal — iter 5 typically has the work, iter 6 is polish.
+- **Need a structured opinion on a diff** → `review`.
+
+If a `coding-relay` task is stalling (no progress for 10 min), the kimi connection may have died. Watchdog will fail the run; re-dispatch as `implement` if the remaining work fits.
 
 ## Public CLI surface
 
@@ -70,6 +92,53 @@ go test -timeout=300s ./...
 ```
 
 The engine package now needs `>180s` (running ~220s); `300s` is the safe default.
+
+## Authoring workflows
+
+A workflow package is `workflows/<name>/` with at minimum `workflow.toml` + `graph.dot`. Optional: `prompts/` (prompt fragments referenced from nodes) and `scripts/` (shell helpers). Use a shipped workflow as a template — `workflows/implement/` is the simplest representative.
+
+`workflow.toml` skeleton:
+
+```toml
+[workflow]
+name              = "myflow"
+version           = "1"
+description       = "What this workflow does."
+default_class     = "hard_coding"
+graph             = "graph.dot"
+
+[inputs.prompt]
+type     = "string"
+required = true
+
+[nodes.agent]
+class = "hard_coding"
+```
+
+`graph.dot` rules (enforced by validate):
+- `model_stylesheet` may declare `agent_class:` only — `llm_model:` and `llm_provider:` are rejected
+- Each agent node sets `agent_class="<known-class>"` — unknown classes fail validate with `unknown_agent_class`
+- Class names come from `kilroy policy list`. If you need a class that doesn't exist, **add it to `internal/policy/data/policy.toml` rather than naming a raw model**
+
+Use `kilroy workflows describe <name> --pretty` to see how the loader interprets your manifest, and `kilroy workflows validate <name> --pretty` to run the full prelaunch validation.
+
+## Providers and classes
+
+Built-in providers:
+- API + CLI: `openai`, `anthropic`, `google`
+- API only: `kimi`, `zai`, `cerebras`, `minimax`, `inception`
+- Aliases: `gemini`/`google_ai_studio` → `google`, `moonshot` → `kimi`, `z-ai` → `zai`
+
+Built-in classes (run `kilroy policy list` for current snapshot):
+- `hard_coding` — multi-file coding, max reasoning depth (default for `implement`/`fix`/`review`)
+- `quick_easy` — small/simple tasks, faster cheaper model
+- `deep_investigation` — research-only, large context window (default for `investigate`)
+- `architectural_critique` — design review, opinionated trade-off analysis
+- `frontend_aesthetic` — UI-shaped tasks
+- `coding_codex_subscription` / `coding_codex_apikey` — codex CLI specifically
+- `coding_gemini_subscription` / `coding_gemini_apikey` — gemini CLI specifically
+
+Each class declares an ordered fallback chain in `policy.toml`. The first chain entry whose `requires` (provider + auth method, optionally tool) is satisfied on the host wins. `kilroy policy resolve <class>` shows which one.
 
 ## Auth
 

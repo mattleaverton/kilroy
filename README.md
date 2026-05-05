@@ -33,13 +33,98 @@ Run output, artifacts, and isolated execution worktree all land under `~/.local/
 
 ## Concepts
 
-**Workflow package.** A directory under `workflows/<name>/` (or `~/.config/kilroy/workflows/<name>/`) with `workflow.toml`, `graph.dot`, and optional prompts/scripts. The CLI discovers them via `KILROY_WORKFLOW_PATHS`, project-root `.kilroy/workflows/`, and XDG config dir, in that order.
+**Workflow package.** A directory under `workflows/<name>/` (or `~/.config/kilroy/workflows/<name>/`) with `workflow.toml`, `graph.dot`, and optional `prompts/` + `scripts/`. The CLI discovers them via `KILROY_WORKFLOW_PATHS`, project-root `.kilroy/workflows/`, and XDG config dir, in that order.
 
-**Agent class.** Each stage declares a class (`hard_coding`, `deep_investigation`, `architectural_critique`, `quick_easy`, etc.) instead of a model. The class resolver maps the class to a `(provider, model, driver)` tuple via the policy chain at prelaunch — and the choice is **frozen**. Execution does not re-resolve.
+**Agent class.** Each stage declares a class (`hard_coding`, `deep_investigation`, `architectural_critique`, `quick_easy`, etc.) instead of a model. The class resolver maps the class to a `(provider, model, driver)` tuple via the policy chain at prelaunch — and the choice is **frozen**. Execution does not re-resolve. See `kilroy policy list` for the available classes and how each resolves on this machine.
 
 **Auth chain.** Each `(provider, method)` binding is satisfied by an ordered chain of credential sources (env var → CLI session → keychain). Convention: per-tool budgets use `<PROVIDER>_API_KEY_KILROY` — when set, that key beats the canonical key without unsetting it.
 
 **Validation = launch parity.** `kilroy workflows validate <name>` runs the same prelaunch checks `kilroy run` does (graph integrity, class resolution, auth resolution, CLI binary probes, credential probes). If validate passes, launch will not silently fail on these axes.
+
+## Shipped workflows
+
+| Workflow | What it does |
+|---|---|
+| `implement` | Single-shot directed change with build+test verification, retries the agent once on verify fail |
+| `fix` | Bug fix from a reproduction; smallest reasonable change |
+| `investigate` | Read-only research — gathers context, reads URLs, returns a structured artifact |
+| `review` | Reviews a diff against a goal, returns a structured review |
+| `coding-relay` | Iterative planner→coder→critic→status loop, up to 6 iterations; right for multi-step refactors |
+| `coding-loop` | Lightweight code-then-review loop with the `quick_easy` class as default |
+| `multi-tool-exercise` | Exercises tool dispatch across drivers; integration shape |
+| `build-test` | Runs build+test in a worktree; useful as a child pipeline |
+
+Run `kilroy workflows describe <name> --pretty` for inputs/outputs and the default class.
+
+## Watching, waiting, and reading runs
+
+```bash
+# Tag at launch — labels are queryable later.
+kilroy run implement --input-file prompt=spec.md --label scope=auth --label issue=42
+
+# Live snapshot of the most recent run.
+kilroy status --latest --watch
+
+# Block until terminal status (success/fail/canceled).
+kilroy runs wait <run-id> --timeout 1h
+
+# Filter runs by tag.
+kilroy runs list --label scope=auth --pretty
+
+# Inspect a finished run (artifacts on disk, summary printed).
+kilroy runs show <run-id>
+```
+
+The run's `worktree/` is an isolated git checkout — agent commits land on the run branch (`attractor/run/<run-id>`) and are picked into your working branch by hand or via `git cherry-pick`.
+
+## Authoring a workflow
+
+Minimal package layout:
+
+```
+workflows/myflow/
+├── workflow.toml
+├── graph.dot
+└── prompts/                  # optional
+```
+
+Minimal `workflow.toml`:
+
+```toml
+[workflow]
+name              = "myflow"
+version           = "1"
+description       = "What this does."
+default_class     = "hard_coding"
+graph             = "graph.dot"
+
+[inputs.prompt]
+type        = "string"
+required    = true
+description = "What to do."
+
+[nodes.agent]
+class = "hard_coding"
+```
+
+Minimal `graph.dot` (declare class on agent nodes, never raw `llm_model`):
+
+```dot
+digraph myflow {
+  graph [model_stylesheet="* { agent_class: hard_coding; }"]
+  start [shape=Mdiamond]
+  exit  [shape=Msquare]
+  agent [shape=box, agent_class="hard_coding", prompt="$prompt"]
+  start -> agent
+  agent -> exit [condition="outcome=success"]
+}
+```
+
+Validate with `kilroy workflows validate myflow --pretty` before launching. Models are not specified directly; the policy class resolver picks the model based on the class. Add a class to `internal/policy/data/policy.toml` if you need a routing shape that doesn't yet exist.
+
+## Supported providers
+
+API and CLI: `openai`, `anthropic`, `google`. API only: `kimi`, `zai`, `cerebras`, `minimax`, `inception`. Provider aliases: `gemini`/`google_ai_studio` → `google`, `moonshot` → `kimi`, `z-ai` → `zai`. CLI tools (`claude`, `codex`, `gemini`, `opencode`) reuse your logged-in subscription; API providers use `<PROVIDER>_API_KEY` (or `<PROVIDER>_API_KEY_KILROY` for kilroy-scoped budgets).
 
 ## Commands
 
