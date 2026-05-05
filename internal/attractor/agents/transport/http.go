@@ -7,6 +7,7 @@ package transport
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -257,6 +258,14 @@ func ResolveFailoverDecision(resolver *binding.Resolver, provider string) Failov
 		SourceKind: string(snap.Source.Kind),
 		SourceName: snap.Source.Name,
 	}
+}
+
+// NewRawHTTPClient returns a plain *http.Client for use by agent backends.
+// Backends that need an HTTP client should call this rather than referencing
+// http.DefaultClient directly, ensuring the transport package is the single
+// composition point for HTTP transport concerns.
+func NewRawHTTPClient() *http.Client {
+	return http.DefaultClient
 }
 
 // resolveBuiltInBaseURLOverride checks for environment variable overrides
