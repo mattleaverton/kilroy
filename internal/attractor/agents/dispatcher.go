@@ -91,9 +91,11 @@ func (d *Dispatcher) ExecuteAgent(ctx context.Context, exec *engine.Execution, n
 
 	switch dispatchPathForDriver(route.Driver) {
 	case dispatchCLI:
-		return d.tmux().ExecuteAgent(ctx, exec, node, route)
+		adapter := NewTmuxBackend(d.Tmux)
+		return adapter.NativeExecuteAgent(ctx, exec, node, route)
 	case dispatchAPI:
-		return d.codergen().ExecuteAgent(ctx, exec, node, route)
+		adapter := NewSDKBackend(d.Codergen)
+		return adapter.NativeExecuteAgent(ctx, exec, node, route)
 	default:
 		return runtime.Outcome{
 			Status: runtime.StatusFail,
