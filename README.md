@@ -35,6 +35,14 @@ Run output, artifacts, and isolated execution worktree all land under `~/.local/
 `kilroy run` is **async by default**. It validates first, then returns a JSON run
 handle with `prelaunch` details. Pass `--sync` to block until the run terminates.
 
+## Local UI
+
+Kilroy's dashboard is a peripheral developer UI, not served by `kilroy`: run it
+with `go run ./ui/server --addr 127.0.0.1:8080` or build it with
+`go build -o ./kilroy-ui ./ui/server`. It reads Kilroy's default run database
+directly and exposes dense run history, logs, outputs, policy/auth context, and
+manual maintenance actions for zombie or stale runs.
+
 ## Concepts
 
 **Workflow package.** A directory with `workflow.toml`, `graph.dot`, and

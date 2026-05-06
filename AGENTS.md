@@ -203,8 +203,13 @@ Never start a production run except as the user explicitly approved.
 - `internal/attractor/` — engine, runtime, validate, agents, policy
 - `internal/agent/`, `internal/cxdb/`, `internal/llmclient/` — agent loop, CXDB integration, provider env wiring
 - `internal/auth/binding/` — auth chain resolver
+- `ui/server/` and `ui/web/` — peripheral local dashboard; build with `go build -o ./kilroy-ui ./ui/server` or run `go run ./ui/server --addr 127.0.0.1:8080`
 - `workflows/` — shipped workflow packages
 - `scripts/` — operational helpers (e2e, cxdb start, benchmarks)
+
+The UI reads the default Kilroy run database directly and is for local run
+inspection, policy/auth visibility, artifact browsing, and explicit maintenance
+actions; keep it separate from the `kilroy` CLI serving surface.
 
 ## Coding style
 
