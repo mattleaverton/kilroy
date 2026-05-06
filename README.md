@@ -22,8 +22,8 @@ go build -o ./kilroy ./cmd/kilroy/
 ```bash
 kilroy auth init            # generate ~/.config/kilroy/auth.toml from detected env vars
 kilroy auth check           # verify every chain has a usable source
-kilroy workflows list       # show shipped workflow packages
-kilroy workflows validate implement   # confirm this would launch on this machine
+kilroy list                 # show shipped workflow packages
+kilroy check implement      # confirm this would launch on this machine
 
 kilroy run implement --input-file prompt=spec.md --label scope=my-task
 kilroy runs list --pretty
@@ -32,7 +32,8 @@ kilroy runs show <run-id>
 
 Run output, artifacts, and isolated execution worktree all land under `~/.local/state/kilroy/attractor/runs/<run-id>/`.
 
-`kilroy run` is **async by default** — it returns immediately with a run handle. Pass `--sync` to block until the run terminates.
+`kilroy run` is **async by default**. It validates first, then returns a JSON run
+handle with `prelaunch` details. Pass `--sync` to block until the run terminates.
 
 ## Concepts
 
@@ -45,7 +46,7 @@ dirs, and the source-checkout fallback for development binaries, in that order.
 
 **Auth chain.** Each `(provider, method)` binding is satisfied by an ordered chain of credential sources (env var or CLI session). Convention: per-tool budgets use `<PROVIDER>_API_KEY_KILROY` — when set, that key beats the canonical key without unsetting it.
 
-**Validation = launch parity.** `kilroy workflows validate <name>` runs the same prelaunch checks `kilroy run` does (graph integrity, class resolution, auth resolution, CLI binary probes, credential probes). If validate passes, launch will not silently fail on these axes.
+**Validation = launch parity.** `kilroy check <name>` runs the same prelaunch checks `kilroy run` does (graph integrity, class resolution, auth resolution, CLI binary probes, credential probes). If check passes, launch will not silently fail on these axes.
 
 ## Shipped workflows
 
@@ -60,7 +61,7 @@ dirs, and the source-checkout fallback for development binaries, in that order.
 | `multi-tool-exercise` | Exercises tool dispatch across drivers; integration shape |
 | `build-test` | Runs build+test in a worktree; useful as a child pipeline |
 
-Run `kilroy workflows describe <name> --pretty` for inputs/outputs and the default class.
+Run `kilroy describe <name> --pretty` for inputs/outputs and the default class.
 
 ## Watching, waiting, and reading runs
 
@@ -126,7 +127,7 @@ digraph myflow {
 }
 ```
 
-Validate with `kilroy workflows validate myflow --pretty` before launching.
+Validate with `kilroy check myflow --pretty` before launching.
 Models are not specified directly; the policy class resolver picks the model
 based on the class. Use `kilroy policy prefer <class> <model>` to move an
 existing candidate to the front of the chain, or `kilroy policy pin <class>
@@ -141,8 +142,8 @@ API and CLI: `openai`, `anthropic`, `google`. API only: `kimi`, `zai`, `cerebras
 ## Commands
 
 ```text
-kilroy run <workflow>           [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--pretty]
-kilroy workflows                list | describe <name> | validate <name>
+kilroy list | describe <name> | check <name>
+kilroy run <workflow>           [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--in-place] [--pretty]
 kilroy runs                     list | show <id> | wait <id> | prune
 kilroy status                   [--logs-root <dir> | --latest] [--watch]
 kilroy resume                   --logs-root <dir>

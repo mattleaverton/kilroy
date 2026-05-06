@@ -17,15 +17,16 @@ import (
 // run, kilroy resume, and (with detached=true + a couple extras)
 // kilroy run --detach print. Stable JSON contract.
 type runHandle struct {
-	Detached       bool   `json:"detached,omitempty"`
-	RunID          string `json:"run_id,omitempty"`
-	LogsRoot       string `json:"logs_root,omitempty"`
-	WorktreeDir    string `json:"worktree,omitempty"`
-	RunBranch      string `json:"run_branch,omitempty"`
-	FinalCommitSHA string `json:"final_commit,omitempty"`
-	CXDBUIURL      string `json:"cxdb_ui,omitempty"`
-	PIDFile        string `json:"pid_file,omitempty"`
-	FinalStatus    string `json:"final_status,omitempty"`
+	Detached       bool                    `json:"detached,omitempty"`
+	RunID          string                  `json:"run_id,omitempty"`
+	LogsRoot       string                  `json:"logs_root,omitempty"`
+	WorktreeDir    string                  `json:"worktree,omitempty"`
+	RunBranch      string                  `json:"run_branch,omitempty"`
+	FinalCommitSHA string                  `json:"final_commit,omitempty"`
+	CXDBUIURL      string                  `json:"cxdb_ui,omitempty"`
+	PIDFile        string                  `json:"pid_file,omitempty"`
+	PreLaunch      *engine.PreLaunchReport `json:"prelaunch,omitempty"`
+	FinalStatus    string                  `json:"final_status,omitempty"`
 }
 
 // runHandleFromResult builds a runHandle from an engine.Result. Empty
@@ -82,6 +83,13 @@ func emitRunHandlePretty(w io.Writer, h runHandle) {
 	}
 	if h.PIDFile != "" {
 		fmt.Fprintf(w, "pid_file=%s\n", h.PIDFile)
+	}
+	if h.PreLaunch != nil {
+		status := "ok"
+		if h.PreLaunch.Summary.Fail > 0 {
+			status = "fail"
+		}
+		fmt.Fprintf(w, "prelaunch_status=%s\n", status)
 	}
 	if h.FinalStatus != "" {
 		fmt.Fprintf(w, "final_status=%s\n", h.FinalStatus)

@@ -31,7 +31,7 @@ import (
 // `kilroy run --help` documents the common ones. The agent dispatcher
 // routes by resolved driver (CLI vs SDK), never by a CLI flag, so
 // there is no --tmux switch. For prelaunch-only validation, use
-// `kilroy workflows validate <name>`.
+// `kilroy check <name>`.
 func runCmd(args []string) {
 	if len(args) == 0 {
 		runUsage()
@@ -74,8 +74,23 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
+	if argsContainHelp(rest) {
+		workflowsDescribe([]string{name, "--pretty"})
+		os.Exit(0)
+	}
+
 	forwarded := append([]string{"--package", pkg.Dir}, rest...)
 	attractorRun(forwarded)
+}
+
+func argsContainHelp(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "-h", "--help", "help":
+			return true
+		}
+	}
+	return false
 }
 
 func runUsage() {
@@ -89,9 +104,10 @@ func runUsage() {
 	fmt.Fprintln(os.Stderr, "  --package <dir>                 direct mode: ad-hoc package (alternative to <workflow-name>)")
 	fmt.Fprintln(os.Stderr, "  --sync                          block until the run reaches a terminal state (default: async)")
 	fmt.Fprintln(os.Stderr, "  --detach                        background the run; print run handle (deprecated: async is now default)")
-	fmt.Fprintln(os.Stderr, "  --wait                          (with --sync) block until the run reaches a terminal state")
+	fmt.Fprintln(os.Stderr, "  --wait                          after async launch, block until the run reaches a terminal state")
 	fmt.Fprintln(os.Stderr, "  --pretty                        emit human-readable key=value text (default: JSON)")
 	fmt.Fprintln(os.Stderr, "  --workspace <dir>               source repo (default: cwd)")
+	fmt.Fprintln(os.Stderr, "  --in-place                      execute in --workspace instead of an isolated git worktree")
 	fmt.Fprintln(os.Stderr, "  --input <path>                  inputs map (file path; JSON or YAML)")
 	fmt.Fprintln(os.Stderr, "  --input-file KEY=PATH           file contents → inputs[KEY] (repeatable)")
 	fmt.Fprintln(os.Stderr, "  --label KEY=VALUE               attach labels to the run record (repeatable)")

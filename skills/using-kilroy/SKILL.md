@@ -1,6 +1,6 @@
 ---
 name: using-kilroy
-description: Use when operating Kilroy from a project repository: discovering workflows, launching built-in or local worker runs, checking auth and policy resolution, watching runs, reading outputs, or authoring class-routed local workflow packages.
+description: "Use when operating Kilroy from a project repository: discovering workflows, launching built-in or local worker runs, checking auth and policy resolution, watching runs, reading outputs, or authoring class-routed local workflow packages."
 ---
 
 # Using Kilroy
@@ -9,8 +9,8 @@ Kilroy is a local worker-runner for software repositories. The normal alpha
 surface is packaged workflows by name:
 
 ```text
-kilroy workflows list | describe <name> | validate <name>
-kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--pretty]
+kilroy list | describe <name> | check <name>
+kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--in-place] [--pretty]
 kilroy runs list | show <id> | wait <id>
 kilroy status [--logs-root <dir> | --latest] [--watch]
 kilroy auth defaults | init | list | check | set | prefer | remove-source | suggest-fix
@@ -18,18 +18,49 @@ kilroy policy list | show <class> | resolve <class> | prefer | pin | clear | ove
 ```
 
 `kilroy run` is async by default. Use `--sync` only when you intentionally want
-to block.
+to block. Async launch runs prelaunch validation first; if validation fails, no
+worker is launched. The returned JSON handle includes `prelaunch`.
 
 For the full external-repo guide, read `docs/usage.md`.
+
+## Investigate A Repo Question
+
+When asked to use Kilroy to answer a repo question, do this:
+
+```bash
+cd <repo>
+printf '%s\n' '<question>' > /tmp/kilroy-question.md
+kilroy run investigate \
+  --in-place \
+  --input-file question=/tmp/kilroy-question.md \
+  --label conversation=<slug> \
+  --label task=<slug> \
+  --label scope=<slug>
+```
+
+Then either return the run ID to the user or, if asked to wait:
+
+```bash
+kilroy runs wait --latest --label task=<slug> --timeout 1h
+kilroy runs show --latest --label task=<slug> --print result.md
+```
+
+Use `--in-place` for repo investigation so the worker sees the current working
+tree, including uncommitted and untracked files. Use it only for read-only
+workflows such as `investigate` and `review`. In-place workflows still write
+their declared outputs and Kilroy metadata in the repo.
+
+Do not look for a separate launch workflow. Do not run `kilroy run <name>
+--help`; use `kilroy describe <name> --pretty`.
 
 ## Worker Pattern
 
 Use Kilroy like a worker pool:
 
 1. Write one focused task/spec file.
-2. Pick a workflow with `kilroy workflows list --pretty` and
-   `kilroy workflows describe <name> --pretty`.
-3. Run `kilroy workflows validate <name> --pretty` before launch.
+2. Pick a workflow with `kilroy list --pretty` and
+   `kilroy describe <name> --pretty`.
+3. Optionally run `kilroy check <name> --pretty` for validation without launch.
 4. Launch with labels for later grouping.
 5. Watch or wait by label.
 6. Read `result.md` or other declared outputs.
@@ -58,7 +89,7 @@ Recommended labels:
 - `task=<id>`
 - `scope=<area>`
 
-There is no `kilroy discover` command; use `kilroy workflows list`.
+There is no `kilroy discover` command; use `kilroy list`.
 
 ## Workflow Discovery
 
@@ -74,7 +105,7 @@ The project root is the nearest ancestor containing `.kilroy/`. A non-empty
 `KILROY_PROJECT_ROOT` overrides discovery and must point at a directory with a
 `.kilroy/` marker.
 
-Use `kilroy workflows list --all --pretty` to include experimental workflows.
+Use `kilroy list --all --pretty` to include experimental workflows.
 
 ## Choosing Workflows
 
@@ -85,7 +116,7 @@ Use `kilroy workflows list --all --pretty` to include experimental workflows.
 - `coding-relay`: experimental planner/coder/critic/status loop.
 - `build-test`: no-LLM build/test verification, hidden unless `--all`.
 
-Use `kilroy workflows describe <name> --pretty` for exact inputs and outputs.
+Use `kilroy describe <name> --pretty` for exact inputs and outputs.
 
 ## Auth
 
@@ -198,7 +229,7 @@ digraph my_workflow {
 Validate before launch:
 
 ```bash
-kilroy workflows validate my-workflow --pretty
+kilroy check my-workflow --pretty
 ```
 
 The validator rejects raw `llm_model`, `llm_provider`, and `agent_tool` in
@@ -211,7 +242,7 @@ Important commands:
 
 ```bash
 kilroy runs list --label scope=my-task --pretty
-kilroy runs show <run-id> --pretty
+kilroy runs show <run-id>
 kilroy runs show <run-id> --outputs
 kilroy runs show <run-id> --print result.md
 kilroy status --latest --watch

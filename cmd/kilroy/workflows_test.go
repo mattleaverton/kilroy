@@ -128,6 +128,39 @@ func TestWorkflowsList_JSON_FindsAllPackages(t *testing.T) {
 	}
 }
 
+func TestTopLevelWorkflowAliases(t *testing.T) {
+	bin := buildTestBinary(t)
+	pkgRoot := t.TempDir()
+	writePackage(t, pkgRoot, "review", v2ReviewToml)
+
+	env := append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS="+pkgRoot,
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "list", args: []string{"list"}, want: `"workflows"`},
+		{name: "describe", args: []string{"describe", "review"}, want: `"name": "review"`},
+		{name: "check", args: []string{"check", "review"}, want: `"status": "ok"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command(bin, tc.args...)
+			cmd.Dir = pkgRoot
+			cmd.Env = env
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("kilroy %s failed: %v\n%s", strings.Join(tc.args, " "), err, out)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Fatalf("output missing %q\n%s", tc.want, out)
+			}
+		})
+	}
+}
+
 func TestWorkflowsDescribe_HumanOutput_ShowsAllSections(t *testing.T) {
 	bin := buildTestBinary(t)
 	pkgRoot := t.TempDir()

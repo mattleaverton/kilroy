@@ -99,6 +99,11 @@ type RunOptions struct {
 	// engine operates in plain-directory mode (no git required).
 	GitOps GitOps
 
+	// DisableGitAutoDetect keeps a nil GitOps nil even when RepoPath points at
+	// a git repository. Use for explicit in-place runs where the caller wants
+	// plain-directory execution in the source workspace.
+	DisableGitAutoDetect bool
+
 	// Structured inputs loaded from --input file. Available in prompts as
 	// $input.key and in tool_command env as KILROY_INPUT_KEY.
 	Inputs map[string]any
@@ -488,7 +493,7 @@ func (e *Engine) run(ctx context.Context) (res *Result, err error) {
 	}()
 
 	// Auto-detect git mode when GitOps is not explicitly set.
-	if e.GitOps == nil && AutoDetectGitOps != nil && e.Options.RepoPath != "" {
+	if e.GitOps == nil && !e.Options.DisableGitAutoDetect && AutoDetectGitOps != nil && e.Options.RepoPath != "" {
 		if detected := AutoDetectGitOps(e.Options.RepoPath); detected != nil {
 			e.GitOps = detected
 		}

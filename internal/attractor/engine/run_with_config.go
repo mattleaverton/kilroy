@@ -219,6 +219,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	opts.Inputs = overrides.Inputs
 	opts.GraphDir = overrides.GraphDir
 	opts.GitOps = overrides.GitOps
+	opts.DisableGitAutoDetect = overrides.DisableGitAutoDetect
 	opts.PackageDir = overrides.PackageDir
 	opts.RequiredSecrets = append([]string(nil), overrides.RequiredSecrets...)
 	if overrides.Workspace != "" {
@@ -242,7 +243,7 @@ func bootstrapRunWithConfig(ctx context.Context, dotSource []byte, cfg *RunConfi
 	}
 
 	// Auto-detect git mode when GitOps is not explicitly set.
-	if opts.GitOps == nil && AutoDetectGitOps != nil && opts.RepoPath != "" {
+	if opts.GitOps == nil && !opts.DisableGitAutoDetect && AutoDetectGitOps != nil && opts.RepoPath != "" {
 		if detected := AutoDetectGitOps(opts.RepoPath); detected != nil {
 			opts.GitOps = detected
 		}

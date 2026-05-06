@@ -68,15 +68,20 @@ If a `coding-relay` task is stalling (no progress for 10 min), the kimi connecti
 Use only this shape in scripts, prompts, and automation:
 
 ```bash
-kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--pretty]
-kilroy workflows list | describe <name> | validate <name>
+kilroy list | describe <name> | check <name>
+kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--in-place] [--pretty]
 kilroy runs list | show <id> | wait <id>
 kilroy status [--logs-root <dir> | --latest] [--watch]
 kilroy auth defaults | init | list | check | suggest-fix
 kilroy policy list | show <class> | resolve <class> | explain <run-id>
 ```
 
-`kilroy run` is **async by default** — returns a run handle immediately. Pass `--sync` to block. Older docs may show `--detach` as default; that flipped — `--detach` is a no-op now.
+`kilroy run` is **async by default** — validates before detach and returns a run
+handle with `prelaunch` details. Pass `--sync` to block. Older docs may show
+`--detach` as default; that flipped — `--detach` is a no-op now. Use
+`--in-place` only for read-only workflows that must inspect the current working
+tree instead of an isolated worktree. In-place workflows still write declared
+outputs and Kilroy metadata in that tree.
 
 `--graph`, `--package`, `--config`, `--run-id`, `--logs-root` are direct-mode escape hatches for ad-hoc work and tests, not the public path.
 
@@ -146,7 +151,7 @@ class = "hard_coding"
 - Each agent node sets `agent_class="<known-class>"` — unknown classes fail validate with `unknown_agent_class`
 - Class names come from `kilroy policy list`. If you need a class that doesn't exist, **add it to `internal/policy/data/policy.toml` rather than naming a raw model**
 
-Use `kilroy workflows describe <name> --pretty` to see how the loader interprets your manifest, and `kilroy workflows validate <name> --pretty` to run the full prelaunch validation.
+Use `kilroy describe <name> --pretty` to see how the loader interprets your manifest, and `kilroy check <name> --pretty` to run the full prelaunch validation.
 
 ## Providers and classes
 

@@ -51,7 +51,7 @@ func TestRunSurface_NoForceModelFlag(t *testing.T) {
 }
 
 // --validate must not appear in `kilroy run --help` and must be rejected
-// at parse time. Validation is now `kilroy workflows validate <name>`.
+// at parse time. Validation is now `kilroy check <name>`.
 func TestRunSurface_NoValidateFlag(t *testing.T) {
 	bin := buildKilroyBinary(t)
 
@@ -129,5 +129,17 @@ func TestRunSurface_WaitFlag_DocumentedAndAccepted(t *testing.T) {
 	}
 	if !strings.Contains(out, "--wait") {
 		t.Fatalf("kilroy run --help should mention --wait:\n%s", out)
+	}
+}
+
+func TestRunSurface_InPlaceFlag_Documented(t *testing.T) {
+	bin := buildKilroyBinary(t)
+
+	code, out := runKilroy(t, bin, "run", "--help")
+	if code != 0 {
+		t.Fatalf("kilroy run --help: exit %d\n%s", code, out)
+	}
+	if !strings.Contains(out, "--in-place") {
+		t.Fatalf("kilroy run --help should mention --in-place:\n%s", out)
 	}
 }

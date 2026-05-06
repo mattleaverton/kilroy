@@ -6,28 +6,32 @@ ordinary project repository. It is not the Kilroy self-development playbook.
 Kilroy's public alpha surface is:
 
 ```text
-kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--pretty]
-kilroy workflows list | describe <name> | validate <name>
+kilroy list | describe <name> | check <name>
+kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--in-place] [--pretty]
 kilroy runs list | show <id> | wait <id>
 kilroy status [--logs-root <dir> | --latest] [--watch]
 kilroy auth defaults | init | list | check | set | prefer | remove-source | suggest-fix
 kilroy policy list | show <class> | resolve <class> | prefer | pin | clear | overrides | explain <run-id>
 ```
 
-`kilroy run` is async by default. It prints a run handle immediately. Use
-`--sync` only when the caller should block until the run finishes.
+`kilroy run` is async by default. It runs launch validation before detaching; if
+validation fails, no worker starts. On success it prints a JSON run handle with
+`run_id`, `logs_root`, and `prelaunch`. Use `--sync` only when the caller should
+block until the run finishes.
 
 ## Current Alpha Status
 
 Fully supported today:
 
-- Discover built-in and local workflow packages with `kilroy workflows list`.
+- Discover built-in and local workflow packages with `kilroy list`.
 - Inspect workflow inputs, outputs, side effects, and classes with
-  `kilroy workflows describe <name> --pretty`.
+  `kilroy describe <name> --pretty`.
 - Validate a workflow against graph, package, class, auth, and local binary
-  checks with `kilroy workflows validate <name> --pretty`.
+  checks with `kilroy check <name> --pretty`.
 - Launch runs with labels, inspect them later by label, and read collected
   outputs from the run database.
+- Launch read-only workflows directly in the source repo with `--in-place` when
+  the worker must see uncommitted or untracked files.
 - Route agent nodes through policy classes such as `hard_coding`,
   `deep_investigation`, `quick_easy`, and `architectural_critique`.
 - Initialize and diagnose auth chains with `kilroy auth init`, `auth list`,
@@ -50,7 +54,7 @@ Partially supported today:
 
 Not supported today:
 
-- There is no `kilroy discover` command. Use `kilroy workflows list`.
+- There is no `kilroy discover` command. Use `kilroy list`.
 - There is no `kilroy policy init/copy/validate` file-management workflow.
   Use `policy prefer`, `policy pin`, `policy clear`, and `policy overrides`.
 - A downstream repo cannot define an arbitrary new class fallback chain without
@@ -66,7 +70,7 @@ Run these from the project where Kilroy will be used:
 kilroy auth init
 kilroy auth list --pretty
 kilroy auth check --pretty
-kilroy workflows list --pretty
+kilroy list --pretty
 kilroy policy list
 ```
 
@@ -106,15 +110,28 @@ $EDITOR /tmp/kilroy-tasks/T-001-investigate-auth.md
 2. Pick a workflow.
 
 ```bash
-kilroy workflows list --pretty
-kilroy workflows describe investigate --pretty
-kilroy workflows validate investigate --pretty
+kilroy list --pretty
+kilroy describe investigate --pretty
+kilroy check investigate --pretty
 ```
 
 3. Launch with labels.
 
 ```bash
 kilroy run investigate \
+  --input-file question=/tmp/kilroy-tasks/T-001-investigate-auth.md \
+  --label scope=auth \
+  --label wave=1 \
+  --label task=T-001
+```
+
+For a read-only investigation that must inspect the current repo exactly as it
+is, including dirty and untracked files, add `--in-place`. In-place workflows
+still write their declared outputs and Kilroy metadata in the repo.
+
+```bash
+kilroy run investigate \
+  --in-place \
   --input-file question=/tmp/kilroy-tasks/T-001-investigate-auth.md \
   --label scope=auth \
   --label wave=1 \
@@ -143,7 +160,7 @@ kilroy runs wait --latest --label task=T-002 --timeout 1h
 5. Read the result.
 
 ```bash
-kilroy runs show --latest --label task=T-002 --pretty
+kilroy runs show --latest --label task=T-002
 kilroy runs show --latest --label task=T-002 --outputs
 kilroy runs show --latest --label task=T-002 --print result.md
 ```
@@ -155,7 +172,7 @@ and `final_sha` when available. Review the run's worktree or branch before
 bringing changes back to the original repo. A typical integration pass is:
 
 ```bash
-kilroy runs show <run-id> --pretty
+kilroy runs show <run-id>
 git show <final-sha>
 git cherry-pick --no-commit <final-sha>
 git diff
@@ -165,7 +182,7 @@ Do not blindly merge a run branch. Inspect outputs and the diff first.
 
 ## Choosing Workflows
 
-The default `workflows list` hides experimental workflows. Add `--all` when
+The default `kilroy list` hides experimental workflows. Add `--all` when
 you deliberately want test harnesses or exploratory loops.
 
 | Workflow | Use when |
@@ -242,7 +259,7 @@ digraph my_workflow {
 Validate before launching:
 
 ```bash
-kilroy workflows validate my-workflow --pretty
+kilroy check my-workflow --pretty
 ```
 
 Use `agent_class`, not raw model IDs, for normal workflows. The validator
@@ -380,7 +397,7 @@ kilroy run investigate \
 
 kilroy runs list --label conversation=alpha-docs --pretty
 kilroy runs list --label wave=2 --status running --pretty
-kilroy runs show --latest --label task=T-101 --pretty
+kilroy runs show --latest --label task=T-101
 ```
 
 Use stable labels such as:

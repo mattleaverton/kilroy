@@ -100,6 +100,12 @@ func main() {
 		runCmd(args[1:])
 	case "workflows":
 		workflowsCmd(args[1:])
+	case "list":
+		workflowsList(args[1:])
+	case "describe":
+		workflowsDescribe(args[1:])
+	case "check":
+		workflowsValidate(args[1:])
 	// v2 top-level commands. Plan §4 / Block 1 — the `attractor`
 	// namespace is gone (the case below catches stale invocations
 	// with a redirect).
@@ -215,7 +221,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Workflow execution:")
 	fmt.Fprintln(os.Stderr, "  kilroy run <workflow-name> [flags]                     (resolves <name> via filesystem discovery)")
-	fmt.Fprintln(os.Stderr, "  kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]")
+	fmt.Fprintln(os.Stderr, "  kilroy list | describe <name> | check <name>           [--pretty | --all]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Run inspection:")
 	fmt.Fprintln(os.Stderr, "  kilroy runs list | show | wait | prune                 (JSON default; --pretty for humans)")
@@ -249,6 +255,7 @@ func attractorRun(args []string) {
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
+	var inPlace bool
 	var inputPath string
 	var inputFileSpecs []string
 	var workspace string
@@ -271,6 +278,8 @@ func attractorRun(args []string) {
 			confirmStaleBuild = true
 		case "--no-cxdb":
 			noCXDB = true
+		case "--in-place":
+			inPlace = true
 		case "--graph":
 			i++
 			if i >= len(args) {
@@ -385,6 +394,11 @@ func attractorRun(args []string) {
 			}
 		}
 	}
+	if inPlace && pkg != nil && pkg.ManifestV2 != nil &&
+		pkg.ManifestV2.SideEffects.Set && pkg.ManifestV2.SideEffects.MutatesGit {
+		fmt.Fprintln(os.Stderr, "error: --in-place is only allowed for workflows that do not declare side_effects.mutates_git=true")
+		os.Exit(1)
+	}
 	if graphPath == "" {
 		fmt.Fprintln(os.Stderr, "--graph or --package is required")
 		os.Exit(1)
@@ -443,6 +457,21 @@ func attractorRun(args []string) {
 		inputs[key] = string(data)
 	}
 
+	runWorktreeDir := ""
+	if inPlace {
+		if workspace == "" {
+			if cwd, err := os.Getwd(); err == nil {
+				workspace = cwd
+			}
+		}
+		if workspace != "" {
+			if abs, err := filepath.Abs(workspace); err == nil {
+				workspace = abs
+			}
+			runWorktreeDir = workspace
+		}
+	}
+
 	// Git integration: auto-detect based on workspace/cwd.
 	// If the workspace (or cwd) is a git repo, enable git worktrees and commits.
 	// Otherwise, run in plain-directory mode (no git required).
@@ -451,9 +480,11 @@ func attractorRun(args []string) {
 	if gitDetectDir == "" {
 		gitDetectDir, _ = os.Getwd()
 	}
-	gitHook := &workflows.GitHook{}
-	if gitHook.ValidateRepo(gitDetectDir, false) == nil {
-		gitOps = gitHook
+	if !inPlace {
+		gitHook := &workflows.GitHook{}
+		if gitHook.ValidateRepo(gitDetectDir, false) == nil {
+			gitOps = gitHook
+		}
 	}
 
 	// Default to --no-cxdb when the caller didn't supply a run config. The
@@ -490,6 +521,48 @@ func attractorRun(args []string) {
 		configPath = absConfigPath
 		logsRoot = absLogsRoot
 
+		dotSource, err := os.ReadFile(graphPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, true)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		prelaunch, err := validateRunBeforeLaunch(dotSource, cfg, engine.RunOptions{
+			RunID:                runID,
+			LogsRoot:             logsRoot,
+			WorktreeDir:          runWorktreeDir,
+			AllowTestShim:        allowTestShim,
+			DisableCXDB:          noCXDB,
+			Registry:             newLayeredRegistry(),
+			Inputs:               inputs,
+			Workspace:            workspace,
+			GraphDir:             graphDir,
+			Labels:               labels,
+			GitOps:               gitOps,
+			DisableGitAutoDetect: inPlace,
+			Invocation:           os.Args,
+			PackageDir: func() string {
+				if pkg != nil {
+					return pkg.Dir
+				}
+				return ""
+			}(),
+			RequiredSecrets: func() []string {
+				if pkg != nil && pkg.ManifestV2 != nil {
+					return append([]string(nil), pkg.ManifestV2.Secrets...)
+				}
+				return nil
+			}(),
+		})
+		if err != nil {
+			printPreLaunchError(err, prelaunch)
+			os.Exit(1)
+		}
+
 		childArgs := []string{"run", "--graph", graphPath}
 		if configPath != "" {
 			childArgs = append(childArgs, "--config", configPath)
@@ -508,6 +581,9 @@ func attractorRun(args []string) {
 		}
 		if noCXDB {
 			childArgs = append(childArgs, "--no-cxdb")
+		}
+		if inPlace {
+			childArgs = append(childArgs, "--in-place")
 		}
 		if inputPath != "" {
 			if abs, err := filepath.Abs(inputPath); err == nil {
@@ -577,7 +653,14 @@ func attractorRun(args []string) {
 			Detached: true,
 			RunID:    runID,
 			LogsRoot: logsRoot,
-			PIDFile:  filepath.Join(logsRoot, "run.pid"),
+			WorktreeDir: func() string {
+				if inPlace {
+					return runWorktreeDir
+				}
+				return ""
+			}(),
+			PIDFile:   filepath.Join(logsRoot, "run.pid"),
+			PreLaunch: prelaunch,
 		}, pretty)
 		// --wait: launch async (detach), then block until the run
 		// reaches a terminal state. Useful for CI: one command does
@@ -633,19 +716,21 @@ func attractorRun(args []string) {
 	}
 
 	res, err := engine.RunWithConfig(ctx, dotSource, cfg, engine.RunOptions{
-		RunID:         runID,
-		ParentRunID:   os.Getenv("KILROY_PARENT_RUN_ID"),
-		LogsRoot:      logsRoot,
-		AllowTestShim: allowTestShim,
-		DisableCXDB:   noCXDB,
-		Registry:      newLayeredRegistry(),
-		RunDB:         rdb,
-		Inputs:        inputs,
-		Workspace:     workspace,
-		GraphDir:      graphDir,
-		Labels:        labels,
-		GitOps:        gitOps,
-		Invocation:    os.Args,
+		RunID:                runID,
+		ParentRunID:          os.Getenv("KILROY_PARENT_RUN_ID"),
+		LogsRoot:             logsRoot,
+		AllowTestShim:        allowTestShim,
+		DisableCXDB:          noCXDB,
+		Registry:             newLayeredRegistry(),
+		RunDB:                rdb,
+		Inputs:               inputs,
+		Workspace:            workspace,
+		GraphDir:             graphDir,
+		Labels:               labels,
+		GitOps:               gitOps,
+		DisableGitAutoDetect: inPlace,
+		WorktreeDir:          runWorktreeDir,
+		Invocation:           os.Args,
 		PackageDir: func() string {
 			if pkg != nil {
 				return pkg.Dir
@@ -687,6 +772,71 @@ func attractorRun(args []string) {
 		os.Exit(0)
 	}
 	os.Exit(1)
+}
+
+func validateRunBeforeLaunch(dotSource []byte, cfg *engine.RunConfigFile, opts engine.RunOptions) (*engine.PreLaunchReport, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is nil")
+	}
+	reg := opts.Registry
+	if reg == nil {
+		reg = newLayeredRegistry()
+	}
+	policyClasses, _ := policy.ClassNames()
+	g, _, err := engine.PrepareWithOptions(dotSource, engine.PrepareOptions{
+		RepoPath:      cfg.Repo.Path,
+		GraphDir:      opts.GraphDir,
+		KnownTypes:    reg.KnownTypes(),
+		PolicyClasses: policyClasses,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(opts.Inputs) > 0 || graphDeclaredInputs(dotSource) {
+		if err := engine.ValidateRequiredInputs(g, opts.Inputs); err != nil {
+			return nil, err
+		}
+	}
+	runtimes, err := engine.ResolveProviderRuntimes(cfg)
+	if err != nil {
+		return nil, err
+	}
+	opts.ProviderRuntimes = runtimes
+	return engine.ValidatePreLaunch(g, opts, engine.PolicyDeps{ProviderRuntimes: runtimes})
+}
+
+func printPreLaunchError(err error, report *engine.PreLaunchReport) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	if report == nil {
+		return
+	}
+	if report.Package != nil && report.Package.Status == "fail" {
+		for _, e := range report.Package.Errors {
+			fmt.Fprintf(os.Stderr, "package: %s\n", e)
+		}
+	}
+	for _, n := range report.Nodes {
+		if n.Status != "fail" {
+			continue
+		}
+		prefix := "node"
+		if n.NodeID != "" {
+			prefix = "node " + n.NodeID
+		}
+		for _, e := range n.Errors {
+			fmt.Fprintf(os.Stderr, "%s: %s\n", prefix, e)
+		}
+	}
+	for _, s := range report.Secrets {
+		if s.Status != "fail" {
+			continue
+		}
+		for _, e := range s.Errors {
+			fmt.Fprintf(os.Stderr, "secret %s: %s\n", s.Name, e)
+		}
+	}
 }
 
 func normalizeRunProviderKey(provider string) string {

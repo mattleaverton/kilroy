@@ -623,7 +623,7 @@ func TestRunHelp_IncludesPerRunFlags(t *testing.T) {
 // TestRun_ValidateStillEnforcesStaleBuildGate,
 // TestRunHelp_IncludesValidateFlag — `kilroy run --validate` is gone
 // from the public CLI surface. Prelaunch validation is exposed only
-// via `kilroy workflows validate <name>`, which exercises the same
+// via `kilroy check <name>`, which exercises the same
 // engine path via the workflow registry. See workflows_test.go.
 
 func TestRun_StaleBuildRequiresConfirm(t *testing.T) {

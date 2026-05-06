@@ -105,6 +105,36 @@ func TestRunHandle_Detached_PrintsDetachedKey(t *testing.T) {
 	}
 }
 
+func TestRunHandle_DetachedIncludesPreLaunchReport(t *testing.T) {
+	h := runHandle{
+		Detached: true,
+		RunID:    "01DETACH",
+		LogsRoot: "/tmp/logs",
+		PreLaunch: &engine.PreLaunchReport{
+			SchemaVersion: "1.0.0",
+			Summary:       engine.PreLaunchSummary{OK: 1, Fail: 0},
+		},
+	}
+	var buf bytes.Buffer
+	emitRunHandle(&buf, h, false)
+
+	var got struct {
+		PreLaunch struct {
+			Summary struct {
+				OK   int `json:"ok"`
+				Fail int `json:"fail"`
+			} `json:"summary"`
+		} `json:"prelaunch"`
+	}
+	line := strings.TrimSpace(buf.String())
+	if err := json.Unmarshal([]byte(line), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, line)
+	}
+	if got.PreLaunch.Summary.OK != 1 || got.PreLaunch.Summary.Fail != 0 {
+		t.Fatalf("prelaunch summary = %+v, want ok=1 fail=0\n%s", got.PreLaunch.Summary, line)
+	}
+}
+
 func TestRunHandle_OmitsEmptyFields(t *testing.T) {
 	h := runHandle{
 		RunID:    "01MINIMAL",

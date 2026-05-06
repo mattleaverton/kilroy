@@ -69,6 +69,27 @@ func TestRunCmd_NoArgs_Exit1WithUsage(t *testing.T) {
 	}
 }
 
+func TestRunCmd_WorkflowHelpDescribesWorkflow(t *testing.T) {
+	bin := buildTestBinary(t)
+	pkgRoot := t.TempDir()
+	writePackage(t, pkgRoot, "tiny-investigate", v2InvestigateToml)
+
+	cmd := exec.Command(bin, "run", "tiny-investigate", "--help")
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS="+pkgRoot,
+		"XDG_CONFIG_HOME="+t.TempDir(),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("kilroy run tiny-investigate --help failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{"name:", "tiny-investigate", "inputs:", "question"} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("output missing %q\n%s", want, out)
+		}
+	}
+}
+
 // `kilroy run --flag` now routes to direct mode (ad-hoc graph/package
 // invocation) instead of erroring. This test exercises the direct-mode
 // dispatch with no graph: the engine surfaces a missing-input error,

@@ -24,6 +24,13 @@ func (r ProviderRuntime) APIHeaders() map[string]string {
 	return cloneStringMap(r.APIHeadersMap)
 }
 
+// ResolveProviderRuntimes exposes the same provider runtime resolution used by
+// RunWithConfig so command-level prelaunch checks can report the route that the
+// eventual run will use.
+func ResolveProviderRuntimes(cfg *RunConfigFile) (map[string]ProviderRuntime, error) {
+	return resolveProviderRuntimes(cfg)
+}
+
 func resolveProviderRuntimes(cfg *RunConfigFile) (map[string]ProviderRuntime, error) {
 	out := map[string]ProviderRuntime{}
 	originByCanonical := map[string]string{}
