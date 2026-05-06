@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/danshapiro/kilroy/internal/attractor/gitutil"
+	"github.com/danshapiro/kilroy/internal/attractor/runcontrol"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/auth"
 	"github.com/danshapiro/kilroy/internal/policy"
@@ -99,6 +101,11 @@ func newHandler() http.Handler {
 	mux.HandleFunc("GET /api/runs/{id}/events", handleGetRunEvents)
 	mux.HandleFunc("GET /api/runs/{id}/files/{path...}", handleBrowseFiles)
 	mux.HandleFunc("GET /api/runs/{id}/workspace/{path...}", handleBrowseWorkspace)
+	mux.HandleFunc("GET /api/actions/zombies", handleScanZombies)
+	mux.HandleFunc("POST /api/actions/zombies", handleApplyZombies)
+	mux.HandleFunc("GET /api/actions/stale", handleScanStale)
+	mux.HandleFunc("POST /api/actions/stale", handleApplyStale)
+	mux.HandleFunc("POST /api/runs/{id}/actions/stop", handleStopRun)
 	mux.HandleFunc("GET /api/policy", handlePolicy)
 	mux.HandleFunc("GET /api/policy/{class}", handlePolicyClass)
 	mux.HandleFunc("GET /api/policy/explain/{id}", handlePolicyExplain)
@@ -478,6 +485,247 @@ func handlePolicyExplain(w http.ResponseWriter, r *http.Request) {
 
 func handleAuth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, auth.ListAll(version.Version, auth.DefaultDetectors()))
+}
+
+func handleScanZombies(w http.ResponseWriter, _ *http.Request) {
+	db, ok := lookupDB(w)
+	if !ok {
+		return
+	}
+	defer db.Close()
+	zombies, err := runcontrol.DetectZombies(db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "detect zombie runs: "+err.Error())
+		return
+	}
+	results := runcontrol.DryRunZombieMutations(zombies)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"dry_run":       true,
+		"count":         len(results),
+		"mutated_count": 0,
+		"zombies":       results,
+	})
+}
+
+func handleApplyZombies(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "decode request: "+err.Error())
+		return
+	}
+	if !req.Confirm {
+		writeError(w, http.StatusBadRequest, "confirm=true is required")
+		return
+	}
+	db, ok := lookupDB(w)
+	if !ok {
+		return
+	}
+	defer db.Close()
+	zombies, err := runcontrol.DetectZombies(db)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "detect zombie runs: "+err.Error())
+		return
+	}
+	results := runcontrol.ApplyZombieMutations(db, zombies)
+	mutated, failed := countZombieResults(results)
+	status := http.StatusOK
+	if failed > 0 {
+		status = http.StatusInternalServerError
+	}
+	writeJSON(w, status, map[string]any{
+		"dry_run":       false,
+		"count":         len(results),
+		"mutated_count": mutated,
+		"failed_count":  failed,
+		"zombies":       results,
+	})
+}
+
+func countZombieResults(results []runcontrol.ZombieMutation) (int, int) {
+	mutated := 0
+	failed := 0
+	for _, r := range results {
+		if r.Mutated {
+			mutated++
+		} else {
+			failed++
+		}
+	}
+	return mutated, failed
+}
+
+func handleScanStale(w http.ResponseWriter, r *http.Request) {
+	maxAge, ok := parseMaxAge(w, r.URL.Query().Get("max_age"))
+	if !ok {
+		return
+	}
+	db, dbOK := lookupDB(w)
+	if !dbOK {
+		return
+	}
+	defer db.Close()
+	stale, err := runcontrol.DetectStaleRuns(db, maxAge)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "detect stale runs: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"dry_run":           true,
+		"max_age":           maxAge.String(),
+		"count":             len(stale),
+		"stale":             stale,
+		"interrupted_count": 0,
+	})
+}
+
+func handleApplyStale(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Confirm bool   `json:"confirm"`
+		MaxAge  string `json:"max_age"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "decode request: "+err.Error())
+		return
+	}
+	if !req.Confirm {
+		writeError(w, http.StatusBadRequest, "confirm=true is required")
+		return
+	}
+	maxAge, ok := parseMaxAge(w, req.MaxAge)
+	if !ok {
+		return
+	}
+	db, dbOK := lookupDB(w)
+	if !dbOK {
+		return
+	}
+	defer db.Close()
+	stale, err := runcontrol.DetectStaleRuns(db, maxAge)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "detect stale runs: "+err.Error())
+		return
+	}
+	n, err := runcontrol.ApplyStaleRuns(db, maxAge)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "mark stale runs interrupted: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"dry_run":           false,
+		"max_age":           maxAge.String(),
+		"count":             len(stale),
+		"stale":             stale,
+		"interrupted_count": n,
+	})
+}
+
+func parseMaxAge(w http.ResponseWriter, raw string) (time.Duration, bool) {
+	if strings.TrimSpace(raw) == "" {
+		return 2 * time.Hour, true
+	}
+	d, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil || d <= 0 {
+		writeError(w, http.StatusBadRequest, "max_age must be a positive duration such as 2h")
+		return 0, false
+	}
+	if d < time.Minute {
+		writeError(w, http.StatusBadRequest, "max_age must be at least 1m")
+		return 0, false
+	}
+	return d, true
+}
+
+func handleStopRun(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Confirm bool `json:"confirm"`
+		Force   bool `json:"force"`
+		GraceMS int  `json:"grace_ms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "decode request: "+err.Error())
+		return
+	}
+	if !req.Confirm {
+		writeError(w, http.StatusBadRequest, "confirm=true is required")
+		return
+	}
+	run, ok := lookupRun(w, r.PathValue("id"))
+	if !ok {
+		return
+	}
+	if !isRunningStatus(run.Status) {
+		writeError(w, http.StatusConflict, fmt.Sprintf("run status is %q, not running", run.Status))
+		return
+	}
+	if strings.TrimSpace(run.LogsRoot) == "" {
+		writeError(w, http.StatusConflict, "run has no logs_root")
+		return
+	}
+	graceMS := req.GraceMS
+	if graceMS <= 0 {
+		graceMS = 5000
+	}
+	if graceMS > 60000 {
+		graceMS = 60000
+	}
+	out, err := runKilroyStop(run.LogsRoot, graceMS, req.Force)
+	if err != nil {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"run_id": run.RunID,
+			"error":  err.Error(),
+			"output": out,
+		})
+		return
+	}
+	reason := "stopped_by_operator"
+	if strings.Contains(out, "stopped=forced") {
+		reason = "stopped_by_operator_forced"
+	}
+	if db, dbErr := rundb.Open(rundb.DefaultPath()); dbErr == nil {
+		_ = db.CompleteRun(run.RunID, "fail", reason, "", nil)
+		_ = db.Close()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"run_id":     run.RunID,
+		"stopped":    true,
+		"force":      req.Force,
+		"grace_ms":   graceMS,
+		"reason":     reason,
+		"cli_output": out,
+	})
+}
+
+func isRunningStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "running", "executing":
+		return true
+	default:
+		return false
+	}
+}
+
+func runKilroyStop(logsRoot string, graceMS int, force bool) (string, error) {
+	bin := strings.TrimSpace(os.Getenv("KILROY_UI_KILROY_BIN"))
+	if bin == "" {
+		found, err := exec.LookPath("kilroy")
+		if err != nil {
+			return "", fmt.Errorf("kilroy binary not found in PATH; set KILROY_UI_KILROY_BIN")
+		}
+		bin = found
+	}
+	args := []string{"stop", "--logs-root", logsRoot, "--grace-ms", strconv.Itoa(graceMS)}
+	if force {
+		args = append(args, "--force")
+	}
+	cmd := exec.Command(bin, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), fmt.Errorf("kilroy stop failed: %w", err)
+	}
+	return string(out), nil
 }
 
 func policyResponse(data *policy.Data) map[string]any {

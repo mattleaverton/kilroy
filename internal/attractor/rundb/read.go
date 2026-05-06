@@ -554,7 +554,8 @@ func (d *DB) GetDotSource(runID string) string {
 }
 
 // ReconcileStaleRuns marks runs stuck in "running" status as "interrupted"
-// if they were started more than maxAge ago. Called on server startup.
+// if they were started more than maxAge ago. This is an explicit maintenance
+// operation; callers should avoid running it automatically at UI startup.
 func (d *DB) ReconcileStaleRuns(maxAge time.Duration) (int, error) {
 	cutoff := time.Now().Add(-maxAge).UTC().Format(time.RFC3339Nano)
 	result, err := d.db.Exec(`UPDATE runs SET status = 'interrupted',

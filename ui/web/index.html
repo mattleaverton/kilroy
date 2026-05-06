@@ -264,16 +264,26 @@
     .btn-primary:hover { background: #60a5fa40; }
     .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
-    /* ── Launch form ─────────────────────────────────── */
-    .launch-overlay {
+    /* ── Action dialog ────────────────────────────────── */
+    .action-overlay {
       position: fixed; inset: 0; background: #0a0a0fcc; z-index: 100;
       display: flex; align-items: center; justify-content: center;
     }
-    .launch-form {
+    .action-panel {
       background: #111118; border: 1px solid #1e1e2e; border-radius: 8px;
-      padding: 20px; width: 480px; max-height: 80vh; overflow-y: auto;
+      padding: 16px; width: min(680px, calc(100vw - 28px)); max-height: 86vh; overflow-y: auto;
     }
-    .launch-form h2 { font-size: 14px; font-weight: 600; color: #e5e7eb; margin-bottom: 16px; }
+    .action-panel h2 { font-size: 14px; font-weight: 600; color: #e5e7eb; margin-bottom: 12px; }
+    .action-row {
+      display: grid; grid-template-columns: minmax(120px, 1fr) auto;
+      gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid #1e1e2e;
+    }
+    .action-title { font-size: 12px; color: #e5e7eb; }
+    .action-meta { font-size: 10px; color: #6b7280; margin-top: 2px; }
+    .action-results {
+      margin-top: 8px; padding: 8px; background: #0a0a0f; border: 1px solid #1e1e2e;
+      border-radius: 4px; max-height: 260px; overflow: auto; font-size: 11px;
+    }
     .form-group { margin-bottom: 12px; }
     .form-label { display: block; font-size: 11px; color: #6b7280; margin-bottom: 4px; }
     .form-input, .form-select {
@@ -502,6 +512,49 @@
             return res.json()
           } catch { return null }
         },
+        async scanZombies() {
+          const res = await fetch(apiUrl('/actions/zombies'))
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data.error || ('Zombie scan failed: ' + res.status))
+          return data
+        },
+        async applyZombies() {
+          const res = await fetch(apiUrl('/actions/zombies'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: true })
+          })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data.error || ('Zombie cleanup failed: ' + res.status))
+          return data
+        },
+        async scanStale(maxAge) {
+          const qs = maxAge ? '?max_age=' + encodeURIComponent(maxAge) : ''
+          const res = await fetch(apiUrl('/actions/stale') + qs)
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data.error || ('Stale scan failed: ' + res.status))
+          return data
+        },
+        async applyStale(maxAge) {
+          const res = await fetch(apiUrl('/actions/stale'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: true, max_age: maxAge || '2h' })
+          })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data.error || ('Stale reconcile failed: ' + res.status))
+          return data
+        },
+        async stopRun(runId, opts) {
+          const res = await fetch(apiUrl('/runs/' + encodeURIComponent(runId) + '/actions/stop'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({ confirm: true, force: false, grace_ms: 5000 }, opts || {}))
+          })
+          const data = await res.json().catch(() => ({}))
+          if (!res.ok) throw new Error(data.error || data.output || ('Stop failed: ' + res.status))
+          return data
+        },
         async health() {
           try { const res = await fetch(apiUrl('/health')); return res.ok } catch { return false }
         }
@@ -561,6 +614,163 @@
       const d = document.createElement('div')
       d.textContent = s
       return d.innerHTML
+    }
+
+    function renderZombieResults(data) {
+      const zombies = data?.zombies || []
+      if (!zombies.length) {
+        return '<div style="color:#4b5563">No zombie runs detected</div>'
+      }
+      return zombies.map(z => {
+        const mark = z.mutated ? '<span class="status-fail">marked fail</span>' : '<span style="color:#6b7280">dry run</span>'
+        const err = z.error ? '<div class="panel-error">' + esc(z.error) + '</div>' : ''
+        return '<div style="display:grid;grid-template-columns:120px 70px 1fr 78px;gap:8px;padding:3px 0;border-bottom:1px solid #111118">' +
+          '<span style="color:#d1d5db">' + esc(z.run_id || '') + '</span>' +
+          '<span style="color:#9ca3af">pid ' + esc(String(z.pid || 0)) + '</span>' +
+          '<span style="color:#6b7280">' + esc(z.reason || '') + '</span>' +
+          '<span>' + mark + '</span>' + err +
+          '</div>'
+      }).join('')
+    }
+
+    function renderStaleResults(data) {
+      const stale = data?.stale || []
+      if (!stale.length) {
+        return '<div style="color:#4b5563">No stale running rows detected</div>'
+      }
+      return stale.map(s => {
+        const age = s.age_seconds ? formatDuration(s.age_seconds * 1000) : ''
+        return '<div style="display:grid;grid-template-columns:120px 1fr 78px;gap:8px;padding:3px 0;border-bottom:1px solid #111118">' +
+          '<span style="color:#d1d5db">' + esc(s.run_id || '') + '</span>' +
+          '<span style="color:#6b7280">' + esc(s.graph_name || '') + '</span>' +
+          '<span style="color:#9ca3af">' + esc(age) + '</span>' +
+          '</div>'
+      }).join('')
+    }
+
+    function showActionsOverlay(onDone) {
+      const overlay = document.createElement('div')
+      overlay.className = 'action-overlay'
+      overlay.innerHTML = '<div class="action-panel">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+          '<h2 style="margin:0">Actions</h2><div style="flex:1"></div>' +
+          '<button class="panel-close" id="actions-close">×</button>' +
+        '</div>' +
+        '<div class="action-row">' +
+          '<div><div class="action-title">Zombie Runs</div><div class="action-meta">PID-aware cleanup for DB rows stuck in running after the worker process is gone.</div></div>' +
+          '<div style="display:flex;gap:6px"><button class="log-filter-btn" id="zombie-scan">Scan</button><button class="btn btn-primary" id="zombie-apply" disabled>Mark Failed</button></div>' +
+        '</div>' +
+        '<div id="zombie-status" class="action-meta"></div>' +
+        '<div id="zombie-results" class="action-results" style="display:none"></div>' +
+        '<div class="action-row">' +
+          '<div><div class="action-title">Stale Running</div><div class="action-meta">Age-only DB rows older than <input id="stale-age" class="form-input" style="display:inline-block;width:60px;padding:2px 5px;font-size:10px" value="2h"></div></div>' +
+          '<div style="display:flex;gap:6px"><button class="log-filter-btn" id="stale-scan">Scan</button><button class="btn btn-primary" id="stale-apply" disabled>Interrupt</button></div>' +
+        '</div>' +
+        '<div id="stale-status" class="action-meta"></div>' +
+        '<div id="stale-results" class="action-results" style="display:none"></div>' +
+        '<div class="action-row">' +
+          '<div><div class="action-title">Launch</div><div class="action-meta">Use the public CLI for new runs: kilroy run &lt;workflow&gt; --input-file prompt=...</div></div>' +
+          '<button class="log-filter-btn" id="launch-copy">Copy Template</button>' +
+        '</div>' +
+      '</div>'
+      document.body.appendChild(overlay)
+      let lastScan = null
+      let lastStaleScan = null
+
+      function close() {
+        overlay.remove()
+        if (onDone) onDone()
+      }
+      document.getElementById('actions-close').addEventListener('click', close)
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close() })
+
+      document.getElementById('zombie-scan').addEventListener('click', async () => { await scanZombies() })
+      document.getElementById('zombie-apply').addEventListener('click', async () => {
+        const count = lastScan?.count || 0
+        if (!count || !confirm('Mark ' + count + ' zombie run(s) as failed?')) return
+        await applyZombies()
+      })
+      document.getElementById('stale-scan').addEventListener('click', async () => { await scanStale() })
+      document.getElementById('stale-apply').addEventListener('click', async () => {
+        const count = lastStaleScan?.count || 0
+        if (!count || !confirm('Mark ' + count + ' stale run(s) interrupted?')) return
+        await applyStale()
+      })
+      document.getElementById('launch-copy').addEventListener('click', async () => {
+        const cmd = 'kilroy run <workflow> --input-file prompt=/path/to/prompt.md --label scope=<scope> --label task=<task>'
+        try { await navigator.clipboard.writeText(cmd) } catch {}
+        document.getElementById('zombie-status').textContent = 'copied launch template'
+      })
+
+      async function scanZombies() {
+        const status = document.getElementById('zombie-status')
+        const results = document.getElementById('zombie-results')
+        const apply = document.getElementById('zombie-apply')
+        status.textContent = 'scanning...'
+        apply.disabled = true
+        try {
+          lastScan = await API.scanZombies()
+          status.textContent = lastScan.count + ' zombie run(s) detected'
+          results.style.display = 'block'
+          results.innerHTML = renderZombieResults(lastScan)
+          apply.disabled = !lastScan.count
+        } catch (e) {
+          status.textContent = e.message
+        }
+      }
+
+      async function applyZombies() {
+        const status = document.getElementById('zombie-status')
+        const results = document.getElementById('zombie-results')
+        const apply = document.getElementById('zombie-apply')
+        status.textContent = 'marking...'
+        apply.disabled = true
+        try {
+          const data = await API.applyZombies()
+          lastScan = data
+          status.textContent = data.mutated_count + ' marked failed, ' + (data.failed_count || 0) + ' failed'
+          results.style.display = 'block'
+          results.innerHTML = renderZombieResults(data)
+        } catch (e) {
+          status.textContent = e.message
+        }
+      }
+
+      async function scanStale() {
+        const maxAge = document.getElementById('stale-age').value || '2h'
+        const status = document.getElementById('stale-status')
+        const results = document.getElementById('stale-results')
+        const apply = document.getElementById('stale-apply')
+        status.textContent = 'scanning...'
+        apply.disabled = true
+        try {
+          lastStaleScan = await API.scanStale(maxAge)
+          status.textContent = lastStaleScan.count + ' stale run(s) detected'
+          results.style.display = 'block'
+          results.innerHTML = renderStaleResults(lastStaleScan)
+          apply.disabled = !lastStaleScan.count
+        } catch (e) {
+          status.textContent = e.message
+        }
+      }
+
+      async function applyStale() {
+        const maxAge = document.getElementById('stale-age').value || '2h'
+        const status = document.getElementById('stale-status')
+        const results = document.getElementById('stale-results')
+        const apply = document.getElementById('stale-apply')
+        status.textContent = 'interrupting...'
+        apply.disabled = true
+        try {
+          const data = await API.applyStale(maxAge)
+          lastStaleScan = data
+          status.textContent = data.interrupted_count + ' marked interrupted'
+          results.style.display = 'block'
+          results.innerHTML = renderStaleResults(data)
+        } catch (e) {
+          status.textContent = e.message
+        }
+      }
     }
 
     // ── DOT Graph Renderer ───────────────────────────────────
@@ -695,6 +905,7 @@
       container.innerHTML = `
         <div class="header">
           <span class="header-title">Kilroy</span>
+          <button class="log-filter-btn" id="actions-btn">Actions</button>
           <span class="header-status">
             <span class="dot dot-unknown" id="health-dot"></span>
             <span id="health-text">checking…</span>
@@ -708,6 +919,7 @@
 
       const searchEl = document.getElementById('search')
       searchEl.addEventListener('input', () => { query = searchEl.value; render() })
+      document.getElementById('actions-btn').addEventListener('click', () => showActionsOverlay(load))
 
       const outputsCache = {}
       const runStatusCache = {} // track status per run to detect changes
@@ -866,6 +1078,7 @@
           <a href="#/" class="header-nav">← all runs</a>
           <span class="header-title" id="run-title">${esc(runId)}</span>
           <span id="run-badge"></span>
+          <span id="run-actions"></span>
           <span class="header-status">
             <span class="dot dot-unknown" id="sse-dot"></span>
             <span id="sse-text">loading…</span>
@@ -990,7 +1203,43 @@
           badgeHtml += ' <span style="color:#ef4444;font-size:11px;margin-left:8px">' + esc(run.failure_reason) + '</span>'
         }
         badge.innerHTML = badgeHtml
+        const actions = document.getElementById('run-actions')
+        if (actions) {
+          const stop = !isTerminal(status)
+            ? '<button class="btn btn-cancel" id="stop-run-btn">Stop</button>'
+            : ''
+          actions.innerHTML = '<span style="display:inline-flex;gap:6px;margin-left:6px">' +
+            stop + '<button class="log-filter-btn" id="detail-actions-btn">Actions</button></span>'
+          document.getElementById('detail-actions-btn')?.addEventListener('click', () => showActionsOverlay(loadRun))
+          document.getElementById('stop-run-btn')?.addEventListener('click', () => stopRun(false))
+        }
 
+      }
+
+      async function stopRun(force) {
+        if (!run || destroyed) return
+        const msg = 'Stop run ' + (run.run_id || runId).slice(0, 12) + (force ? ' with force?' : '?')
+        if (!confirm(msg)) return
+        const banner = document.getElementById('error-banner')
+        banner.style.display = 'block'
+        banner.style.background = '#111118'
+        banner.style.color = '#9ca3af'
+        banner.textContent = 'Stopping run...'
+        try {
+          await API.stopRun(run.run_id || runId, { force: !!force, grace_ms: force ? 1000 : 5000 })
+          run = await API.getRun(run.run_id || runId)
+          nodes = run.nodes || nodes
+          banner.style.display = 'none'
+          renderHeader()
+          renderSidebar()
+          renderSidebarInfo()
+          renderGraph()
+        } catch (e) {
+          banner.style.display = 'block'
+          banner.style.background = '#ef444420'
+          banner.style.color = '#ef4444'
+          banner.textContent = 'Stop failed: ' + e.message
+        }
       }
 
       // ── Sidebar: nodes ──

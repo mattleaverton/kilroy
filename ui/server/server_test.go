@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -193,7 +195,7 @@ func TestServerReadsDefaultRunDBAndExposesRunDetail(t *testing.T) {
 	}
 }
 
-func TestStaticUIIsReadOnlyAndSurfacesRoutingAuth(t *testing.T) {
+func TestStaticUIExcludesEmbeddedLaunchAndSurfacesRoutingAuthActions(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "web", "index.html"))
 	if err != nil {
 		t.Fatalf("read UI: %v", err)
@@ -204,7 +206,7 @@ func TestStaticUIIsReadOnlyAndSurfacesRoutingAuth(t *testing.T) {
 			t.Fatalf("UI still contains stale launch/cancel surface %q", stale)
 		}
 	}
-	for _, want := range []string{"Routing", "Auth", "getPolicyExplain", "getAuth"} {
+	for _, want := range []string{"Routing", "Auth", "Actions", "getPolicyExplain", "getAuth", "scanZombies", "stopRun"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("UI missing %q", want)
 		}
@@ -254,4 +256,249 @@ func TestServerStartupDoesNotMutateRunDB(t *testing.T) {
 	if run.Status != "running" {
 		t.Fatalf("server startup mutated stale run status to %q", run.Status)
 	}
+}
+
+func TestActionZombieScanIsDryRun(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	db, err := rundb.Open(rundb.DefaultPath())
+	if err != nil {
+		t.Fatalf("open rundb: %v", err)
+	}
+	defer db.Close()
+
+	logsRoot := insertRunningRunWithPID(t, db, "01TESTZOMBIEDRY", 2147483647)
+	ts := httptest.NewServer(newHandler())
+	defer ts.Close()
+
+	res, err := http.Get(ts.URL + "/api/actions/zombies")
+	if err != nil {
+		t.Fatalf("GET zombie scan: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET zombie scan status=%d", res.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode zombie scan: %v", err)
+	}
+	if got := int(out["count"].(float64)); got != 1 {
+		t.Fatalf("zombie scan count=%d, want 1: %#v", got, out)
+	}
+	if dry, ok := out["dry_run"].(bool); !ok || !dry {
+		t.Fatalf("zombie scan dry_run=%v, want true", out["dry_run"])
+	}
+
+	run, err := db.GetRun("01TESTZOMBIEDRY")
+	if err != nil {
+		t.Fatalf("get run after scan: %v", err)
+	}
+	if run.Status != "running" {
+		t.Fatalf("dry-run scan mutated status to %q", run.Status)
+	}
+	if _, err := os.Stat(filepath.Join(logsRoot, "final.json")); err == nil {
+		t.Fatalf("dry-run scan wrote final.json")
+	}
+}
+
+func TestActionZombieApplyRequiresConfirmationThenMarksFail(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	db, err := rundb.Open(rundb.DefaultPath())
+	if err != nil {
+		t.Fatalf("open rundb: %v", err)
+	}
+	defer db.Close()
+
+	logsRoot := insertRunningRunWithPID(t, db, "01TESTZOMBIEAPPLY", 2147483647)
+	ts := httptest.NewServer(newHandler())
+	defer ts.Close()
+
+	res, err := http.Post(ts.URL+"/api/actions/zombies", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("POST zombie apply without confirm: %v", err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST zombie apply without confirm status=%d, want 400", res.StatusCode)
+	}
+	run, err := db.GetRun("01TESTZOMBIEAPPLY")
+	if err != nil {
+		t.Fatalf("get run after rejected apply: %v", err)
+	}
+	if run.Status != "running" {
+		t.Fatalf("rejected apply mutated status to %q", run.Status)
+	}
+
+	reqBody := bytes.NewBufferString(`{"confirm":true}`)
+	res, err = http.Post(ts.URL+"/api/actions/zombies", "application/json", reqBody)
+	if err != nil {
+		t.Fatalf("POST zombie apply: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST zombie apply status=%d", res.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		t.Fatalf("decode zombie apply: %v", err)
+	}
+	if got := int(out["mutated_count"].(float64)); got != 1 {
+		t.Fatalf("mutated_count=%d, want 1: %#v", got, out)
+	}
+
+	run, err = db.GetRun("01TESTZOMBIEAPPLY")
+	if err != nil {
+		t.Fatalf("get run after apply: %v", err)
+	}
+	if run.Status != "fail" {
+		t.Fatalf("status=%q, want fail", run.Status)
+	}
+	if run.FailureReason != "orphan_detected" {
+		t.Fatalf("failure_reason=%q, want orphan_detected", run.FailureReason)
+	}
+	if _, err := os.Stat(filepath.Join(logsRoot, "final.json")); err != nil {
+		t.Fatalf("final.json not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(logsRoot, "progress.ndjson")); err != nil {
+		t.Fatalf("progress.ndjson not written: %v", err)
+	}
+}
+
+func TestActionStaleApplyRequiresConfirmationThenMarksInterrupted(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	db, err := rundb.Open(rundb.DefaultPath())
+	if err != nil {
+		t.Fatalf("open rundb: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.InsertRun(rundb.RunRecord{
+		RunID:     "01TESTSTALEACTION",
+		GraphName: "stale-flow",
+		Status:    "running",
+		LogsRoot:  t.TempDir(),
+		StartedAt: time.Now().Add(-3 * time.Hour).UTC(),
+	}); err != nil {
+		t.Fatalf("insert stale run: %v", err)
+	}
+	ts := httptest.NewServer(newHandler())
+	defer ts.Close()
+
+	res, err := http.Get(ts.URL + "/api/actions/stale?max_age=2h")
+	if err != nil {
+		t.Fatalf("GET stale scan: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("GET stale scan status=%d", res.StatusCode)
+	}
+	var scan map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&scan); err != nil {
+		t.Fatalf("decode stale scan: %v", err)
+	}
+	if got := int(scan["count"].(float64)); got != 1 {
+		t.Fatalf("stale scan count=%d, want 1: %#v", got, scan)
+	}
+	run, err := db.GetRun("01TESTSTALEACTION")
+	if err != nil {
+		t.Fatalf("get run after stale scan: %v", err)
+	}
+	if run.Status != "running" {
+		t.Fatalf("stale dry-run mutated status to %q", run.Status)
+	}
+
+	res, err = http.Post(ts.URL+"/api/actions/stale", "application/json", strings.NewReader(`{"max_age":"2h"}`))
+	if err != nil {
+		t.Fatalf("POST stale without confirm: %v", err)
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST stale without confirm status=%d, want 400", res.StatusCode)
+	}
+	run, err = db.GetRun("01TESTSTALEACTION")
+	if err != nil {
+		t.Fatalf("get run after rejected stale apply: %v", err)
+	}
+	if run.Status != "running" {
+		t.Fatalf("rejected stale apply mutated status to %q", run.Status)
+	}
+
+	res, err = http.Post(ts.URL+"/api/actions/stale", "application/json", strings.NewReader(`{"confirm":true,"max_age":"2h"}`))
+	if err != nil {
+		t.Fatalf("POST stale apply: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("POST stale apply status=%d", res.StatusCode)
+	}
+	var apply map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&apply); err != nil {
+		t.Fatalf("decode stale apply: %v", err)
+	}
+	if got := int(apply["interrupted_count"].(float64)); got != 1 {
+		t.Fatalf("interrupted_count=%d, want 1: %#v", got, apply)
+	}
+	run, err = db.GetRun("01TESTSTALEACTION")
+	if err != nil {
+		t.Fatalf("get run after stale apply: %v", err)
+	}
+	if run.Status != "interrupted" {
+		t.Fatalf("status=%q, want interrupted", run.Status)
+	}
+	if !strings.Contains(run.FailureReason, "marked interrupted") {
+		t.Fatalf("failure_reason=%q, want marked interrupted", run.FailureReason)
+	}
+}
+
+func TestActionStopRefusesTerminalRun(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	db, err := rundb.Open(rundb.DefaultPath())
+	if err != nil {
+		t.Fatalf("open rundb: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.InsertRun(rundb.RunRecord{
+		RunID:     "01TESTSTOPDONE",
+		GraphName: "stop-flow",
+		Status:    "success",
+		LogsRoot:  t.TempDir(),
+		StartedAt: time.Now().Add(-time.Hour).UTC(),
+	}); err != nil {
+		t.Fatalf("insert terminal run: %v", err)
+	}
+	ts := httptest.NewServer(newHandler())
+	defer ts.Close()
+
+	res, err := http.Post(ts.URL+"/api/runs/01TESTSTOPDONE/actions/stop", "application/json", strings.NewReader(`{"confirm":true}`))
+	if err != nil {
+		t.Fatalf("POST stop terminal run: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusConflict {
+		t.Fatalf("POST stop terminal status=%d, want 409", res.StatusCode)
+	}
+}
+
+func insertRunningRunWithPID(t *testing.T, db *rundb.DB, runID string, pid int) string {
+	t.Helper()
+	logsRoot := t.TempDir()
+	if err := db.InsertRun(rundb.RunRecord{
+		RunID:     runID,
+		GraphName: "zombie-flow",
+		Status:    "running",
+		LogsRoot:  logsRoot,
+		StartedAt: time.Now().Add(-time.Hour).UTC(),
+	}); err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	pidPath := filepath.Join(logsRoot, "run.pid")
+	if err := os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", pid)), 0o644); err != nil {
+		t.Fatalf("write run.pid: %v", err)
+	}
+	old := time.Now().Add(-20 * time.Minute)
+	if err := os.Chtimes(pidPath, old, old); err != nil {
+		t.Fatalf("age run.pid: %v", err)
+	}
+	return logsRoot
 }
