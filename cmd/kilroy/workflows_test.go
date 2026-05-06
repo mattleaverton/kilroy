@@ -66,6 +66,13 @@ description = "x"
 required    = true
 `
 
+type workflowListTestEntry struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	DefaultClass string `json:"default_class"`
+	Schema       string `json:"schema"`
+}
+
 func writePackage(t *testing.T, root, name, manifest string) string {
 	t.Helper()
 	dir := filepath.Join(root, name)
@@ -100,29 +107,24 @@ func TestWorkflowsList_JSON_FindsAllPackages(t *testing.T) {
 	}
 
 	var got struct {
-		Workflows []struct {
-			Name         string `json:"name"`
-			Description  string `json:"description"`
-			DefaultClass string `json:"default_class"`
-			Schema       string `json:"schema"`
-		} `json:"workflows"`
+		Workflows []workflowListTestEntry `json:"workflows"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	if len(got.Workflows) != 2 {
-		t.Fatalf("workflows len = %d, want 2: %+v", len(got.Workflows), got.Workflows)
+	review := workflowListEntryByName(got.Workflows, "review")
+	if review == nil {
+		t.Fatalf("workflows missing review: %+v", got.Workflows)
 	}
-	// Sorted by name: review, tiny-investigate.
-	if got.Workflows[0].Name != "review" || got.Workflows[1].Name != "tiny-investigate" {
-		t.Errorf("names = %q, %q; want review, tiny-investigate",
-			got.Workflows[0].Name, got.Workflows[1].Name)
+	tiny := workflowListEntryByName(got.Workflows, "tiny-investigate")
+	if tiny == nil {
+		t.Fatalf("workflows missing tiny-investigate: %+v", got.Workflows)
 	}
-	if got.Workflows[0].Schema != "v2" {
-		t.Errorf("schema = %q, want v2", got.Workflows[0].Schema)
+	if review.Schema != "v2" {
+		t.Errorf("review schema = %q, want v2", review.Schema)
 	}
-	if got.Workflows[0].DefaultClass != "hard_coding" {
-		t.Errorf("default_class = %q, want hard_coding", got.Workflows[0].DefaultClass)
+	if review.DefaultClass != "hard_coding" {
+		t.Errorf("review default_class = %q, want hard_coding", review.DefaultClass)
 	}
 }
 
@@ -192,6 +194,29 @@ func TestWorkflowsDescribe_JSON_HasJSONFieldNames(t *testing.T) {
 	}
 }
 
+func TestWorkflowsDescribe_SourceBuiltInOutsideRepo(t *testing.T) {
+	bin := buildTestBinary(t)
+	cmd := exec.Command(bin, "workflows", "describe", "implement")
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS=",
+		"KILROY_PROJECT_ROOT=",
+		"XDG_CONFIG_HOME="+t.TempDir(),
+		"XDG_DATA_HOME="+t.TempDir(),
+		"LOCALAPPDATA=",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("describe source built-in outside repo: %v\n%s", err, out)
+	}
+	s := string(out)
+	for _, want := range []string{`"name": "implement"`, `"schema": "v2"`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("output missing %s\nfull:\n%s", want, s)
+		}
+	}
+}
+
 // TestWorkflowsList_DefaultsToV2_HidesLegacy confirms the curated default
 // list excludes legacy `[[inputs]]` packages. The packages remain
 // reachable via `kilroy run <name>` and via --all.
@@ -213,16 +238,16 @@ func TestWorkflowsList_DefaultsToV2_HidesLegacy(t *testing.T) {
 		t.Fatalf("default list: %v\n%s", err, out)
 	}
 	var got struct {
-		Workflows []struct {
-			Name   string `json:"name"`
-			Schema string `json:"schema"`
-		} `json:"workflows"`
+		Workflows []workflowListTestEntry `json:"workflows"`
 	}
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\n%s", err, out)
 	}
-	if len(got.Workflows) != 1 || got.Workflows[0].Name != "v2pkg" {
-		t.Errorf("default list should show only v2pkg, got %+v", got.Workflows)
+	if workflowListEntryByName(got.Workflows, "v2pkg") == nil {
+		t.Errorf("default list should show v2pkg, got %+v", got.Workflows)
+	}
+	if workflowListEntryByName(got.Workflows, "old-stub") != nil {
+		t.Errorf("default list should hide legacy old-stub, got %+v", got.Workflows)
 	}
 
 	// --all: both.
@@ -239,9 +264,18 @@ func TestWorkflowsList_DefaultsToV2_HidesLegacy(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("decode: %v\n%s", err, out)
 	}
-	if len(got.Workflows) != 2 {
-		t.Errorf("--all list should show both, got %+v", got.Workflows)
+	if workflowListEntryByName(got.Workflows, "v2pkg") == nil || workflowListEntryByName(got.Workflows, "old-stub") == nil {
+		t.Errorf("--all list should show v2pkg and old-stub, got %+v", got.Workflows)
 	}
+}
+
+func workflowListEntryByName(entries []workflowListTestEntry, name string) *workflowListTestEntry {
+	for i := range entries {
+		if entries[i].Name == name {
+			return &entries[i]
+		}
+	}
+	return nil
 }
 
 func TestWorkflowsDescribe_UnknownName_Exit1(t *testing.T) {

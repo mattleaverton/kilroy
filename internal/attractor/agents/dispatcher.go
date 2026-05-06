@@ -9,11 +9,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/danshapiro/kilroy/internal/attractor/agentbackend"
+	agauth "github.com/danshapiro/kilroy/internal/attractor/agents/auth"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/loop"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
 // agentHandlerImpl is the minimal interface the Dispatcher needs from
@@ -38,7 +42,6 @@ type tmuxHandler interface {
 // the codergen handler (API/SDK drivers).
 type Dispatcher struct {
 	Tmux      tmuxHandler
-	Codergen  agentHandlerImpl
 	PolicyDep engine.PolicyDeps
 }
 
@@ -48,8 +51,7 @@ type Dispatcher struct {
 // agentHandlerImpl).
 func NewDispatcher() *Dispatcher {
 	return &Dispatcher{
-		Tmux:     NewTmuxAgentHandler(),
-		Codergen: &AgentHandler{},
+		Tmux: NewTmuxAgentHandler(),
 	}
 }
 
@@ -100,12 +102,24 @@ func (d *Dispatcher) ExecuteAgent(ctx context.Context, exec *engine.Execution, n
 	}
 
 	switch dispatchPathForDriver(route.Driver) {
-	case dispatchCLI:
-		adapter := NewTmuxBackend(d.Tmux)
-		return adapter.NativeExecuteAgent(ctx, exec, node, route)
-	case dispatchAPI:
-		adapter := NewSDKBackend(d.Codergen)
-		return adapter.NativeExecuteAgent(ctx, exec, node, route)
+	case dispatchCLI, dispatchAPI:
+		if exec == nil || exec.Engine == nil {
+			return runtime.Outcome{
+				Status:        runtime.StatusFail,
+				FailureReason: "dispatcher: execution context with engine is required for agent backend dispatch",
+				Meta:          map[string]any{"failure_class": "deterministic"},
+			}, nil
+		}
+		prior := exec.Engine.AgentBackend
+		exec.Engine.AgentBackend = &runTurnEngineBackend{
+			apiRunner:    prior,
+			tmux:         d.tmuxSessionHandler(),
+			authResolver: agauth.NewBindingAuthResolver(engine.BindSnapshot, authBindWrapper),
+		}
+		defer func() {
+			exec.Engine.AgentBackend = prior
+		}()
+		return (&engine.CodergenHandler{}).ExecuteAgent(ctx, exec, node, route)
 	default:
 		return runtime.Outcome{
 			Status: runtime.StatusFail,
@@ -119,18 +133,113 @@ func (d *Dispatcher) ExecuteAgent(ctx context.Context, exec *engine.Execution, n
 	}
 }
 
-func (d *Dispatcher) tmux() agentHandlerImpl {
+func (d *Dispatcher) tmuxSessionHandler() tmuxSessionHandler {
 	if d.Tmux != nil {
 		return d.Tmux
 	}
 	return NewTmuxAgentHandler()
 }
 
-func (d *Dispatcher) codergen() agentHandlerImpl {
-	if d.Codergen != nil {
-		return d.Codergen
+type runTurnEngineBackend struct {
+	apiRunner    engine.AgentBackend
+	tmux         tmuxSessionHandler
+	authResolver agauth.AuthResolver
+}
+
+func (b *runTurnEngineBackend) Run(ctx context.Context, exec *engine.Execution, node *model.Node, prompt string, route engine.AgentRoute) (string, *runtime.Outcome, error) {
+	apiRunner := b.apiRunner
+	if apiRunner == nil {
+		apiRunner = &engine.SimulatedAgentBackend{}
 	}
-	return &AgentHandler{}
+
+	var backend agentbackend.AgentBackend
+	switch dispatchPathForDriver(route.Driver) {
+	case dispatchAPI:
+		backend = NewSDKBackend(apiRunner, WithSDKAuthResolver(b.authResolver))
+	case dispatchCLI:
+		backend = NewTmuxBackend(b.tmux, WithTmuxAuthResolver(b.authResolver))
+	default:
+		return "", &runtime.Outcome{
+			Status:        runtime.StatusFail,
+			FailureReason: fmt.Sprintf("dispatcher: driver %q has no dispatch mapping", route.Driver),
+			Meta:          map[string]any{"failure_class": "deterministic"},
+		}, nil
+	}
+	defer backend.Close()
+
+	result, err := loop.RunTurn(
+		ctx,
+		backend,
+		agentbackend.UserMessage{Text: prompt},
+		agentbackend.TurnOptions{
+			Model: route.Model,
+			Extra: map[string]any{
+				"provider": route.Provider,
+				"driver":   route.Driver,
+				"exec":     exec,
+				"node":     node,
+				"route":    route,
+			},
+		},
+		nil,
+		loop.TurnConfig{EventSink: runTurnProgressSink(exec, node)},
+	)
+	if err != nil {
+		return result.Text, nil, err
+	}
+
+	if carrier, ok := backend.(interface{ LastOutcome() *runtime.Outcome }); ok {
+		if out := carrier.LastOutcome(); out != nil {
+			return result.Text, out, nil
+		}
+	}
+	return result.Text, &runtime.Outcome{
+		Status: runtime.StatusSuccess,
+		Notes:  "agent turn completed",
+		ContextUpdates: map[string]any{
+			"last_stage":    node.ID,
+			"last_response": engine.Truncate(result.Text, 200),
+		},
+	}, nil
+}
+
+func runTurnProgressSink(exec *engine.Execution, node *model.Node) func(loop.LoopEvent) {
+	if exec == nil || exec.Engine == nil || node == nil {
+		return nil
+	}
+	return func(ev loop.LoopEvent) {
+		payload := map[string]any{
+			"event":   "agent_turn_" + string(ev.Type),
+			"node_id": node.ID,
+		}
+		if ev.ToolCall != nil {
+			payload["tool_name"] = ev.ToolCall.Name
+			payload["tool_call_id"] = ev.ToolCall.ID
+		}
+		if ev.ToolResult != nil {
+			payload["tool_use_id"] = ev.ToolResult.ToolUseID
+			payload["is_error"] = ev.ToolResult.IsError
+		}
+		if ev.Error != nil {
+			payload["error"] = ev.Error.Error()
+		}
+		exec.Engine.AppendProgress(payload)
+	}
+}
+
+func authBindWrapper(driver string, snap binding.Snapshot, cred binding.Credential, stageDir string) (agauth.BindResult, error) {
+	result, err := engine.Bind(driver, snap, cred, stageDir)
+	if err != nil {
+		return agauth.BindResult{}, err
+	}
+	return agauth.BindResult{
+		EnvSet:       result.EnvSet,
+		EnvScrub:     result.EnvScrub,
+		FilesToWrite: result.FilesToWrite,
+		SDKArg:       result.SDKArg,
+		SourceName:   result.SourceName,
+		SourceKind:   result.SourceKind,
+	}, nil
 }
 
 // dispatchPath enumerates the two execution paths.

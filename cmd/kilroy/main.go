@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -14,7 +13,6 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/agents"
 	"github.com/danshapiro/kilroy/internal/attractor/agents/tmux"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
-	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/attractor/validate"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
@@ -23,9 +21,7 @@ import (
 	"github.com/danshapiro/kilroy/internal/policy"
 	"github.com/danshapiro/kilroy/internal/providerspec"
 	"github.com/danshapiro/kilroy/internal/version"
-
 )
-
 
 func signalCancelContext() (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -600,24 +596,12 @@ func attractorRun(args []string) {
 	}
 
 	// Load merged project/user config for runtime config resolution (e.g., cxdb.ui.url).
-	var mergedCfg *config.Config
-	repoRoot, _, findErr := projectroot.Find(gitDetectDir)
+	lc, findErr := config.LoadLayered(gitDetectDir, config.CLIFlags{})
 	if findErr != nil {
-		fmt.Fprintf(os.Stderr, "kilroy run: project root: %v\n", findErr)
+		fmt.Fprintf(os.Stderr, "kilroy run: config load: %v\n", findErr)
 		os.Exit(1)
 	}
-	if repoRoot != "" {
-		mc, mcErr := config.LoadConfig(repoRoot)
-		if mcErr != nil {
-			var noCfg *config.ErrNoConfig
-			if !errors.As(mcErr, &noCfg) {
-				fmt.Fprintf(os.Stderr, "kilroy run: config load: %v\n", mcErr)
-				os.Exit(1)
-			}
-		} else {
-			mergedCfg = &mc
-		}
-	}
+	mergedCfg := &lc.Config
 
 	cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, false)
 	if err != nil {

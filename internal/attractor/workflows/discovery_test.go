@@ -26,6 +26,13 @@ func makeWorkflow(t *testing.T, root, name string) string {
 	return dir
 }
 
+func withSourceWorkflowRoot(t *testing.T, root string) {
+	t.Helper()
+	old := sourceWorkflowRoot
+	sourceWorkflowRoot = func() string { return root }
+	t.Cleanup(func() { sourceWorkflowRoot = old })
+}
+
 func TestSearchPaths_KILROYWorkflowPathsBeatsProjectAndUser(t *testing.T) {
 	envRoot := t.TempDir()
 	projRoot := t.TempDir()
@@ -129,6 +136,7 @@ func TestDiscover_AggregatesAndShadows(t *testing.T) {
 	envRoot := t.TempDir()
 	projRoot := t.TempDir()
 	userRoot := t.TempDir()
+	withSourceWorkflowRoot(t, "")
 	t.Setenv("KILROY_WORKFLOW_PATHS", envRoot)
 	t.Setenv("XDG_CONFIG_HOME", userRoot)
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
@@ -162,6 +170,27 @@ func TestDiscover_AggregatesAndShadows(t *testing.T) {
 	}
 	if !equal(gotDirs, wantDirs) {
 		t.Errorf("dirs = %v, want %v", gotDirs, wantDirs)
+	}
+}
+
+func TestFind_FallsBackToSourceBuiltIns(t *testing.T) {
+	t.Setenv("KILROY_WORKFLOW_PATHS", "")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", "")
+
+	got, err := Find("implement", "")
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Find implement = nil, want source built-in workflow")
+	}
+	if filepath.Base(got.Dir) != "implement" {
+		t.Fatalf("Find implement dir = %q, want implement workflow dir", got.Dir)
+	}
+	if filepath.Base(got.Source) != "workflows" {
+		t.Fatalf("Find implement source = %q, want workflows directory", got.Source)
 	}
 }
 

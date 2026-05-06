@@ -1,17 +1,15 @@
 // `kilroy run <name>` resolves a workflow name through filesystem
-// discovery and dispatches to the existing engine entry point. No bare
-// form, no embedding — discovery searches KILROY_WORKFLOW_PATHS, then
-// the project's .kilroy/workflows/, then the user's $XDG_CONFIG_HOME.
+// discovery and dispatches to the existing engine entry point. Discovery
+// searches explicit, project, user, installed, and source-checkout workflow
+// roots in precedence order.
 
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/workflows"
 	"github.com/danshapiro/kilroy/internal/config"
 )
@@ -58,23 +56,12 @@ func runCmd(args []string) {
 	rest := args[1:]
 
 	cwd, _ := os.Getwd()
-	projectRoot, _, err := projectroot.Find(cwd)
+	lc, err := config.LoadLayered(cwd, config.CLIFlags{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kilroy run: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Load project config (non-fatal if missing).
-	cfg, cfgErr := config.LoadConfig(projectRoot)
-	if cfgErr != nil {
-		var noCfg *config.ErrNoConfig
-		if !errors.As(cfgErr, &noCfg) {
-			fmt.Fprintf(os.Stderr, "kilroy run: config load: %v\n", cfgErr)
-			os.Exit(1)
-		}
-		cfg = config.Config{}
-	}
-	_ = cfg
+	projectRoot := lc.ProjectRoot
 
 	pkg, err := workflows.Find(name, projectRoot)
 	if err != nil {
@@ -119,6 +106,8 @@ func runUsage() {
 	fmt.Fprintln(os.Stderr, "  1. KILROY_WORKFLOW_PATHS  (colon-separated env var)")
 	fmt.Fprintln(os.Stderr, "  2. <project-root>/.kilroy/workflows/  (when a .kilroy/ marker is found)")
 	fmt.Fprintln(os.Stderr, "  3. $XDG_CONFIG_HOME/kilroy/workflows/  (default: ~/.config/kilroy/workflows/)")
+	fmt.Fprintln(os.Stderr, "  4. $XDG_DATA_HOME/kilroy/workflows/  (default: ~/.local/share/kilroy/workflows/)")
+	fmt.Fprintln(os.Stderr, "  5. source-checkout workflows/  (development fallback)")
 }
 
 func printSearchedPaths(projectRoot string) {

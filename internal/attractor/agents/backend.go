@@ -1,12 +1,5 @@
-// Package agents provides the unified agent dispatcher and backend adapters.
-//
-// This file contains the AgentBackend adapters that wrap the existing handler
-// implementations (CodergenHandler for SDK/API path, TmuxAgentHandler for CLI
-// path) to satisfy the agentbackend.AgentBackend interface.
-//
-// These adapters are a passive wrapper layer (Block 6 Step 3) — they delegate
-// entirely to the existing handlers with no behavior change. Future steps will
-// extract the transport layer and implement the full TurnStream event model.
+// Package agents provides AgentBackend implementations used by the unified
+// dispatcher.
 package agents
 
 import (
@@ -14,368 +7,386 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/danshapiro/kilroy/internal/attractor/agentbackend"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/auth"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/templates"
+	"github.com/danshapiro/kilroy/internal/attractor/agents/transport"
 	"github.com/danshapiro/kilroy/internal/attractor/engine"
 	"github.com/danshapiro/kilroy/internal/attractor/model"
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
+	"github.com/danshapiro/kilroy/internal/auth/binding"
 )
 
-// extractProvider safely extracts the provider string from TurnOptions.Extra.
-// Returns an error if Extra is nil, the key is missing, or the value is not a string.
+var _ agentbackend.AgentBackend = (*SDKBackend)(nil)
+var _ agentbackend.AgentBackend = (*TmuxBackend)(nil)
+
 func extractProvider(extra map[string]any) (string, error) {
 	if extra == nil {
 		return "", errors.New("TurnOptions.Extra is nil: provider is required")
 	}
 	val, ok := extra["provider"]
 	if !ok {
-		return "", errors.New("TurnOptions.Extra[" + "provider" + "] is missing: provider is required")
+		return "", errors.New("TurnOptions.Extra[provider] is missing: provider is required")
 	}
 	str, ok := val.(string)
 	if !ok {
 		return "", fmt.Errorf("TurnOptions.Extra[%q] has type %T, expected string", "provider", val)
 	}
+	if strings.TrimSpace(str) == "" {
+		return "", errors.New("TurnOptions.Extra[provider] is empty: provider is required")
+	}
 	return str, nil
 }
 
-// Compile-time assertions: both adapters satisfy AgentBackend interface.
-var _ agentbackend.AgentBackend = (*SDKBackend)(nil)
-var _ agentbackend.AgentBackend = (*TmuxBackend)(nil)
+type SDKBackendOption func(*SDKBackend)
 
-// agentHandler defines the minimal interface the SDKBackend needs from
-// the underlying handler. Both engine.CodergenHandler and test doubles
-// satisfy this interface.
-type agentHandler interface {
-	ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error)
+func WithSDKAuthResolver(resolver auth.AuthResolver) SDKBackendOption {
+	return func(b *SDKBackend) {
+		b.authResolver = resolver
+	}
 }
 
-// SDKBackend wraps the existing CodergenHandler (SDK/API path) as an
-// AgentBackend adapter. It delegates execution to the handler while
-// presenting the unified backend interface.
-//
-// This is Step 3 of Block 6: the adapter is passive, with no behavior
-// change. The full TurnStream event model will be implemented in Step 4.
+// SDKBackend executes API/SDK routes through the engine agent runner and
+// exposes the result as a TurnStream. The runner is normally AgentRouter,
+// which owns HTTP transport construction, class-routed snapshot binding, and
+// the API agent loop.
 type SDKBackend struct {
-	handler agentHandler
+	runner       engine.AgentBackend
+	authResolver auth.AuthResolver
+	lastOutcome  *runtime.Outcome
 }
 
-// NewSDKBackend creates an AgentBackend adapter wrapping the given
-// handler. The handler must satisfy the agentHandler interface (which
-// *engine.CodergenHandler does). If handler is nil, a zero-value
-// CodergenHandler is used.
-func NewSDKBackend(handler agentHandler) *SDKBackend {
-	if handler == nil {
-		handler = &engine.CodergenHandler{}
+func NewSDKBackend(runner engine.AgentBackend, opts ...SDKBackendOption) *SDKBackend {
+	if runner == nil {
+		runner = &engine.SimulatedAgentBackend{}
 	}
-	return &SDKBackend{handler: handler}
+	b := &SDKBackend{runner: runner}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b
 }
 
-// StartTurn begins a single conversation turn. This adapter delegates to
-// the underlying CodergenHandler's ExecuteAgent method.
-//
-// Note: The full TurnStream event model is not yet implemented. This
-// adapter returns a minimal stream that yields a single TurnEnd event
-// containing the handler's result. Step 4 will extract the transport
-// layer and emit proper streaming events.
 func (b *SDKBackend) StartTurn(ctx context.Context, msg agentbackend.UserMessage, opts agentbackend.TurnOptions) (agentbackend.TurnStream, error) {
-	// Create a minimal execution context for the handler.
-	// The handler expects an engine.Execution with LogsRoot set.
-	// For the adapter pattern, we construct a minimal context.
-	exec := &engine.Execution{
-		LogsRoot: ".", // Minimal default; caller should set via context or options
-	}
-
-	// Build a minimal node from the user message.
-	node := &model.Node{
-		ID: "turn",
-	}
-	if msg.Text != "" {
-		// Store the prompt in the node's attributes for retrieval by the handler.
-		// The handler reads node.Prompt() which looks at the "prompt" attribute.
-		if node.Attrs == nil {
-			node.Attrs = make(map[string]string)
-		}
-		node.Attrs["prompt"] = msg.Text
-	}
-
-	// Build an AgentRoute from TurnOptions.
 	provider, err := extractProvider(opts.Extra)
 	if err != nil {
 		return nil, err
 	}
-	route := engine.AgentRoute{
-		Provider: provider,
-		Model:    opts.Model,
-		Backend:  engine.BackendAPI,
-		Driver:   "anthropic_sdk", // Default; should be overridden via Extra
+	execCtx, node, route := turnExecutionContext(opts, engine.BackendAPI)
+	if route.Provider == "" {
+		route.Provider = provider
 	}
-	if driver, ok := opts.Extra["driver"].(string); ok && driver != "" {
-		route.Driver = driver
+	if route.Model == "" {
+		route.Model = opts.Model
+	}
+	if route.Driver == "" {
+		if driver, ok := opts.Extra["driver"].(string); ok && strings.TrimSpace(driver) != "" {
+			route.Driver = strings.TrimSpace(driver)
+		} else {
+			route.Driver = "anthropic_sdk"
+		}
+	}
+	if route.Backend == "" {
+		route.Backend = engine.BackendAPI
+	}
+	if b.authResolver != nil {
+		if err := resolveTurnCredential(ctx, b.authResolver, route); err != nil {
+			return nil, err
+		}
 	}
 
-	// Execute via the handler. This blocks until completion.
-	outcome, err := b.handler.ExecuteAgent(ctx, exec, node, route)
+	resp, out, err := b.runner.Run(ctx, execCtx, node, msg.Text, route)
 	if err != nil {
 		return nil, err
 	}
-
-	// Create a TurnStream that yields the result as events.
-	// For Step 3, we return a minimal implementation that yields:
-	// 1. A text event with the response (if any)
-	// 2. A turn_end event with status metadata
-	return &sdkTurnStream{
-		outcome: outcome,
-		notes:   outcome.Notes,
-	}, nil
+	b.lastOutcome = normalizeTurnOutcome(out, node, resp)
+	return newOutcomeTurnStream(resp, b.lastOutcome, agentbackend.ToolControlKilroy), nil
 }
 
-// ToolControl reports that the SDK backend uses kilroy-side tool control.
-// The API path (CodergenHandler) manages tool calls within the agent loop.
 func (b *SDKBackend) ToolControl() agentbackend.ToolControlMode {
 	return agentbackend.ToolControlKilroy
 }
 
-// Capabilities surfaces optional features for the SDK backend.
-// These values reflect the current CodergenHandler capabilities.
 func (b *SDKBackend) Capabilities() agentbackend.BackendCapabilities {
 	return agentbackend.BackendCapabilities{
 		Thinking:       true,
 		TokenStreaming: true,
-		CostTracking:   false, // Not currently implemented
+		CostTracking:   false,
 		ToolInjection:  true,
 	}
 }
 
-// Close releases backend-held resources. For the SDKBackend, this is a
-// no-op because the underlying CodergenHandler is stateless.
-func (b *SDKBackend) Close() error {
-	return nil
-}
+func (b *SDKBackend) Close() error { return nil }
 
-// NativeExecuteAgent delegates directly to the underlying handler with
-// zero information loss. This is used by Dispatcher.ExecuteAgent to route
-// through the adapter without using the TurnStream abstraction.
-func (b *SDKBackend) NativeExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
-	return b.handler.ExecuteAgent(ctx, exec, node, route)
-}
-
-// sdkTurnStream is a minimal TurnStream implementation for SDKBackend.
-// It yields a text event (if any) followed by a turn_end event.
-// This is a placeholder for the full streaming implementation in Step 4.
-type sdkTurnStream struct {
-	outcome  runtime.Outcome
-	notes    string
-	sentText bool
-	sentEnd  bool
-}
-
-// Recv returns the next event in the stream.
-// First call returns a text event (if notes not empty); then returns turn_end; subsequent calls return io.EOF.
-func (s *sdkTurnStream) Recv() (agentbackend.TurnEvent, error) {
-	// Return text event first (if we have notes and haven't sent it yet).
-	if !s.sentText && s.notes != "" {
-		s.sentText = true
-		return agentbackend.TurnEvent{
-			Type: agentbackend.TurnEventText,
-			Text: s.notes,
-		}, nil
+func (b *SDKBackend) LastOutcome() *runtime.Outcome {
+	if b == nil || b.lastOutcome == nil {
+		return nil
 	}
+	cp := *b.lastOutcome
+	return &cp
+}
 
-	// Then return turn_end (if we haven't sent it yet).
-	if !s.sentEnd {
-		s.sentEnd = true
-		stopReason := "end_turn"
-		if s.outcome.Status == runtime.StatusFail {
-			stopReason = "error"
-		}
-		return agentbackend.TurnEvent{
-			Type: agentbackend.TurnEventTurnEnd,
-			End: &agentbackend.TurnEndInfo{
-				StopReason: stopReason,
-			},
-		}, nil
+type TmuxBackendOption func(*TmuxBackend)
+
+func WithTmuxAuthResolver(resolver auth.AuthResolver) TmuxBackendOption {
+	return func(b *TmuxBackend) {
+		b.authResolver = resolver
 	}
-
-	// All events have been sent.
-	return agentbackend.TurnEvent{}, io.EOF
 }
 
-// SendToolResult feeds a tool result back into the conversation.
-// For SDKBackend, this is a no-op placeholder; the actual tool handling
-// is managed internally by the agent loop in CodergenHandler.
-func (s *sdkTurnStream) SendToolResult(ctx context.Context, r agentbackend.ToolResult) error {
-	// Tool control is handled internally by the CodergenHandler's agent loop.
-	// Step 4 will implement proper tool result injection.
-	return nil
+type tmuxSessionHandler interface {
+	ExecuteAgentWithSession(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute, tmpl *templates.Template, toolName string, prompt string, modelID string, cfg transport.SessionConfig) (runtime.Outcome, error)
 }
 
-// Close releases the stream resources.
-func (s *sdkTurnStream) Close() error {
-	return nil
-}
-
-// tmuxAgentHandler defines the minimal interface the TmuxBackend needs from
-// the underlying handler. Both *TmuxAgentHandler and test doubles satisfy
-// this interface.
-type tmuxAgentHandler interface {
-	ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error)
-}
-
-// TmuxBackend wraps the existing TmuxAgentHandler (CLI path) as an
-// AgentBackend adapter. It delegates execution to the handler while
-// presenting the unified backend interface.
-//
-// This is Step 3 of Block 6: the adapter is passive, with no behavior
-// change. The full TurnStream event model will be implemented in Step 4.
+// TmuxBackend executes CLI driver routes through the tmux session transport and
+// exposes the completed session as a TurnStream.
 type TmuxBackend struct {
-	handler tmuxAgentHandler
+	handler      tmuxSessionHandler
+	templates    *templates.Registry
+	authResolver auth.AuthResolver
+	lastOutcome  *runtime.Outcome
 }
 
-// NewTmuxBackend creates an AgentBackend adapter wrapping the given
-// handler. The handler must satisfy the tmuxAgentHandler interface
-// (which *TmuxAgentHandler does). If handler is nil, a default
-// TmuxAgentHandler is created.
-func NewTmuxBackend(handler tmuxAgentHandler) *TmuxBackend {
+func NewTmuxBackend(handler tmuxSessionHandler, opts ...TmuxBackendOption) *TmuxBackend {
 	if handler == nil {
 		handler = NewTmuxAgentHandler()
 	}
-	return &TmuxBackend{handler: handler}
+	b := &TmuxBackend{
+		handler:   handler,
+		templates: templates.DefaultRegistry(),
+	}
+	if h, ok := handler.(*TmuxAgentHandler); ok && h.Templates != nil {
+		b.templates = h.Templates
+	}
+	for _, opt := range opts {
+		opt(b)
+	}
+	return b
 }
 
-// StartTurn begins a single conversation turn. This adapter delegates to
-// the underlying TmuxAgentHandler's ExecuteAgent method.
-//
-// Note: The full TurnStream event model is not yet implemented. This
-// adapter returns a minimal stream that yields a single TurnEnd event
-// containing the handler's result. Step 4 will extract the transport
-// layer and emit proper streaming events.
 func (b *TmuxBackend) StartTurn(ctx context.Context, msg agentbackend.UserMessage, opts agentbackend.TurnOptions) (agentbackend.TurnStream, error) {
-	// Create a minimal execution context for the handler.
-	exec := &engine.Execution{
-		LogsRoot: ".", // Minimal default; caller should set via context or options
-	}
-
-	// Build a minimal node from the user message.
-	node := &model.Node{
-		ID: "turn",
-	}
-	if msg.Text != "" {
-		if node.Attrs == nil {
-			node.Attrs = make(map[string]string)
-		}
-		node.Attrs["prompt"] = msg.Text
-	}
-
-	// Build an AgentRoute from TurnOptions.
 	provider, err := extractProvider(opts.Extra)
 	if err != nil {
 		return nil, err
 	}
-	route := engine.AgentRoute{
-		Provider: provider,
-		Model:    opts.Model,
-		Backend:  engine.BackendCLI,
-		Driver:   "claude_cli", // Default; should be overridden via Extra
+	execCtx, node, route := turnExecutionContext(opts, engine.BackendCLI)
+	if route.Provider == "" {
+		route.Provider = provider
 	}
-	if driver, ok := opts.Extra["driver"].(string); ok && driver != "" {
-		route.Driver = driver
+	if route.Model == "" {
+		route.Model = opts.Model
+	}
+	if route.Driver == "" {
+		if driver, ok := opts.Extra["driver"].(string); ok && strings.TrimSpace(driver) != "" {
+			route.Driver = strings.TrimSpace(driver)
+		} else {
+			route.Driver = "claude_cli"
+		}
+	}
+	if route.Backend == "" {
+		route.Backend = engine.BackendCLI
+	}
+	if b.authResolver != nil {
+		if err := resolveTurnCredential(ctx, b.authResolver, route); err != nil {
+			return nil, err
+		}
 	}
 
-	// Execute via the handler. This blocks until completion.
-	outcome, err := b.handler.ExecuteAgent(ctx, exec, node, route)
+	toolName := toolNameForDriver(route.Driver)
+	if toolName == "" {
+		return nil, fmt.Errorf("driver %q has no tmux tool mapping", route.Driver)
+	}
+	tmpl := b.templates.Get(toolName)
+	if tmpl == nil {
+		return nil, fmt.Errorf("no invocation template for tool %q", toolName)
+	}
+
+	runID := ""
+	if execCtx != nil && execCtx.Engine != nil {
+		runID = execCtx.Engine.Options.RunID
+	}
+	runtimeEnv := engine.BuildStageRuntimeEnv(execCtx, node.ID)
+	statusContractEnv := map[string]string{}
+	if execCtx != nil {
+		statusContractEnv = engine.BuildStageStatusContract(execCtx.WorktreeDir, runID).EnvVars
+	}
+
+	var authSnapshot *binding.Snapshot
+	if route.ClassResult != nil {
+		authSnapshot = &route.ClassResult.AuthSnapshot
+	}
+
+	tmuxTransport := transport.NewTmuxTransport()
+	cfg, err := tmuxTransport.BuildSession(
+		tmpl,
+		node.ID,
+		runID,
+		execCtx.WorktreeDir,
+		execCtx.LogsRoot,
+		route.Driver,
+		authSnapshot,
+		runtimeEnv,
+		statusContractEnv,
+		engine.BindSnapshot,
+		engineBindWrapper,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build session: %w", err)
+	}
+
+	out, err := b.handler.ExecuteAgentWithSession(ctx, execCtx, node, route, tmpl, toolName, msg.Text, route.Model, cfg)
 	if err != nil {
 		return nil, err
 	}
+	b.lastOutcome = normalizeTurnOutcome(&out, node, out.Notes)
 
-	// Create a TurnStream that yields the result as events.
-	return &tmuxTurnStream{
-		outcome: outcome,
-		notes:   outcome.Notes,
-	}, nil
+	if stream, ok := cliStreamForStage(ctx, execCtx, node, tmpl, msg, opts); ok {
+		return stream, nil
+	}
+	return newOutcomeTurnStream(out.Notes, b.lastOutcome, agentbackend.ToolControlDriver), nil
 }
 
-// ToolControl reports that the tmux backend uses driver-side tool control.
-// The CLI path (TmuxAgentHandler) runs driver binaries that own their own
-// tool dispatch loop internally.
 func (b *TmuxBackend) ToolControl() agentbackend.ToolControlMode {
 	return agentbackend.ToolControlDriver
 }
 
-// Capabilities surfaces optional features for the tmux backend.
-// These values reflect the current TmuxAgentHandler capabilities.
 func (b *TmuxBackend) Capabilities() agentbackend.BackendCapabilities {
 	return agentbackend.BackendCapabilities{
-		Thinking:       true,  // Claude CLI supports thinking
-		TokenStreaming: false, // Streaming not yet implemented for CLI path
-		CostTracking:   false, // Not currently implemented
-		ToolInjection:  false, // Driver owns tool loop; kilroy cannot inject
+		Thinking:       true,
+		TokenStreaming: false,
+		CostTracking:   false,
+		ToolInjection:  false,
 	}
 }
 
-// Close releases backend-held resources. For the TmuxBackend, this
-// delegates to the underlying handler's cleanup if any.
-func (b *TmuxBackend) Close() error {
-	// The TmuxAgentHandler doesn't have a Close method currently,
-	// but we may add resource cleanup in the future.
-	return nil
+func (b *TmuxBackend) Close() error { return nil }
+
+func (b *TmuxBackend) LastOutcome() *runtime.Outcome {
+	if b == nil || b.lastOutcome == nil {
+		return nil
+	}
+	cp := *b.lastOutcome
+	return &cp
 }
 
-// NativeExecuteAgent delegates directly to the underlying handler with
-// zero information loss. This is used by Dispatcher.ExecuteAgent to route
-// through the adapter without using the TurnStream abstraction.
-func (b *TmuxBackend) NativeExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
-	return b.handler.ExecuteAgent(ctx, exec, node, route)
+func resolveTurnCredential(ctx context.Context, resolver auth.AuthResolver, route engine.AgentRoute) error {
+	if route.ClassResult == nil {
+		return nil
+	}
+	_, err := resolver.ResolveCredential(ctx, auth.AgentRoute{
+		Provider:         route.Provider,
+		Driver:           route.Driver,
+		SnapshotIdentity: route.ClassResult.AuthSnapshot,
+	})
+	return err
 }
 
-// tmuxTurnStream is a minimal TurnStream implementation for TmuxBackend.
-// It yields a text event (if any) followed by a turn_end event.
-// This is a placeholder for the full streaming implementation in Step 4.
-type tmuxTurnStream struct {
-	outcome  runtime.Outcome
-	notes    string
+func turnExecutionContext(opts agentbackend.TurnOptions, defaultBackend engine.BackendKind) (*engine.Execution, *model.Node, engine.AgentRoute) {
+	extra := opts.Extra
+	var execCtx *engine.Execution
+	if v, ok := extra["exec"].(*engine.Execution); ok && v != nil {
+		execCtx = v
+	}
+	if execCtx == nil {
+		execCtx = &engine.Execution{LogsRoot: ".", WorktreeDir: "."}
+	}
+	var node *model.Node
+	if v, ok := extra["node"].(*model.Node); ok && v != nil {
+		node = v
+	}
+	if node == nil {
+		node = &model.Node{ID: "turn", Attrs: map[string]string{}}
+	}
+	route := engine.AgentRoute{}
+	if v, ok := extra["route"].(engine.AgentRoute); ok {
+		route = v
+	}
+	if route.Model == "" {
+		route.Model = opts.Model
+	}
+	if route.Backend == "" {
+		route.Backend = defaultBackend
+	}
+	return execCtx, node, route
+}
+
+func normalizeTurnOutcome(out *runtime.Outcome, node *model.Node, response string) *runtime.Outcome {
+	if out == nil {
+		out = &runtime.Outcome{Status: runtime.StatusSuccess, Notes: "agent turn completed"}
+	}
+	cp := *out
+	if cp.Status == "" {
+		cp.Status = runtime.StatusSuccess
+	}
+	if cp.ContextUpdates == nil {
+		cp.ContextUpdates = map[string]any{}
+	}
+	if node != nil {
+		if _, ok := cp.ContextUpdates["last_stage"]; !ok {
+			cp.ContextUpdates["last_stage"] = node.ID
+		}
+	}
+	if _, ok := cp.ContextUpdates["last_response"]; !ok {
+		cp.ContextUpdates["last_response"] = engine.Truncate(response, 200)
+	}
+	return &cp
+}
+
+func cliStreamForStage(ctx context.Context, execCtx *engine.Execution, node *model.Node, tmpl *templates.Template, msg agentbackend.UserMessage, opts agentbackend.TurnOptions) (agentbackend.TurnStream, bool) {
+	if execCtx == nil || node == nil || tmpl == nil || !tmpl.StructuredOutput {
+		return nil, false
+	}
+	path := filepath.Join(transport.StageDir(execCtx.LogsRoot, node.ID), "agent_output.jsonl")
+	if _, err := os.Stat(path); err != nil {
+		return nil, false
+	}
+	stream, err := (&CLIBackend{Tool: tmpl.Name, AgentOutputPath: path}).StartTurn(ctx, msg, opts)
+	if err != nil {
+		return nil, false
+	}
+	return stream, true
+}
+
+type outcomeTurnStream struct {
+	text     string
+	outcome  *runtime.Outcome
+	mode     agentbackend.ToolControlMode
 	sentText bool
 	sentEnd  bool
 }
 
-// Recv returns the next event in the stream.
-// First call returns a text event (if notes not empty); then returns turn_end; subsequent calls return io.EOF.
-func (s *tmuxTurnStream) Recv() (agentbackend.TurnEvent, error) {
-	// Return text event first (if we have notes and haven't sent it yet).
-	if !s.sentText && s.notes != "" {
-		s.sentText = true
-		return agentbackend.TurnEvent{
-			Type: agentbackend.TurnEventText,
-			Text: s.notes,
-		}, nil
-	}
+func newOutcomeTurnStream(text string, outcome *runtime.Outcome, mode agentbackend.ToolControlMode) *outcomeTurnStream {
+	return &outcomeTurnStream{text: strings.TrimSpace(text), outcome: outcome, mode: mode}
+}
 
-	// Then return turn_end (if we haven't sent it yet).
+func (s *outcomeTurnStream) Recv() (agentbackend.TurnEvent, error) {
+	if !s.sentText && s.text != "" {
+		s.sentText = true
+		return agentbackend.TurnEvent{Type: agentbackend.TurnEventText, Text: s.text}, nil
+	}
 	if !s.sentEnd {
 		s.sentEnd = true
 		stopReason := "end_turn"
-		if s.outcome.Status == runtime.StatusFail {
+		if s.outcome != nil && s.outcome.Status == runtime.StatusFail {
 			stopReason = "error"
 		}
 		return agentbackend.TurnEvent{
 			Type: agentbackend.TurnEventTurnEnd,
-			End: &agentbackend.TurnEndInfo{
-				StopReason: stopReason,
-			},
+			End:  &agentbackend.TurnEndInfo{StopReason: stopReason},
 		}, nil
 	}
-
-	// All events have been sent.
 	return agentbackend.TurnEvent{}, io.EOF
 }
 
-// SendToolResult feeds a tool result back into the conversation.
-// For TmuxBackend, this returns ErrToolControlDriver because the driver
-// owns the tool loop; kilroy cannot inject tool results.
-func (s *tmuxTurnStream) SendToolResult(ctx context.Context, r agentbackend.ToolResult) error {
-	return agentbackend.ErrToolControlDriver
-}
-
-// Close releases the stream resources.
-func (s *tmuxTurnStream) Close() error {
+func (s *outcomeTurnStream) SendToolResult(ctx context.Context, r agentbackend.ToolResult) error {
+	if s.mode == agentbackend.ToolControlDriver {
+		return agentbackend.ErrToolControlDriver
+	}
 	return nil
 }
+
+func (s *outcomeTurnStream) Close() error { return nil }

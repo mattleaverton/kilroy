@@ -1928,7 +1928,13 @@ func (e *Engine) checkpointExcludeGlobs() []string {
 	if e == nil {
 		return nil
 	}
-	return append([]string{}, e.ArtifactPolicy.Checkpoint.ExcludeGlobs...)
+	excludes := append([]string{}, e.ArtifactPolicy.Checkpoint.ExcludeGlobs...)
+	for _, name := range DeclaredOutputs(e.Graph) {
+		if cleanName, ok := cleanOutputPath(name); ok {
+			excludes = append(excludes, cleanName)
+		}
+	}
+	return excludes
 }
 
 func (e *Engine) writeManifest(baseSHA string) error {

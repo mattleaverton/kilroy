@@ -54,23 +54,29 @@ func CollectOutputs(declared []string, worktreeDir, logsRoot string) ([]OutputRe
 	var warnings []string
 
 	for _, name := range declared {
-		srcPath := filepath.Join(worktreeDir, name)
+		cleanName, ok := cleanOutputPath(name)
+		if !ok {
+			results = append(results, OutputResult{Name: name, Found: false})
+			warnings = append(warnings, fmt.Sprintf("declared output %q is not a safe relative path", name))
+			continue
+		}
+		srcPath := filepath.Join(worktreeDir, cleanName)
 		info, err := os.Stat(srcPath)
 		if err != nil {
-			results = append(results, OutputResult{Name: name, Found: false})
-			warnings = append(warnings, fmt.Sprintf("declared output %q not found in workspace", name))
+			results = append(results, OutputResult{Name: cleanName, Found: false})
+			warnings = append(warnings, fmt.Sprintf("declared output %q not found in workspace", cleanName))
 			continue
 		}
 
-		dstPath := filepath.Join(outputsDir, name)
+		dstPath := filepath.Join(outputsDir, cleanName)
 		_ = os.MkdirAll(filepath.Dir(dstPath), 0o755)
 		if err := copyFile(srcPath, dstPath, 0o644); err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to collect output %q: %v", name, err))
-			results = append(results, OutputResult{Name: name, Found: true, SizeBytes: info.Size()})
+			warnings = append(warnings, fmt.Sprintf("failed to collect output %q: %v", cleanName, err))
+			results = append(results, OutputResult{Name: cleanName, Found: true, SizeBytes: info.Size()})
 			continue
 		}
 		results = append(results, OutputResult{
-			Name:      name,
+			Name:      cleanName,
 			Found:     true,
 			Path:      dstPath,
 			SizeBytes: info.Size(),
@@ -131,12 +137,29 @@ func checkOutputContract(worktreeDir string, outputs []string) []string {
 	}
 	var missing []string
 	for _, f := range outputs {
-		path := filepath.Join(worktreeDir, f)
-		if _, err := os.Stat(path); err != nil {
+		cleanName, ok := cleanOutputPath(f)
+		if !ok {
 			missing = append(missing, f)
+			continue
+		}
+		path := filepath.Join(worktreeDir, cleanName)
+		if _, err := os.Stat(path); err != nil {
+			missing = append(missing, cleanName)
 		}
 	}
 	return missing
+}
+
+func cleanOutputPath(name string) (string, bool) {
+	name = strings.TrimSpace(name)
+	if name == "" || filepath.IsAbs(name) {
+		return "", false
+	}
+	clean := filepath.Clean(name)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(clean), true
 }
 
 // enforceOutputContract checks the output contract and downgrades the outcome

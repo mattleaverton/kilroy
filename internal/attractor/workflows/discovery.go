@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -27,6 +28,10 @@ import (
 //  3. $XDG_CONFIG_HOME/kilroy/workflows/  (or ~/.config/kilroy/workflows/)
 //  4. $XDG_DATA_HOME/kilroy/workflows/   (or ~/.local/share/kilroy/workflows/ on Unix,
 //     %LOCALAPPDATA%\kilroy\workflows\ on Windows) — where install scripts copy built-ins.
+//  5. The source checkout's workflows/ directory when the binary was built from
+//     a local checkout and that checkout still exists. This is a development
+//     fallback so `go build ./cmd/kilroy` works from downstream repos without
+//     manual KILROY_WORKFLOW_PATHS wiring.
 //
 // Empty entries (env var unset, no project root, no home dir) are
 // skipped silently. Duplicates are collapsed in their first appearance
@@ -62,6 +67,7 @@ func SearchPaths(projectRoot string) []string {
 		add(filepath.Join(home, ".config", "kilroy", "workflows"))
 	}
 	add(dataDir())
+	add(sourceWorkflowRoot())
 	return out
 }
 
@@ -79,6 +85,25 @@ func dataDir() string {
 		return filepath.Join(home, ".local", "share", "kilroy", "workflows")
 	}
 	return ""
+}
+
+var sourceWorkflowRoot = defaultSourceWorkflowRoot
+
+func defaultSourceWorkflowRoot() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", "..", "workflows"))
+	if isDir(root) {
+		return root
+	}
+	return ""
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // Discovered describes a workflow found by Discover.
@@ -144,7 +169,7 @@ func Discover(projectRoot string) ([]Discovered, error) {
 // contains a workflow.toml or a graph.dot. Lenient on purpose: the
 // existing LoadPackage falls back to *.dot when graph.dot is absent.
 func isWorkflowDir(dir string) bool {
-	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+	if !isDir(dir) {
 		return false
 	}
 	if _, err := os.Stat(filepath.Join(dir, "workflow.toml")); err == nil {

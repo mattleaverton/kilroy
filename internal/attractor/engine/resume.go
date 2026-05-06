@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -176,14 +175,11 @@ func resumeFromLogsRoot(ctx context.Context, logsRoot string, ov ResumeOverrides
 			// Load merged config for runtime config resolution (e.g., cxdb.ui.url).
 			var mergedCfg *config.Config
 			if m.RepoPath != "" {
-				mc, mcErr := config.LoadConfig(m.RepoPath)
+				lc, mcErr := config.LoadLayered(m.RepoPath, config.CLIFlags{})
 				if mcErr != nil {
-					var noCfg *config.ErrNoConfig
-					if !errors.As(mcErr, &noCfg) {
-						return nil, fmt.Errorf("config load: %w", mcErr)
-					}
+					return nil, fmt.Errorf("config load: %w", mcErr)
 				} else {
-					mergedCfg = &mc
+					mergedCfg = &lc.Config
 				}
 			}
 			cxdbClient, bin, startupInfo, err := ensureCXDBReady(ctx, &cfgForCXDB, logsRoot, m.RunID, mergedCfg)

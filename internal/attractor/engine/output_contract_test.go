@@ -60,6 +60,48 @@ func TestCollectOutputs_CopiesFoundFiles(t *testing.T) {
 	}
 }
 
+func TestCollectOutputs_RejectsUnsafePaths(t *testing.T) {
+	worktree := t.TempDir()
+	logsRoot := t.TempDir()
+	outside := filepath.Join(filepath.Dir(worktree), "outside.txt")
+	if err := os.WriteFile(outside, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, warnings := CollectOutputs([]string{"../outside.txt"}, worktree, logsRoot)
+	if len(results) != 1 || results[0].Found {
+		t.Fatalf("results = %+v, want one not-found result for unsafe path", results)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one unsafe path warning", warnings)
+	}
+	if _, err := os.Stat(filepath.Join(logsRoot, "outside.txt")); err == nil {
+		t.Fatalf("unsafe output path escaped outputs directory")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat escaped output: %v", err)
+	}
+}
+
+func TestCheckpointExcludeGlobsIncludesDeclaredGraphOutputs(t *testing.T) {
+	g := model.NewGraph("test")
+	g.Attrs["outputs"] = "result.md, nested/report.json"
+	e := &Engine{
+		Graph: g,
+		ArtifactPolicy: ResolvedArtifactPolicy{
+			Checkpoint: ResolvedArtifactCheckpoint{
+				ExcludeGlobs: []string{"**/.tmpbuild/**"},
+			},
+		},
+	}
+
+	got := e.checkpointExcludeGlobs()
+	for _, want := range []string{"**/.tmpbuild/**", "result.md", "nested/report.json"} {
+		if !containsPath(got, want) {
+			t.Fatalf("checkpointExcludeGlobs() = %v, missing %q", got, want)
+		}
+	}
+}
+
 func TestOutputContract_Integration_CollectsAfterRun(t *testing.T) {
 	requireIntegration(t)
 	t.Setenv("XDG_STATE_HOME", t.TempDir())

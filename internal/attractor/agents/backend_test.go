@@ -1,6 +1,6 @@
 // Tests for the AgentBackend adapter layer (SDKBackend + TmuxBackend).
-// These are sanity tests verifying that the adapters delegate to the
-// underlying handlers without behavior change.
+// These lock in the post-alpha contract: StartTurn is the load-bearing
+// execution path and must not call the legacy ExecuteAgent backdoor.
 package agents
 
 import (
@@ -17,231 +17,139 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/runtime"
 )
 
-// TestAgentBackend_SDKAdapter_DelegatesToHandler verifies that SDKBackend
-// wraps a CodergenHandler and delegates execution to it.
-func TestAgentBackend_SDKAdapter_DelegatesToHandler(t *testing.T) {
-	// Create a test handler that we can observe.
-	testHandler := &testCodergenHandler{
-		outcome: runtime.Outcome{
+func TestAgentBackend_SDKAdapter_StartTurnUsesRunner(t *testing.T) {
+	runner := &testEngineAgentBackend{
+		response: "test response from SDK runner",
+		outcome: &runtime.Outcome{
 			Status: runtime.StatusSuccess,
-			Notes:  "test response from SDK handler",
+			Notes:  "runner fired",
 		},
 	}
+	backend := NewSDKBackend(runner)
 
-	// Wrap it in the adapter.
-	backend := NewSDKBackend(testHandler)
-
-	// Verify the backend satisfies the interface compile-time assertion.
 	var _ agentbackend.AgentBackend = backend
 
-	// Test ToolControl returns Kilroy mode.
 	if got := backend.ToolControl(); got != agentbackend.ToolControlKilroy {
 		t.Errorf("ToolControl() = %v, want ToolControlKilroy", got)
 	}
-
-	// Test Capabilities returns expected values.
 	caps := backend.Capabilities()
-	if !caps.Thinking {
-		t.Error("Capabilities().Thinking = false, want true")
-	}
-	if !caps.TokenStreaming {
-		t.Error("Capabilities().TokenStreaming = false, want true")
-	}
-	if caps.CostTracking {
-		t.Error("Capabilities().CostTracking = true, want false")
-	}
-	if !caps.ToolInjection {
-		t.Error("Capabilities().ToolInjection = false, want true")
+	if !caps.Thinking || !caps.TokenStreaming || caps.CostTracking || !caps.ToolInjection {
+		t.Fatalf("unexpected SDK capabilities: %+v", caps)
 	}
 
-	// Test StartTurn delegates to the handler.
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test prompt"}
-	opts := agentbackend.TurnOptions{
+	route := engine.AgentRoute{
+		Provider: "anthropic",
+		Model:    "test-model",
+		Backend:  engine.BackendAPI,
+		Driver:   "anthropic_sdk",
+	}
+	stream, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test prompt"}, agentbackend.TurnOptions{
 		Model: "test-model",
-		Extra: map[string]any{
-			"provider": "anthropic",
-			"driver":   "anthropic_sdk",
-		},
-	}
-
-	stream, err := backend.StartTurn(ctx, msg, opts)
+		Extra: testBackendExtra(t, route),
+	})
 	if err != nil {
 		t.Fatalf("StartTurn() error = %v", err)
 	}
 	defer stream.Close()
 
-	// Verify the handler was called with the expected parameters.
-	if !testHandler.called {
-		t.Error("handler.ExecuteAgent was not called")
+	if !runner.called {
+		t.Fatal("runner.Run was not called")
 	}
-	if testHandler.node == nil {
-		t.Fatal("handler.ExecuteAgent node is nil")
+	if runner.prompt != "test prompt" {
+		t.Errorf("runner prompt = %q, want %q", runner.prompt, "test prompt")
 	}
-	if got := testHandler.node.Attr("prompt", ""); got != "test prompt" {
-		t.Errorf("handler.ExecuteAgent node prompt = %q, want %q", got, "test prompt")
-	}
-	if testHandler.route.Model != "test-model" {
-		t.Errorf("handler.ExecuteAgent route.Model = %q, want %q", testHandler.route.Model, "test-model")
-	}
-	if testHandler.route.Driver != "anthropic_sdk" {
-		t.Errorf("handler.ExecuteAgent route.Driver = %q, want %q", testHandler.route.Driver, "anthropic_sdk")
+	if runner.route.Driver != "anthropic_sdk" {
+		t.Errorf("runner route.Driver = %q, want anthropic_sdk", runner.route.Driver)
 	}
 
-	// Read events from the stream.
-	events := []agentbackend.TurnEvent{}
-	for {
-		ev, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("stream.Recv() error = %v", err)
-		}
-		events = append(events, ev)
+	events := collectTurnEvents(t, stream)
+	if len(events) < 2 {
+		t.Fatalf("expected text and turn_end events, got %+v", events)
 	}
-
-	// Should get at least a turn_end event.
-	if len(events) == 0 {
-		t.Fatal("expected at least one event from stream")
+	if events[0].Type != agentbackend.TurnEventText || events[0].Text != "test response from SDK runner" {
+		t.Fatalf("first event = %+v, want SDK response text", events[0])
 	}
-
-	// Last event should be turn_end.
-	last := events[len(events)-1]
-	if last.Type != agentbackend.TurnEventTurnEnd {
-		t.Errorf("last event.Type = %v, want TurnEventTurnEnd", last.Type)
+	if last := events[len(events)-1]; last.Type != agentbackend.TurnEventTurnEnd {
+		t.Fatalf("last event = %+v, want turn_end", last)
 	}
-
-	// Test Close is no-op and returns nil.
-	if err := backend.Close(); err != nil {
-		t.Errorf("Close() error = %v, want nil", err)
+	if got := backend.LastOutcome(); got == nil || got.Notes != "runner fired" {
+		t.Fatalf("LastOutcome() = %+v, want runner outcome", got)
 	}
 }
 
-// TestAgentBackend_TmuxAdapter_DelegatesToHandler verifies that TmuxBackend
-// wraps a TmuxAgentHandler and delegates execution to it.
-func TestAgentBackend_TmuxAdapter_DelegatesToHandler(t *testing.T) {
-	// Create a test handler that we can observe.
-	testHandler := &testTmuxAgentHandler{
+func TestAgentBackend_TmuxAdapter_StartTurnUsesSessionPath(t *testing.T) {
+	handler := &testTmuxAgentHandler{
 		outcome: runtime.Outcome{
 			Status: runtime.StatusSuccess,
 			Notes:  "test response from tmux handler",
 		},
 	}
+	backend := NewTmuxBackend(handler)
 
-	// Wrap it in the adapter.
-	backend := NewTmuxBackend(testHandler)
-
-	// Verify the backend satisfies the interface compile-time assertion.
 	var _ agentbackend.AgentBackend = backend
 
-	// Test ToolControl returns Driver mode.
 	if got := backend.ToolControl(); got != agentbackend.ToolControlDriver {
 		t.Errorf("ToolControl() = %v, want ToolControlDriver", got)
 	}
-
-	// Test Capabilities returns expected values.
 	caps := backend.Capabilities()
-	if !caps.Thinking {
-		t.Error("Capabilities().Thinking = false, want true")
-	}
-	if caps.TokenStreaming {
-		t.Error("Capabilities().TokenStreaming = true, want false")
-	}
-	if caps.CostTracking {
-		t.Error("Capabilities().CostTracking = true, want false")
-	}
-	if caps.ToolInjection {
-		t.Error("Capabilities().ToolInjection = true, want false")
+	if !caps.Thinking || caps.TokenStreaming || caps.CostTracking || caps.ToolInjection {
+		t.Fatalf("unexpected tmux capabilities: %+v", caps)
 	}
 
-	// Test StartTurn delegates to the handler.
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test prompt"}
-	opts := agentbackend.TurnOptions{
+	route := engine.AgentRoute{
+		Provider: "anthropic",
+		Model:    "test-model",
+		Backend:  engine.BackendCLI,
+		Driver:   "claude_cli",
+	}
+	stream, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test prompt"}, agentbackend.TurnOptions{
 		Model: "test-model",
-		Extra: map[string]any{
-			"provider": "anthropic",
-			"driver":   "claude_cli",
-		},
-	}
-
-	stream, err := backend.StartTurn(ctx, msg, opts)
+		Extra: testBackendExtra(t, route),
+	})
 	if err != nil {
 		t.Fatalf("StartTurn() error = %v", err)
 	}
 	defer stream.Close()
 
-	// Verify the handler was called with the expected parameters.
-	if !testHandler.called {
-		t.Error("handler.ExecuteAgent was not called")
+	if handler.called {
+		t.Fatal("legacy ExecuteAgent must not be called")
 	}
-	if testHandler.node == nil {
-		t.Fatal("handler.ExecuteAgent node is nil")
+	if !handler.sessionCalled {
+		t.Fatal("ExecuteAgentWithSession was not called")
 	}
-	if got := testHandler.node.Attr("prompt", ""); got != "test prompt" {
-		t.Errorf("handler.ExecuteAgent node prompt = %q, want %q", got, "test prompt")
+	if handler.prompt != "test prompt" {
+		t.Errorf("ExecuteAgentWithSession prompt = %q, want %q", handler.prompt, "test prompt")
 	}
-	if testHandler.route.Model != "test-model" {
-		t.Errorf("handler.ExecuteAgent route.Model = %q, want %q", testHandler.route.Model, "test-model")
-	}
-	if testHandler.route.Driver != "claude_cli" {
-		t.Errorf("handler.ExecuteAgent route.Driver = %q, want %q", testHandler.route.Driver, "claude_cli")
+	if handler.route.Driver != "claude_cli" {
+		t.Errorf("ExecuteAgentWithSession route.Driver = %q, want claude_cli", handler.route.Driver)
 	}
 
-	// Read events from the stream.
-	events := []agentbackend.TurnEvent{}
-	for {
-		ev, err := stream.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("stream.Recv() error = %v", err)
-		}
-		events = append(events, ev)
-	}
-
-	// Should get at least a turn_end event.
+	events := collectTurnEvents(t, stream)
 	if len(events) == 0 {
 		t.Fatal("expected at least one event from stream")
 	}
 
-	// Test SendToolResult returns ErrToolControlDriver.
-	toolResult := agentbackend.ToolResult{
-		ToolUseID: "test-tool-id",
-		Content:   "test result",
-	}
-	if err := stream.SendToolResult(ctx, toolResult); !errors.Is(err, agentbackend.ErrToolControlDriver) {
+	toolResult := agentbackend.ToolResult{ToolUseID: "test-tool-id", Content: "test result"}
+	if err := stream.SendToolResult(context.Background(), toolResult); !errors.Is(err, agentbackend.ErrToolControlDriver) {
 		t.Errorf("SendToolResult() error = %v, want ErrToolControlDriver", err)
 	}
-
-	// Test Close is no-op and returns nil.
-	if err := backend.Close(); err != nil {
-		t.Errorf("Close() error = %v, want nil", err)
+	if got := backend.LastOutcome(); got == nil || got.Notes != "test response from tmux handler" {
+		t.Fatalf("LastOutcome() = %+v, want tmux outcome", got)
 	}
 }
 
-// TestAgentBackend_SDKAdapter_WithNilHandler verifies that NewSDKBackend
-// creates a default handler when nil is passed.
-func TestAgentBackend_SDKAdapter_WithNilHandler(t *testing.T) {
-	// Create backend with nil handler.
+func TestAgentBackend_SDKAdapter_WithNilRunner(t *testing.T) {
 	backend := NewSDKBackend(nil)
-
 	if backend == nil {
 		t.Fatal("NewSDKBackend(nil) returned nil")
 	}
-	if backend.handler == nil {
-		t.Error("backend.handler is nil, expected default handler")
+	if backend.runner == nil {
+		t.Error("backend.runner is nil, expected default runner")
 	}
 }
 
-// TestAgentBackend_TmuxAdapter_WithNilHandler verifies that NewTmuxBackend
-// creates a default handler when nil is passed.
 func TestAgentBackend_TmuxAdapter_WithNilHandler(t *testing.T) {
-	// Create backend with nil handler.
 	backend := NewTmuxBackend(nil)
-
 	if backend == nil {
 		t.Fatal("NewTmuxBackend(nil) returned nil")
 	}
@@ -250,262 +158,140 @@ func TestAgentBackend_TmuxAdapter_WithNilHandler(t *testing.T) {
 	}
 }
 
-// TestAgentBackend_SDKAdapter_HandlerError verifies error propagation.
-func TestAgentBackend_SDKAdapter_HandlerError(t *testing.T) {
-	testHandler := &testCodergenHandler{
-		err: errors.New("handler error"),
+func TestAgentBackend_SDKAdapter_RunnerError(t *testing.T) {
+	runner := &testEngineAgentBackend{err: errors.New("runner error")}
+	backend := NewSDKBackend(runner)
+	route := engine.AgentRoute{
+		Provider: "anthropic",
+		Model:    "test-model",
+		Backend:  engine.BackendAPI,
+		Driver:   "anthropic_sdk",
 	}
-	backend := NewSDKBackend(testHandler)
 
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{
 		Model: "test-model",
-		Extra: map[string]any{
-			"provider": "anthropic",
-			"driver":   "anthropic_sdk",
-		},
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+		Extra: testBackendExtra(t, route),
+	})
 	if err == nil {
-		t.Error("StartTurn() with handler error = nil, want error")
+		t.Fatal("StartTurn() with runner error = nil, want error")
 	}
-	if !errors.Is(err, testHandler.err) && err.Error() != testHandler.err.Error() {
-		t.Errorf("StartTurn() error = %v, want %v", err, testHandler.err)
+	if !errors.Is(err, runner.err) {
+		t.Errorf("StartTurn() error = %v, want %v", err, runner.err)
 	}
 }
 
-// TestAgentBackend_TmuxAdapter_HandlerError verifies error propagation.
 func TestAgentBackend_TmuxAdapter_HandlerError(t *testing.T) {
-	testHandler := &testTmuxAgentHandler{
-		err: errors.New("handler error"),
+	handler := &testTmuxAgentHandler{err: errors.New("handler error")}
+	backend := NewTmuxBackend(handler)
+	route := engine.AgentRoute{
+		Provider: "anthropic",
+		Model:    "test-model",
+		Backend:  engine.BackendCLI,
+		Driver:   "claude_cli",
 	}
-	backend := NewTmuxBackend(testHandler)
 
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{
 		Model: "test-model",
-		Extra: map[string]any{
-			"provider": "anthropic",
-			"driver":   "claude_cli",
-		},
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+		Extra: testBackendExtra(t, route),
+	})
 	if err == nil {
-		t.Error("StartTurn() with handler error = nil, want error")
+		t.Fatal("StartTurn() with handler error = nil, want error")
+	}
+	if handler.called {
+		t.Fatal("legacy ExecuteAgent must not be called on handler error")
 	}
 }
 
-// TestAgentBackend_SDKAdapter_NilExtra verifies that SDKBackend returns an error
-// when opts.Extra is nil (regression test for panic).
 func TestAgentBackend_SDKAdapter_NilExtra(t *testing.T) {
-	testHandler := &testCodergenHandler{
-		outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "test"},
-	}
-	backend := NewSDKBackend(testHandler)
-
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
-		Model: "test-model",
-		// Extra is nil - should return error, not panic
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+	runner := &testEngineAgentBackend{}
+	backend := NewSDKBackend(runner)
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{Model: "test-model"})
 	if err == nil {
 		t.Error("StartTurn() with nil Extra = nil, want error")
 	}
-	if testHandler.called {
-		t.Error("handler.ExecuteAgent was called when Extra is nil")
+	if runner.called {
+		t.Error("runner.Run was called when Extra is nil")
 	}
 }
 
-// TestAgentBackend_TmuxAdapter_NilExtra verifies that TmuxBackend returns an error
-// when opts.Extra is nil (regression test for panic).
 func TestAgentBackend_TmuxAdapter_NilExtra(t *testing.T) {
-	testHandler := &testTmuxAgentHandler{
-		outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "test"},
-	}
-	backend := NewTmuxBackend(testHandler)
-
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
-		Model: "test-model",
-		// Extra is nil - should return error, not panic
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+	handler := &testTmuxAgentHandler{}
+	backend := NewTmuxBackend(handler)
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{Model: "test-model"})
 	if err == nil {
 		t.Error("StartTurn() with nil Extra = nil, want error")
 	}
-	if testHandler.called {
-		t.Error("handler.ExecuteAgent was called when Extra is nil")
+	if handler.called || handler.sessionCalled {
+		t.Error("tmux handler was called when Extra is nil")
 	}
 }
 
-// TestAgentBackend_SDKAdapter_MissingProvider verifies that SDKBackend returns an error
-// when opts.Extra["provider"] is missing (regression test for panic).
 func TestAgentBackend_SDKAdapter_MissingProvider(t *testing.T) {
-	testHandler := &testCodergenHandler{
-		outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "test"},
-	}
-	backend := NewSDKBackend(testHandler)
-
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
-		Model: "test-model",
-		Extra: map[string]any{
-			"driver": "anthropic_sdk",
-			// "provider" is missing - should return error, not panic
-		},
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+	runner := &testEngineAgentBackend{}
+	backend := NewSDKBackend(runner)
+	extra := testBackendExtra(t, engine.AgentRoute{Model: "test-model", Backend: engine.BackendAPI, Driver: "anthropic_sdk"})
+	delete(extra, "provider")
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{Model: "test-model", Extra: extra})
 	if err == nil {
 		t.Error("StartTurn() with missing provider = nil, want error")
 	}
-	if testHandler.called {
-		t.Error("handler.ExecuteAgent was called when provider is missing")
+	if runner.called {
+		t.Error("runner.Run was called when provider is missing")
 	}
 }
 
-// TestAgentBackend_TmuxAdapter_MissingProvider verifies that TmuxBackend returns an error
-// when opts.Extra["provider"] is missing (regression test for panic).
 func TestAgentBackend_TmuxAdapter_MissingProvider(t *testing.T) {
-	testHandler := &testTmuxAgentHandler{
-		outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "test"},
-	}
-	backend := NewTmuxBackend(testHandler)
-
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
-		Model: "test-model",
-		Extra: map[string]any{
-			"driver": "claude_cli",
-			// "provider" is missing - should return error, not panic
-		},
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+	handler := &testTmuxAgentHandler{}
+	backend := NewTmuxBackend(handler)
+	extra := testBackendExtra(t, engine.AgentRoute{Model: "test-model", Backend: engine.BackendCLI, Driver: "claude_cli"})
+	delete(extra, "provider")
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{Model: "test-model", Extra: extra})
 	if err == nil {
 		t.Error("StartTurn() with missing provider = nil, want error")
 	}
-	if testHandler.called {
-		t.Error("handler.ExecuteAgent was called when provider is missing")
+	if handler.called || handler.sessionCalled {
+		t.Error("tmux handler was called when provider is missing")
 	}
 }
 
-// TestAgentBackend_SDKAdapter_WrongTypeProvider verifies that SDKBackend returns an error
-// when opts.Extra["provider"] is not a string (regression test for panic).
 func TestAgentBackend_SDKAdapter_WrongTypeProvider(t *testing.T) {
-	testHandler := &testCodergenHandler{
-		outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "test"},
-	}
-	backend := NewSDKBackend(testHandler)
-
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
-		Model: "test-model",
-		Extra: map[string]any{
-			"provider": 123, // Wrong type: int instead of string
-			"driver":   "anthropic_sdk",
-		},
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+	runner := &testEngineAgentBackend{}
+	backend := NewSDKBackend(runner)
+	extra := testBackendExtra(t, engine.AgentRoute{Provider: "anthropic", Model: "test-model", Backend: engine.BackendAPI, Driver: "anthropic_sdk"})
+	extra["provider"] = 123
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{Model: "test-model", Extra: extra})
 	if err == nil {
 		t.Error("StartTurn() with wrong type provider = nil, want error")
 	}
-	if testHandler.called {
-		t.Error("handler.ExecuteAgent was called when provider has wrong type")
+	if runner.called {
+		t.Error("runner.Run was called when provider has wrong type")
 	}
 }
 
-// TestAgentBackend_TmuxAdapter_WrongTypeProvider verifies that TmuxBackend returns an error
-// when opts.Extra["provider"] is not a string (regression test for panic).
 func TestAgentBackend_TmuxAdapter_WrongTypeProvider(t *testing.T) {
-	testHandler := &testTmuxAgentHandler{
-		outcome: runtime.Outcome{Status: runtime.StatusSuccess, Notes: "test"},
-	}
-	backend := NewTmuxBackend(testHandler)
-
-	ctx := context.Background()
-	msg := agentbackend.UserMessage{Text: "test"}
-	opts := agentbackend.TurnOptions{
-		Model: "test-model",
-		Extra: map[string]any{
-			"provider": 123, // Wrong type: int instead of string
-			"driver":   "claude_cli",
-		},
-	}
-
-	_, err := backend.StartTurn(ctx, msg, opts)
+	handler := &testTmuxAgentHandler{}
+	backend := NewTmuxBackend(handler)
+	extra := testBackendExtra(t, engine.AgentRoute{Provider: "anthropic", Model: "test-model", Backend: engine.BackendCLI, Driver: "claude_cli"})
+	extra["provider"] = 123
+	_, err := backend.StartTurn(context.Background(), agentbackend.UserMessage{Text: "test"}, agentbackend.TurnOptions{Model: "test-model", Extra: extra})
 	if err == nil {
 		t.Error("StartTurn() with wrong type provider = nil, want error")
 	}
-	if testHandler.called {
-		t.Error("handler.ExecuteAgent was called when provider has wrong type")
+	if handler.called || handler.sessionCalled {
+		t.Error("tmux handler was called when provider has wrong type")
 	}
 }
 
-// testCodergenHandler is a test double for engine.CodergenHandler.
-type testCodergenHandler struct {
-	outcome runtime.Outcome
-	err     error
-	called  bool
-	ctx     context.Context
-	exec    *engine.Execution
-	node    *model.Node
-	route   engine.AgentRoute
-}
-
-func (h *testCodergenHandler) UsesFidelity() bool     { return true }
-func (h *testCodergenHandler) RequiresProvider() bool { return true }
-
-func (h *testCodergenHandler) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
-	h.called = true
-	h.ctx = ctx
-	h.exec = exec
-	h.node = node
-	return h.outcome, h.err
-}
-
-func (h *testCodergenHandler) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
-	h.called = true
-	h.ctx = ctx
-	h.exec = exec
-	h.node = node
-	h.route = route
-	return h.outcome, h.err
-}
-
-// testTmuxAgentHandler is a test double for TmuxAgentHandler.
 type testTmuxAgentHandler struct {
-	outcome runtime.Outcome
-	err     error
-	called  bool
-	ctx     context.Context
-	exec    *engine.Execution
-	node    *model.Node
-	route   engine.AgentRoute
-}
-
-func (h *testTmuxAgentHandler) UsesFidelity() bool     { return true }
-func (h *testTmuxAgentHandler) RequiresProvider() bool { return true }
-
-func (h *testTmuxAgentHandler) Execute(ctx context.Context, exec *engine.Execution, node *model.Node) (runtime.Outcome, error) {
-	h.called = true
-	h.ctx = ctx
-	h.exec = exec
-	h.node = node
-	return h.outcome, h.err
+	outcome       runtime.Outcome
+	err           error
+	called        bool
+	sessionCalled bool
+	ctx           context.Context
+	exec          *engine.Execution
+	node          *model.Node
+	route         engine.AgentRoute
+	prompt        string
 }
 
 func (h *testTmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute) (runtime.Outcome, error) {
@@ -518,10 +304,71 @@ func (h *testTmuxAgentHandler) ExecuteAgent(ctx context.Context, exec *engine.Ex
 }
 
 func (h *testTmuxAgentHandler) ExecuteAgentWithSession(ctx context.Context, exec *engine.Execution, node *model.Node, route engine.AgentRoute, tmpl *templates.Template, toolName string, prompt string, modelID string, cfg transport.SessionConfig) (runtime.Outcome, error) {
-	h.called = true
+	h.sessionCalled = true
 	h.ctx = ctx
 	h.exec = exec
 	h.node = node
 	h.route = route
+	h.prompt = prompt
 	return h.outcome, h.err
+}
+
+type testEngineAgentBackend struct {
+	called   bool
+	exec     *engine.Execution
+	node     *model.Node
+	prompt   string
+	route    engine.AgentRoute
+	response string
+	outcome  *runtime.Outcome
+	err      error
+}
+
+func (b *testEngineAgentBackend) Run(ctx context.Context, exec *engine.Execution, node *model.Node, prompt string, route engine.AgentRoute) (string, *runtime.Outcome, error) {
+	b.called = true
+	b.exec = exec
+	b.node = node
+	b.prompt = prompt
+	b.route = route
+	return b.response, b.outcome, b.err
+}
+
+func collectTurnEvents(t *testing.T, stream agentbackend.TurnStream) []agentbackend.TurnEvent {
+	t.Helper()
+	events := []agentbackend.TurnEvent{}
+	for {
+		ev, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			return events
+		}
+		if err != nil {
+			t.Fatalf("stream.Recv() error = %v", err)
+		}
+		events = append(events, ev)
+	}
+}
+
+func testBackendExtra(t *testing.T, route engine.AgentRoute) map[string]any {
+	t.Helper()
+	logsRoot := t.TempDir()
+	worktree := t.TempDir()
+	node := &model.Node{ID: "turn", Attrs: map[string]string{"prompt": "node prompt", "auto_status": "true"}}
+	eng := &engine.Engine{
+		Options:     engine.RunOptions{RunID: "test-run"},
+		LogsRoot:    logsRoot,
+		WorktreeDir: worktree,
+	}
+	execCtx := &engine.Execution{
+		LogsRoot:    logsRoot,
+		WorktreeDir: worktree,
+		Engine:      eng,
+		Context:     runtime.NewContext(),
+	}
+	return map[string]any{
+		"provider": route.Provider,
+		"driver":   route.Driver,
+		"exec":     execCtx,
+		"node":     node,
+		"route":    route,
+	}
 }
