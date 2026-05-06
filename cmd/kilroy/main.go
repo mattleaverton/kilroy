@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -26,12 +24,8 @@ import (
 	"github.com/danshapiro/kilroy/internal/providerspec"
 	"github.com/danshapiro/kilroy/internal/version"
 
-	"github.com/mattn/go-isatty"
 )
 
-const (
-	skipCLIHeadlessWarningFlag = "--skip-cli-headless-warning"
-)
 
 func signalCancelContext() (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -259,7 +253,6 @@ func attractorRun(args []string) {
 	var allowTestShim bool
 	var confirmStaleBuild bool
 	var noCXDB bool
-	var skipCLIHeadlessWarning bool
 	var inputPath string
 	var inputFileSpecs []string
 	var workspace string
@@ -282,8 +275,6 @@ func attractorRun(args []string) {
 			confirmStaleBuild = true
 		case "--no-cxdb":
 			noCXDB = true
-		case skipCLIHeadlessWarningFlag:
-			skipCLIHeadlessWarning = true
 		case "--graph":
 			i++
 			if i >= len(args) {
@@ -469,13 +460,6 @@ func attractorRun(args []string) {
 		gitOps = gitHook
 	}
 
-	// Skip the interactive CLI-backend warning automatically when stdin isn't
-	// a terminal (detached runs, pipes, agent-driven invocations). There's
-	// nobody to answer y/n so the prompt is pointless and the warning has
-	// already been surfaced out-of-band by whatever started the process.
-	if !skipCLIHeadlessWarning && !stdinIsTerminal() {
-		skipCLIHeadlessWarning = true
-	}
 	// Default to --no-cxdb when the caller didn't supply a run config. The
 	// auto-built default config doesn't populate cxdb addresses, so requiring
 	// cxdb would just fail later. Callers that genuinely want cxdb should
@@ -485,18 +469,6 @@ func attractorRun(args []string) {
 	}
 
 	if !syncFlag {
-		cfg, err := loadOrBuildConfig(configPath, gitOps, gitDetectDir, false)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		if !skipCLIHeadlessWarning && runConfigUsesCLIProviders(cfg) {
-			if !confirmCLIHeadlessWarning(os.Stdin, os.Stderr) {
-				fmt.Fprintln(os.Stderr, "validation aborted: declined provider CLI headless-risk warning")
-				os.Exit(1)
-			}
-		}
-
 		if runID == "" {
 			id, err := engine.NewRunID()
 			if err != nil {
@@ -585,7 +557,6 @@ func attractorRun(args []string) {
 		for _, spec := range labelSpecs {
 			childArgs = append(childArgs, "--label", spec)
 		}
-		childArgs = append(childArgs, skipCLIHeadlessWarningFlag)
 		// The detached child must run the engine synchronously (foreground).
 		// Without --sync, the child would also enter the !syncFlag branch and
 		// spawn yet another detached process, causing infinite recursion.
@@ -653,13 +624,6 @@ func attractorRun(args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if !skipCLIHeadlessWarning && runConfigUsesCLIProviders(cfg) {
-		if !confirmCLIHeadlessWarning(os.Stdin, os.Stderr) {
-			fmt.Fprintln(os.Stderr, "launch aborted: declined provider CLI headless-risk warning")
-			os.Exit(1)
-		}
-	}
-
 	// Default: no deadline. CLI runs (especially with provider CLIs) can take hours.
 	ctx, cleanupSignalCtx := signalCancelContext()
 
@@ -779,48 +743,6 @@ func loadOrBuildConfig(configPath string, gitOps engine.GitOps, repoPath string,
 		fmt.Fprintln(os.Stderr, "no providers auto-detected from environment (set API key env vars for your LLM providers)")
 	}
 	return cfg, nil
-}
-
-func runConfigUsesCLIProviders(cfg *engine.RunConfigFile) bool {
-	if cfg == nil {
-		return false
-	}
-	for _, providerCfg := range cfg.LLM.Providers {
-		if providerCfg.Backend == engine.BackendCLI {
-			return true
-		}
-	}
-	return false
-}
-
-// stdinIsTerminal reports whether os.Stdin is attached to an interactive
-// terminal. When it isn't (detached runs, pipes, redirected input, /dev/null,
-// subprocess invocation), there's nobody to answer a y/n prompt so callers
-// should skip interactive confirmations entirely. We use go-isatty rather
-// than a Mode&CharDevice check because /dev/null is also a char device on
-// darwin/linux and would fool the simpler test.
-func stdinIsTerminal() bool {
-	return isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
-}
-
-func confirmCLIHeadlessWarning(in io.Reader, out io.Writer) bool {
-	if in == nil {
-		in = os.Stdin
-	}
-	if out == nil {
-		out = os.Stderr
-	}
-	_, _ = io.WriteString(out, cliHeadlessWarningPrompt)
-	s, err := bufio.NewReader(in).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false
-	}
-	answer := strings.ToLower(strings.TrimSpace(s))
-	// Y/n defaults to yes.
-	if answer == "" {
-		return true
-	}
-	return answer == "y" || answer == "yes"
 }
 
 func attractorValidate(args []string) {

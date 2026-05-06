@@ -735,54 +735,6 @@ llm:
 // not printed, the "declined" exit path is unreachable, and the run proceeds
 // directly to downstream validation checks. Subprocess invocations from CI,
 // pipes, and detached child processes always hit this path.
-func TestRun_CLIProviderWarningAutoSkippedOnNonTTY(t *testing.T) {
-	bin := buildKilroyBinary(t)
-	repo := initTestRepo(t)
-	t.Setenv("KILROY_CODEX_PATH", "/tmp/fake/codex")
-
-	graph := filepath.Join(t.TempDir(), "openai.dot")
-	_ = os.WriteFile(graph, []byte(`
-digraph G {
-  start [shape=Mdiamond]
-  exit [shape=Msquare]
-  a [shape=box, llm_provider=openai, llm_model=gpt-5.4, prompt="hi"]
-  start -> a
-  a -> exit [condition="outcome=success"]
-}
-`), 0o644)
-
-	cfg := filepath.Join(t.TempDir(), "run.yaml")
-	_ = os.WriteFile(cfg, []byte(fmt.Sprintf(`
-version: 1
-repo:
-  path: %s
-cxdb:
-  binary_addr: 127.0.0.1:9009
-  http_base_url: http://127.0.0.1:9010
-llm:
-  cli_profile: real
-  providers:
-    openai:
-      backend: cli
-`, repo)), 0o644)
-
-	logsRoot := filepath.Join(t.TempDir(), "logs")
-	// Even with "n\n" piped on stdin, the auto-skip ignores it: stdin isn't
-	// a TTY so confirmCLIHeadlessWarning is never called.
-	code, out := runKilroyWithInput(t, bin, "n\n", "run", "--sync", "--graph", graph, "--config", cfg, "--run-id", "cli-warning-autoskip", "--logs-root", logsRoot)
-	if code != 1 {
-		t.Fatalf("exit code: got %d want 1\n%s", code, out)
-	}
-	if strings.Contains(out, cliHeadlessWarningPrompt) {
-		t.Fatalf("warning prompt should be auto-skipped on non-TTY stdin, but was printed:\n%s", out)
-	}
-	if strings.Contains(out, "validation aborted: declined provider CLI headless-risk warning") {
-		t.Fatalf("warning auto-skip must not abort validation, got:\n%s", out)
-	}
-	if !strings.Contains(out, "llm.cli_profile=real forbids provider path overrides") {
-		t.Fatalf("expected run to proceed past warning into downstream validation checks, got:\n%s", out)
-	}
-}
 
 func TestRun_PrintsCXDBUILink(t *testing.T) {
 	cxdbSrv := newCXDBTestServer(t)

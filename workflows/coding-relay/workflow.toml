@@ -9,10 +9,10 @@ description       = """
 Iterative coding loop with four roles handed off in sequence:
 - planner   (anthropic SDK, sonnet 4.6) reads spec + prior feedback, scopes one sub-task.
 - coder     (opencode + kimi-k2)        implements the task, attempts a build.
-- critic    (codex CLI + gpt-5)         judges work against spec, writes feedback + decision.
+- critic    (codex CLI + gpt-5.4-mini)  judges work against spec, writes feedback + decision.
 - status    (quick_easy class)          writes STATUS.md for external monitoring.
 
-Loop bound: 6 iterations or until critic writes COMPLETE to .kilroy/decision.md.
+Loop bound: 20 iterations or until critic writes COMPLETE to .kilroy/decision.md.
 Exercises agents.Dispatcher driver routing (SDK vs CLI), the auth binder
 across three providers, and the class resolver via the status node.
 """

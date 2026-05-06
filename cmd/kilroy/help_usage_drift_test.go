@@ -10,9 +10,7 @@ import (
 
 // internalFlags are flags that are intentionally absent from user-facing
 // help text (e.g. for inter-process communication between kilroy processes).
-var internalFlags = map[string]bool{
-	"--skip-cli-headless-warning": true,
-}
+var internalFlags = map[string]bool{}
 
 // extractFuncBody returns the source text of the named function by tracking
 // brace depth from the opening "func funcName(" declaration. Tracks Go
