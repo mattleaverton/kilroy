@@ -21,9 +21,7 @@ digraph coding_relay {
     graph [
         inputs="prompt",
         outputs="result.md",
-        model_stylesheet="
-            * { agent_class: hard_coding; }
-        "
+        model_stylesheet=""
     ]
 
     start  [shape=Mdiamond, label="Start"]
