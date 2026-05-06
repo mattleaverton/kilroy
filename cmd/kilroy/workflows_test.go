@@ -295,3 +295,67 @@ func TestWorkflowsDescribe_UnknownName_Exit1(t *testing.T) {
 		t.Errorf("stderr missing not-found message:\n%s", stderr.String())
 	}
 }
+
+func TestWorkflowsValidate_UsesProjectPolicyOverride(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir()
+	writeGlobalOpenAIAuth(t, tmpHome)
+
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".kilroy"), 0o755); err != nil {
+		t.Fatalf("mkdir .kilroy: %v", err)
+	}
+	workflowRoot := filepath.Join(projectRoot, ".kilroy", "workflows")
+	workflowDir := writePackage(t, workflowRoot, "policy-check", `
+[workflow]
+name = "policy-check"
+version = "1"
+description = "Validate project policy override."
+default_class = "hard_coding"
+graph = "graph.dot"
+`)
+	graph := `digraph policy_check {
+  graph [model_stylesheet="* { agent_class: hard_coding; }"]
+  start [shape=Mdiamond]
+  agent [shape=box, agent_class="hard_coding", prompt="Check routing."]
+  done [shape=Msquare]
+  start -> agent
+  agent -> done [condition="outcome=success"]
+}`
+	if err := os.WriteFile(filepath.Join(workflowDir, "graph.dot"), []byte(graph), 0o644); err != nil {
+		t.Fatalf("write graph: %v", err)
+	}
+
+	prefer := exec.Command(bin, "policy", "prefer", "hard_coding", "gpt-5", "--scope", "project")
+	prefer.Dir = projectRoot
+	prefer.Env = policyOverrideEnv(tmpHome)
+	if out, err := prefer.CombinedOutput(); err != nil {
+		t.Fatalf("policy prefer: %v\n%s", err, out)
+	}
+
+	cmd := exec.Command(bin, "workflows", "validate", "policy-check")
+	cmd.Dir = projectRoot
+	cmd.Env = policyOverrideEnv(tmpHome,
+		"OPENAI_API_KEY_KILROY=present",
+		"KILROY_WORKFLOW_PATHS="+workflowRoot,
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("workflows validate: %v\n%s", err, out)
+	}
+	var got workflowsValidateResult
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, out)
+	}
+	if got.PreLaunch == nil || len(got.PreLaunch.Nodes) == 0 {
+		t.Fatalf("missing prelaunch nodes: %+v", got.PreLaunch)
+	}
+	node := got.PreLaunch.Nodes[0]
+	if node.ResolvedModel != "gpt-5" || node.ResolvedDriver != "openai_sdk" {
+		t.Fatalf("resolved node = %+v, want gpt-5/openai_sdk", node)
+	}
+	if node.PolicySource != "project_override" || node.OverrideMode != "prefer" {
+		t.Fatalf("policy provenance = %q/%q, want project_override/prefer",
+			node.PolicySource, node.OverrideMode)
+	}
+}

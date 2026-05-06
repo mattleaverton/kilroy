@@ -2,7 +2,10 @@
 
 Local-first CLI that runs AI coding workflows in a git repo. Each workflow is a self-contained package (`workflow.toml` + DOT graph + prompts) that resolves provider, model, backend, and credentials automatically from a *class* (e.g. `hard_coding`, `deep_investigation`), then freezes the choice in a prelaunch snapshot before any LLM call.
 
-**Status: alpha.** Public surface is `kilroy run <workflow>`. Auth setup requires shell env vars; a `kilroy auth set` write surface is on the post-alpha roadmap.
+**Status: alpha.** Public surface is `kilroy run <workflow>`. See
+[`docs/usage.md`](docs/usage.md) for the agent-worker usage guide. Auth setup
+uses detected env vars and CLI sessions; `kilroy auth set/prefer/remove-source`
+manage env-var mappings without storing key values.
 
 ## Install
 
@@ -33,11 +36,14 @@ Run output, artifacts, and isolated execution worktree all land under `~/.local/
 
 ## Concepts
 
-**Workflow package.** A directory under `workflows/<name>/` (or `~/.config/kilroy/workflows/<name>/`) with `workflow.toml`, `graph.dot`, and optional `prompts/` + `scripts/`. The CLI discovers them via `KILROY_WORKFLOW_PATHS`, project-root `.kilroy/workflows/`, and XDG config dir, in that order.
+**Workflow package.** A directory with `workflow.toml`, `graph.dot`, and
+optional `prompts/` + `scripts/`. The CLI discovers workflows via
+`KILROY_WORKFLOW_PATHS`, project-root `.kilroy/workflows/`, XDG config/data
+dirs, and the source-checkout fallback for development binaries, in that order.
 
 **Agent class.** Each stage declares a class (`hard_coding`, `deep_investigation`, `architectural_critique`, `quick_easy`, etc.) instead of a model. The class resolver maps the class to a `(provider, model, driver)` tuple via the policy chain at prelaunch — and the choice is **frozen**. Execution does not re-resolve. See `kilroy policy list` for the available classes and how each resolves on this machine.
 
-**Auth chain.** Each `(provider, method)` binding is satisfied by an ordered chain of credential sources (env var → CLI session → keychain). Convention: per-tool budgets use `<PROVIDER>_API_KEY_KILROY` — when set, that key beats the canonical key without unsetting it.
+**Auth chain.** Each `(provider, method)` binding is satisfied by an ordered chain of credential sources (env var or CLI session). Convention: per-tool budgets use `<PROVIDER>_API_KEY_KILROY` — when set, that key beats the canonical key without unsetting it.
 
 **Validation = launch parity.** `kilroy workflows validate <name>` runs the same prelaunch checks `kilroy run` does (graph integrity, class resolution, auth resolution, CLI binary probes, credential probes). If validate passes, launch will not silently fail on these axes.
 
@@ -120,7 +126,13 @@ digraph myflow {
 }
 ```
 
-Validate with `kilroy workflows validate myflow --pretty` before launching. Models are not specified directly; the policy class resolver picks the model based on the class. Add a class to `internal/policy/data/policy.toml` if you need a routing shape that doesn't yet exist.
+Validate with `kilroy workflows validate myflow --pretty` before launching.
+Models are not specified directly; the policy class resolver picks the model
+based on the class. Use `kilroy policy prefer <class> <model>` to move an
+existing candidate to the front of the chain, or `kilroy policy pin <class>
+<model>` to restrict a class to that candidate set. If no existing class or
+candidate fits, that is currently a Kilroy policy change in
+`internal/policy/data/policy.toml`.
 
 ## Supported providers
 
@@ -135,8 +147,8 @@ kilroy runs                     list | show <id> | wait <id> | prune
 kilroy status                   [--logs-root <dir> | --latest] [--watch]
 kilroy resume                   --logs-root <dir>
 kilroy stop                     --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy auth                     defaults | init | list | check | suggest-fix
-kilroy policy                   list | show <class> | resolve <class> | explain <run-id>
+kilroy auth                     defaults | init | list | check | set | prefer | remove-source | suggest-fix
+kilroy policy                   list | show <class> | resolve <class> | prefer | pin | clear | overrides | explain <run-id>
 kilroy ingest                   [--output <file.dot>] <requirements>
 ```
 
@@ -150,7 +162,13 @@ Per-stage under `<logs_root>/<node_id>/`: `prompt.md`, `response.md`, `status.js
 
 ## Alpha caveats
 
-- **Auth setup is read-only today.** `auth init` generates a config from detected env vars; updates require editing `~/.config/kilroy/auth.toml` or shell exports. A `kilroy auth set/login` write surface is planned post-alpha.
+- **Auth management is env-only today.** `auth set`, `auth prefer`, and
+  `auth remove-source` manage env var names in global auth config. They do not
+  store key values or log into providers.
+- **Policy overrides are class-targeted.** `policy prefer/pin/clear` can reorder
+  or pin existing policy candidates at the global or project layer. There is no
+  general `.kilroy/policy.toml` authoring surface and no arbitrary downstream
+  fallback-chain definition yet.
 - **Some legacy direct-mode flags** (`--graph`, `--package`, `--config`, `--run-id`, `--logs-root`) are kept for ad-hoc work and tests. The recommended public surface is `kilroy run <workflow>`.
 - **Stale-build detection** for dev builds: `kilroy run` refuses to launch a binary older than the source tree. Rebuild or pass `--confirm-stale-build`.
 

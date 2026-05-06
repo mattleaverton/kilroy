@@ -4,9 +4,10 @@
 // (model, driver, transport, auth) tuple based on policy data plus the
 // machine state surfaced by internal/auth.
 //
-// The policy data itself ships as a TOML file embedded at build time.
-// It is read-only at runtime: no per-machine override, no remote fetch.
-// Updates are normal repo PRs.
+// The base policy data ships as a TOML file embedded at build time.
+// User/project override files can reorder or pin class chains at runtime,
+// but they do not name raw workflow models directly; workflows still ask
+// for abstract classes and the resolver still checks auth reachability.
 //
 //go:generate go run ./cmd/gen_classes_doc/main.go
 
@@ -32,6 +33,11 @@ type Data struct {
 	Classes       map[string]Class `toml:"classes"`
 	Aliases       []ClassAlias     `toml:"aliases"`
 	Deprecated    []Deprecation    `toml:"deprecated"`
+
+	// AppliedOverrides records runtime override provenance by class. It is
+	// derived from global/project policy override files and is intentionally
+	// not part of the embedded policy TOML schema.
+	AppliedOverrides map[string]AppliedOverride `toml:"-"`
 }
 
 // Class is a named resolution strategy: an ordered fallback chain of
@@ -74,6 +80,16 @@ type Deprecation struct {
 	Since   string `toml:"since"`
 	Sunset  string `toml:"sunset,omitempty"`
 	Message string `toml:"message"`
+}
+
+// AppliedOverride describes the effective runtime override that modified a
+// class chain. Source is "global_override" or "project_override".
+type AppliedOverride struct {
+	Source  string `json:"source"`
+	Path    string `json:"path,omitempty"`
+	Mode    string `json:"mode"`
+	ModelID string `json:"model_id"`
+	Driver  string `json:"driver,omitempty"`
 }
 
 // ClassNames returns the sorted set of class names from the embedded

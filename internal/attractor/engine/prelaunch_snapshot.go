@@ -52,6 +52,8 @@ type preLaunchNodeSnap struct {
 	HistorySink   string `json:"history_sink"`
 	FallbackRank  int    `json:"fallback_rank"`
 	PolicyVersion string `json:"policy_version"`
+	PolicySource  string `json:"policy_source,omitempty"`
+	OverrideMode  string `json:"override_mode,omitempty"`
 	ResolvedAt    string `json:"resolved_at,omitempty"`
 
 	// Auth carries the binding.Snapshot that the resolver picked.
@@ -297,6 +299,8 @@ func resolveResultToSnap(className string, res policy.ResolveResult) preLaunchNo
 		HistorySink:   res.HistorySink,
 		FallbackRank:  res.FallbackRank,
 		PolicyVersion: res.PolicyVersion,
+		PolicySource:  res.PolicySource,
+		OverrideMode:  res.OverrideMode,
 		ResolvedAt:    resolvedAt,
 		Auth: snapAuth{
 			ChainName: res.AuthSnapshot.ChainName,
@@ -357,6 +361,8 @@ func snapToResolveResult(snap preLaunchNodeSnap) *policy.ResolveResult {
 		FallbackRank:  snap.FallbackRank,
 		Skipped:       snap.Skipped,
 		PolicyVersion: snap.PolicyVersion,
+		PolicySource:  snap.PolicySource,
+		OverrideMode:  snap.OverrideMode,
 		ResolvedAt:    resolvedAt,
 	}
 }

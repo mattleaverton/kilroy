@@ -1,425 +1,228 @@
 ---
 name: using-kilroy
-description: "Operate Kilroy Attractor pipelines end-to-end: ingest English requirements into DOT graphs, validate graph semantics, run and resume pipelines with run config files, configure provider backends (cli/api), and debug runs from logs_root artifacts and checkpoints."
+description: Use when operating Kilroy from a project repository: discovering workflows, launching built-in or local worker runs, checking auth and policy resolution, watching runs, reading outputs, or authoring class-routed local workflow packages.
 ---
 
 # Using Kilroy
 
-Kilroy is a local-first Attractor runner:
-
-1. Generate a DOT pipeline from English requirements.
-2. Validate DOT structure + semantics.
-3. Run in an isolated git worktree with checkpoint commits.
-4. Resume interrupted runs from logs, CXDB, or run branch.
-
-> **If you only need to delegate a focused one-shot task to a single agent**
-> (investigation, research, or a small code change you do not need to supervise
-> live), use the packaged workflows directly: `kilroy run investigate` for
-> read-only research and `kilroy run implement` for directed code changes with
-> verification. The old `quick-launch` skill/workflow has been replaced by
-> this workflow surface.
-
-## Command Surface
-
-Use these exact command forms:
+Kilroy is a local worker-runner for software repositories. The normal alpha
+surface is packaged workflows by name:
 
 ```text
-kilroy run <workflow-name> [--input-file KEY=PATH ...] [--input <path>] [--label KEY=VALUE] [--detach] [--wait] [--pretty] [--allow-test-shim] [--confirm-stale-build] [--no-cxdb] [--skip-cli-headless-warning] [--config <run.yaml>] [--run-id <id>] [--logs-root <dir>] [--workspace <dir>]
-kilroy run --graph <file.dot> [--config <run.yaml>] [...]   # advanced ad-hoc graph mode
-kilroy run --package <dir>    [--config <run.yaml>] [...]   # advanced ad-hoc package mode
-kilroy resume --logs-root <dir> [--pretty]
-kilroy resume --run-branch <attractor/run/...> [--repo <path>] [--pretty]
-kilroy status [--logs-root <dir> | --latest] [--json] [--watch] [--interval <sec>]
-kilroy stop --logs-root <dir> [--grace-ms <ms>] [--force]
-kilroy runs list   [--json|--pretty] [--label KEY=VALUE] [--status STATUS] [--graph PATTERN] [--limit N]
-kilroy runs show   (<id-or-prefix> | --latest [--label KEY=VALUE]) [--json] [--outputs] [--print <file>]
-kilroy runs wait   (<id-or-prefix> | --latest [--label KEY=VALUE]) [--timeout <duration>] [--interval <duration>] [--json]
-kilroy runs prune  [--before YYYY-MM-DD] [--older-than DURATION] [--graph PATTERN] [--label KEY=VALUE] [--orphans] [--dry-run | --yes]
-kilroy workflows list | describe <name> | validate <name>  [--pretty | --all]
-kilroy validate --graph <file.dot>            # static DOT validation
-kilroy ingest [--output <file.dot>] [--model <model>] [--skill <skill.md>] [--repo <path>] [--max-turns <n>] [--no-validate] <requirements>
-kilroy auth list | check | init | suggest-fix
-kilroy policy list | show <class> | resolve <class> | explain <run-id>
-kilroy serve [--addr <host:port>]
+kilroy workflows list | describe <name> | validate <name>
+kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--pretty]
+kilroy runs list | show <id> | wait <id>
+kilroy status [--logs-root <dir> | --latest] [--watch]
+kilroy auth defaults | init | list | check | set | prefer | remove-source | suggest-fix
+kilroy policy list | show <class> | resolve <class> | prefer | pin | clear | overrides | explain <run-id>
 ```
 
-### Run flags you may not have seen before
+`kilroy run` is async by default. Use `--sync` only when you intentionally want
+to block.
 
-- `kilroy run <workflow-name>` — the canonical form. Names resolve via filesystem discovery: `KILROY_WORKFLOW_PATHS` > `<project-root>/.kilroy/workflows/` > `$XDG_CONFIG_HOME/kilroy/workflows/`. The named workflow is materialized into the run's worktree at `.kilroy/package/`.
-- `--graph <file.dot>` / `--package <dir>` — advanced ad-hoc modes. Use these only when you don't have a packaged workflow yet.
-- `--input <path>` — structured inputs for the graph. Pass a path to a JSON or YAML file. (Inline JSON like `--input '{"k":"v"}'` is no longer accepted — write a file and pass its path.) Values become `KILROY_INPUT_KEY` env vars for tool nodes, `$input.key` placeholders in agent prompts, and sections in `.kilroy/INPUT.md`. Required inputs are declared via the workflow manifest's `[inputs.<name>] required = true`.
-- `--input-file KEY=PATH` — read the file verbatim and assign it to the input key. Repeatable. The canonical way to inject multi-line text (prompts, specs, issue descriptions) without quoting or escaping. Replaces the old narrow `--prompt-file`.
-- `--no-cxdb` — skip the content-addressed event store. Applied automatically when no `--config` is supplied.
-- `--skip-cli-headless-warning` — bypass the interactive CLI-backend confirmation prompt. Applied automatically when stdin isn't a terminal.
-- `--label KEY=VALUE` — attach a label to the run. Repeatable. Used by `runs list --label` and `runs prune --label`. Always tag detached runs so you can find them later.
-- `--workspace <dir>` — override the workspace dir (default: cwd). If it's a git repo, the engine creates a dedicated run branch + worktree.
+For the full external-repo guide, read `docs/usage.md`.
 
-There is **no `--tmux` flag**. Driver dispatch is decided by the resolved
-`agent_class` (or explicit `agent_tool=` / `llm_provider=`) — CLI drivers
-(claude_cli, codex_cli, gemini_cli, opencode) automatically use tmux;
-SDK drivers (anthropic_sdk, openai_sdk, google_sdk) use the HTTP API
-path. Workflows control their routing intent in DOT and policy.
+## Worker Pattern
 
-There is **no `--force-model` flag**. Strict model selection lives in
-workflow/DOT/policy. If the chosen model is wrong, fix the workflow
-or policy.
+Use Kilroy like a worker pool:
 
-## Workflow
+1. Write one focused task/spec file.
+2. Pick a workflow with `kilroy workflows list --pretty` and
+   `kilroy workflows describe <name> --pretty`.
+3. Run `kilroy workflows validate <name> --pretty` before launch.
+4. Launch with labels for later grouping.
+5. Watch or wait by label.
+6. Read `result.md` or other declared outputs.
+7. Review and integrate code changes manually from the reported worktree,
+   run branch, or final SHA.
 
-1. Run ingest:
+Example:
 
 ```bash
-kilroy ingest -o pipeline.dot "Build a Go CLI link checker"
+kilroy run investigate \
+  --input-file question=/tmp/T-001.md \
+  --label conversation=my-session \
+  --label wave=1 \
+  --label task=T-001 \
+  --label scope=auth
+
+kilroy runs list --label wave=1 --pretty
+kilroy runs wait --latest --label task=T-001 --timeout 1h
+kilroy runs show --latest --label task=T-001 --print result.md
 ```
 
-2. Validate:
+Recommended labels:
+
+- `conversation=<slug>`
+- `wave=<N>`
+- `task=<id>`
+- `scope=<area>`
+
+There is no `kilroy discover` command; use `kilroy workflows list`.
+
+## Workflow Discovery
+
+Discovery order:
+
+1. `KILROY_WORKFLOW_PATHS`
+2. `<project-root>/.kilroy/workflows/`
+3. `$XDG_CONFIG_HOME/kilroy/workflows/`
+4. `$XDG_DATA_HOME/kilroy/workflows/`
+5. source-checkout `workflows/` for development binaries
+
+The project root is the nearest ancestor containing `.kilroy/`. A non-empty
+`KILROY_PROJECT_ROOT` overrides discovery and must point at a directory with a
+`.kilroy/` marker.
+
+Use `kilroy workflows list --all --pretty` to include experimental workflows.
+
+## Choosing Workflows
+
+- `investigate`: read-only research, writes `result.md`.
+- `implement`: directed code change with build/test verification.
+- `fix`: bug fix from issue/repro, emits `result.md` and `fix.patch`.
+- `review`: read-only review of a patch or branch.
+- `coding-relay`: experimental planner/coder/critic/status loop.
+- `build-test`: no-LLM build/test verification, hidden unless `--all`.
+
+Use `kilroy workflows describe <name> --pretty` for exact inputs and outputs.
+
+## Auth
+
+Auth management is env-var based.
+
+Supported:
+
+- `kilroy auth init` generates `~/.config/kilroy/auth.toml`.
+- `kilroy auth init --rescan` adds newly detected template sources.
+- `kilroy auth set <provider> --env <NAME>` maps a provider API-key chain to
+  an env var in global auth.
+- `kilroy auth prefer <provider/method[/tool]> <NAME>` moves an env var to the
+  front of a global auth chain.
+- `kilroy auth remove-source <provider/method[/tool]> <NAME>` removes an env
+  source from a global auth chain.
+- `kilroy auth list --pretty` shows discovered credentials.
+- `kilroy auth list --chains --pretty` shows configured chains and resolution.
+- `kilroy auth check --pretty` exits nonzero if any configured chain is broken.
+- Project auth files can still live at `<project>/.kilroy/auth.toml`, but the
+  management commands intentionally write only global auth.
+
+Not supported:
+
+- No key storage, key rotation, or provider login.
+
+To fix auth, set the provider env var or run the provider CLI login flow, then
+use `auth init --rescan`, `auth set`, `auth prefer`, or `auth remove-source`.
+Prefer `_KILROY` env vars for Kilroy-specific budgets:
+`ANTHROPIC_API_KEY_KILROY`, `OPENAI_API_KEY_KILROY`,
+`GEMINI_API_KEY_KILROY`.
+
+Current caveat: opencode remains a separate auth surface.
+
+## Policy
+
+Workflows should use `agent_class`, not raw model IDs. Classes let Kilroy keep
+model recommendations current without rewriting local workflows.
+
+Useful commands:
 
 ```bash
-kilroy validate --graph pipeline.dot
+kilroy policy list
+kilroy policy show hard_coding
+kilroy policy resolve hard_coding
+kilroy policy prefer hard_coding gpt-5 --scope project
+kilroy policy pin hard_coding gpt-5 --scope global
+kilroy policy clear hard_coding --scope project
+kilroy policy overrides --json
+kilroy policy explain <run-id>
 ```
 
-3. Create run config (`run.yaml` or `run.json`).
+Policy resolution uses:
 
-4. Run:
-
-```bash
-kilroy run --graph pipeline.dot --config run.yaml
+```text
+embedded Kilroy policy < global policy override < project policy override
 ```
 
-Optional pre-launch validation (validates everything, no stage execution):
+Use `policy prefer` to move an existing model candidate to the front of a class
+chain. Use `policy pin` to restrict a class to that model's matching
+candidates. `policy resolve --json` reports `policy_source` and
+`override_mode`.
 
-```bash
-kilroy workflows validate <workflow-name>
+If a local workflow needs routing that no class or existing candidate
+represents, pick the closest class or change Kilroy itself. There is no
+`kilroy policy init/copy/validate` file-management workflow.
+
+## Local Workflow Authoring
+
+Put workflows under `.kilroy/workflows/<name>/` with `workflow.toml` and
+`graph.dot`.
+
+Minimal manifest:
+
+```toml
+[workflow]
+name = "my-workflow"
+version = "1"
+description = "Do one focused thing."
+default_class = "hard_coding"
+graph = "graph.dot"
+
+[inputs.prompt]
+type = "string"
+required = true
+
+[outputs.result]
+type = "path"
+path = "result.md"
 ```
 
-This runs the same DOT + package + class + auth + binary checks a real
-launch does, minus execution. JSON by default; `--pretty` for human output.
-
-5. If interrupted, resume from the most convenient source:
-
-```bash
-kilroy resume --logs-root <path>
-```
-
-6. For long runs, launch detached so work continues after shell/session exits:
-
-```bash
-./kilroy run --detach --graph pipeline.dot --config run.yaml --run-id <run_id> --logs-root <logs_root>
-```
-
-7. Observe run health and prelaunch validation:
-
-```bash
-./kilroy status --logs-root <logs_root>
-cat <logs_root>/prelaunch_validation.json
-tail -f <logs_root>/progress.ndjson
-```
-
-8. Intervene when a run is stuck or needs termination:
-
-```bash
-./kilroy stop --logs-root <logs_root> --grace-ms 30000 --force
-```
-
-## Runs: listing, inspecting, cleaning up
-
-Every run (detached or foreground) is recorded in a local SQLite run database. Query it via `kilroy runs`:
-
-```bash
-# All runs, newest first
-kilroy runs list
-
-# Filter by label (repeatable tags on launch come back here)
-kilroy runs list --label task=investigate-gadfly
-
-# Machine-readable
-kilroy runs list --json --status running --limit 10
-
-# Full detail for one run (accepts unique prefix)
-kilroy runs show 01KP646Y
-kilroy runs show 01KP646Y --json
-
-# Latest run matching a label (no id needed)
-kilroy runs show --latest --label task=investigate-gadfly
-
-# List just the declared output files
-kilroy runs show 01KP646Y --outputs
-
-# Stream a specific output file to stdout
-kilroy runs show 01KP646Y --print result.md
-kilroy runs show --latest --label task=investigate-gadfly --print result.md
-
-# Block until a run reaches a terminal state
-kilroy runs wait 01KP646Y --timeout 10m
-kilroy runs wait --latest --label task=investigate-gadfly --timeout 10m
-
-# Clean up old runs (dry-run by default; add --yes to actually delete)
-kilroy runs prune --older-than 7d
-kilroy runs prune --label experiment=true --yes
-```
-
-`runs show` output includes `worktree_dir`, `repo_path`, `run_branch`, and `logs_root` — use these to `cd` back into a finished run's workspace or feed them to other commands.
-
-## Ingest Details
-
-- Uses Claude CLI (`KILROY_CLAUDE_PATH` override, default executable `claude`).
-- Default model: `claude-sonnet-4-5`.
-- Default repo: current working directory.
-- Default skill path auto-detection: `<repo>/skills/create-dotfile/SKILL.md`, then binary-relative fallbacks (for example `<kilroy-prefix>/share/kilroy/skills/create-dotfile/SKILL.md`) and Go module-cache roots from binary build metadata.
-- If no skill file exists, ingest fails fast.
-- `--max-turns` defaults to 15 when omitted.
-- Validation runs by default; use `--no-validate` to skip.
-
-## Validate Semantics
-
-`kilroy validate --graph <file.dot>` runs parse + transforms + validators and fails on error-severity diagnostics.
-
-Key checks:
-
-- Exactly one start node and one exit node.
-- Start has no incoming edges; exit has no outgoing edges.
-- All nodes reachable from start.
-- Edge conditions parse correctly.
-- `llm_provider` required for codergen nodes (`shape=box`).
-- `model_stylesheet` is optional, but if present must parse.
-
-## Run Config (`version: 1`)
-
-Required fields:
-
-- `repo.path`
-- `cxdb.binary_addr`
-- `cxdb.http_base_url`
-- `modeldb.openrouter_model_info_path`
-
-Defaults:
-
-- `git.run_branch_prefix`: `attractor/run`
-- `modeldb.openrouter_model_info_update_policy`: `on_run_start`
-- `modeldb.openrouter_model_info_url`: `https://openrouter.ai/api/v1/models`
-- `modeldb.openrouter_model_info_fetch_timeout_ms`: `5000`
-
-Minimal example:
-
-```yaml
-version: 1
-
-repo:
-  path: /absolute/path/to/repo
-
-cxdb:
-  binary_addr: 127.0.0.1:9009
-  http_base_url: http://127.0.0.1:9010
-
-llm:
-  providers:
-    openai:
-      backend: cli
-    anthropic:
-      backend: api
-    google:
-      backend: api
-
-modeldb:
-  openrouter_model_info_path: /absolute/path/to/openrouter_models.json
-  openrouter_model_info_update_policy: on_run_start
-  openrouter_model_info_url: https://openrouter.ai/api/v1/models
-  openrouter_model_info_fetch_timeout_ms: 5000
-
-git:
-  require_clean: true
-  run_branch_prefix: attractor/run
-  commit_per_node: true
-```
-
-Notes:
-
-- Provider keys accept `openai`, `anthropic`, `google` (`gemini` alias maps to `google`), `kimi`, `zai`, `cerebras`, and `minimax`.
-- If a graph node uses provider `P`, `llm.providers.P.backend` must be set (`api` or `cli`).
-- `backend: cli` is currently supported for `openai`, `anthropic`, and `google` (including the `gemini` alias).
-- In v1 behavior, runs require a clean repo and checkpoint each node.
-- Prefer first-class run config policy knobs over env tuning:
-  - `runtime_policy` for stage timeout, stall watchdog, and retry cap.
-  - `preflight.prompt_probes` for prompt-probe mode/transports/policy.
-
-## Provider Backends
-
-CLI backend mappings:
-
-- `openai` -> `codex exec --json --sandbox workspace-write -m <model> -C <worktree>`
-- `anthropic` -> `claude -p --dangerously-skip-permissions --output-format stream-json --verbose --model <model> "<prompt>"`
-- `google` -> `gemini -p --output-format stream-json --yolo --model <model> "<prompt>"`
-
-CLI executable overrides:
-
-- `KILROY_CODEX_PATH`
-- `KILROY_CLAUDE_PATH`
-- `KILROY_GEMINI_PATH`
-
-API backend credentials:
-
-- OpenAI: `OPENAI_API_KEY` (`OPENAI_BASE_URL` optional)
-- Anthropic: `ANTHROPIC_API_KEY` (`ANTHROPIC_BASE_URL` optional)
-- Google: `GEMINI_API_KEY` or `GOOGLE_API_KEY` (`GEMINI_BASE_URL` optional)
-- Kimi: `KIMI_API_KEY`
-- Z.ai: `ZAI_API_KEY`
-- Cerebras: `CEREBRAS_API_KEY`
-- MiniMax: `MINIMAX_API_KEY`
-
-API protocol/base URL/path overrides are configured in `llm.providers.<provider>.api` in run config.
-
-## Run Output and Exit Codes
-
-`run` and `resume` print:
-
-- `run_id`
-- `logs_root`
-- `worktree`
-- `run_branch`
-- `final_commit`
-
-Exit codes:
-
-- `0`: final status `success` (or validation success)
-- `1`: command failure, validation failure, or non-success final status
-
-## Artifacts
-
-Run-level (`{logs_root}`) commonly includes:
-
-- `graph.dot`
-- `manifest.json`
-- `checkpoint.json`
-- `final.json`
-- `run_config.json`
-- `modeldb/openrouter_models.json`
-- `run.tgz`
-- `worktree/`
-
-Stage-level (`{logs_root}/{node_id}`) commonly includes:
-
-- `prompt.md`
-- `response.md`
-- `status.json`
-- `stage.tgz`
-- `stdout.log`, `stderr.log`
-- `events.ndjson`, `events.json`
-- `cli_invocation.json`, `cli_timing.json`
-- `api_request.json`, `api_response.json`
-- `output_schema.json`, `output.json`
-- `tool_invocation.json`, `tool_timing.json`
-- `diff.patch`
-
-Exact files depend on handler/backend type.
-
-Browser verification notes:
-- Browser verify nodes emit `tool_browser_artifacts` events in `{logs_root}/progress.ndjson`.
-- Collected browser files are stored in `{logs_root}/{node_id}/browser_artifacts/`; on retries, prior copies are preserved in `{logs_root}/{node_id}/attempt_N/browser_artifacts/`.
-
-## Status Contract for Codergen Nodes
-
-For `shape=box` nodes:
-
-- `llm_provider` and `llm_model` must resolve.
-- If backend returns no explicit outcome, Kilroy expects a `status.json` signal.
-- `status.json` may be written in worktree root; Kilroy copies it into stage directory.
-- If `auto_status=true`, missing `status.json` becomes success; otherwise stage fails.
-
-Canonical `status.json` shape:
-
-```json
-{
-  "status": "success",
-  "preferred_label": "",
-  "suggested_next_ids": [],
-  "context_updates": {},
-  "notes": "",
-  "failure_reason": ""
+Minimal class-routed graph:
+
+```dot
+digraph my_workflow {
+  graph [
+    inputs="prompt",
+    outputs="result.md",
+    model_stylesheet="* { agent_class: hard_coding; }"
+  ]
+
+  start [shape=Mdiamond]
+  agent [shape=box, agent_class="hard_coding", prompt="Read $input.prompt and write result.md."]
+  done  [shape=Msquare]
+
+  start -> agent
+  agent -> done [condition="outcome=success"]
 }
 ```
 
-Valid statuses: `success`, `partial_success`, `retry`, `fail`, `skipped`.
+Validate before launch:
 
-## Resume Behavior
+```bash
+kilroy workflows validate my-workflow --pretty
+```
 
-- `--logs-root`: direct and most reliable.
-- `--run-branch`: derives run id from branch suffix and scans default runs directory for manifest match.
+The validator rejects raw `llm_model`, `llm_provider`, and `agent_tool` in
+`model_stylesheet`. Some node-level legacy routing still exists, but new
+workflows should use classes.
 
-On resume, Kilroy:
+## Run State
 
-- Loads `manifest.json`, `checkpoint.json`, and `graph.dot`.
-- Recreates run branch/worktree at checkpoint commit.
-- Requires clean repo before continuing.
-- Uses the run's snapshotted model catalog from `logs_root/modeldb/openrouter_models.json`.
+Important commands:
 
-## Run-Config Immutability Guard
+```bash
+kilroy runs list --label scope=my-task --pretty
+kilroy runs show <run-id> --pretty
+kilroy runs show <run-id> --outputs
+kilroy runs show <run-id> --print result.md
+kilroy status --latest --watch
+```
 
-Once a user asks you to run or launch a Kilroy pipeline, the following files are **frozen** — do NOT modify them without explicit user permission:
+`runs show` reports `worktree`, `run_branch`, `logs_root`, `outputs`, and
+`final_sha` when available. Inspect the diff and outputs before cherry-picking
+or merging any worker result.
 
-- The graph file (`.dot`)
-- The run config file (`run.yaml` / `run.json`)
-- Any model configuration (catalog files, model IDs in the graph)
-- The preferences file (`preferences.yaml`)
+## Advanced Surfaces
 
-If prelaunch validation or launch fails, **diagnose and present options** — never silently fix the inputs. See "Prelaunch Validation Failure Playbook" below.
-
-This guard applies from the moment you begin building or executing a `kilroy run` command until the user explicitly asks for changes. It does NOT apply during graph authoring/editing phases before a run is requested.
-
-## Launch Intent Priority
-
-When the user clearly instructs you to start/launch/run Kilroy, begin the run immediately. Do not ask extra "are you sure?" confirmation questions that delay execution.
-
-Rationale: users often issue launch commands right before stepping away, and waiting for an unnecessary confirmation can waste hours.
-
-Execution rule:
-
-- If the requested run config is a production profile (for example `llm.cli_profile: real`) and the user clearly asked to start the run, start the production run.
-- Prefer detached launch for long-running jobs unless the user explicitly requests foreground execution.
-- Only stop to ask questions when required launch inputs are genuinely missing or contradictory (for example no graph path and no run config path).
-
-## Prelaunch Validation Failure Playbook
-
-When prelaunch checks fail, follow this sequence:
-
-1. **Read the validation report**: `cat <logs_root>/prelaunch_validation.json`
-2. **Diagnose** each failure/warning and identify the root cause.
-3. **Present options to the user** with your recommendation:
-
-| Failure | Likely Cause | Options |
-|---------|-------------|---------|
-| Model not in catalog | Pinned catalog is stale; model is new | (a) Switch run.yaml to `on_run_start` to fetch live catalog (b) Manually update pinned catalog (c) User confirms model ID is wrong |
-| CLI binary not found | Provider CLI not installed | (a) Install the CLI tool (b) Switch provider to `backend: api` (c) Use a different provider |
-| API key missing | Env var not set | (a) Set the env var (b) Switch to CLI backend (c) Use a different provider |
-| Prompt probe timeout | Provider is slow/down | (a) Increase `preflight.prompt_probes.timeout_ms` (b) Retry (c) Disable probes for this run |
-| CLAUDECODE conflict | Running inside Claude Code session | (a) Engine strips it automatically (post-fix); rebuild if on old binary |
-| Repo not clean | Uncommitted changes | (a) Commit changes (b) Stash changes (c) Set `git.require_clean: false` |
-
-4. **Wait for user decision** before making any changes.
-5. After user approves a fix, apply it and re-run.
-
-**Never do any of the following without asking:**
-- Downgrade a model ID (the model may be valid but absent from a stale catalog)
-- Change the graph topology or node shapes
-- Switch provider backends
-- Modify prompt text
-
-## CLAUDECODE Environment Variable
-
-When Kilroy runs inside a Claude Code session, the `CLAUDECODE` env var is set. This causes the Claude CLI to refuse to launch (nested session protection). The engine strips `CLAUDECODE` from subprocess environments automatically (both preflight probes and codergen CLI invocations). If you encounter this error on an older binary, rebuild with `go build -o ./kilroy ./cmd/kilroy`.
-
-## Frequent Failures
-
-- `missing llm.providers.<provider>.backend`: add explicit backend in config.
-- `missing llm_model on node`: set `llm_model` (or stylesheet model that resolves to it).
-- `missing status.json (auto_status=false)`: write status file or set `auto_status=true`.
-- `repo has uncommitted changes`: commit/stash before run or resume.
-- `could not locate logs_root for run_branch`: use `--logs-root`.
-- `resume: missing per-run model catalog snapshot`: ensure run logs are intact.
-
-## Related Files
-
-- Kilroy metaspec: `docs/strongdm/attractor/kilroy-metaspec.md`
-- Attractor spec: `docs/strongdm/attractor/attractor-spec.md`
-- Ingestor spec: `docs/strongdm/attractor/ingestor-spec.md`
-- Test coverage map: `docs/strongdm/attractor/test-coverage-map.md`
-- Create-dotfile skill: `skills/create-dotfile/SKILL.md`
+These are real but not the default worker path: `run --graph`, `run --package`,
+`--config`, `--run-id`, `--logs-root`, `ingest`, `resume`, `stop`, and `serve`.
+Use them for explicit operator requests, tests, or Kilroy development.

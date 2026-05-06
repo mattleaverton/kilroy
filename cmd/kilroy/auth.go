@@ -29,6 +29,14 @@ func authCmd(args []string) {
 		authDefaults(args[1:])
 	case "init":
 		authInitCmd(args[1:])
+	case "set":
+		authSet(args[1:])
+	case "prefer":
+		authPrefer(args[1:])
+	case "remove-source":
+		authRemoveSource(args[1:])
+	case "doctor":
+		authCheck(args[1:])
 	case "-h", "--help", "help":
 		authUsage()
 		os.Exit(0)
@@ -42,13 +50,19 @@ func authCmd(args []string) {
 func authUsage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  kilroy auth defaults")
-	fmt.Fprintln(os.Stderr, "  kilroy auth init [--force] [--path <dir>] [--json|--pretty]")
+	fmt.Fprintln(os.Stderr, "  kilroy auth init [--force|--rescan] [--path <dir>] [--json|--pretty]")
+	fmt.Fprintln(os.Stderr, "  kilroy auth set <provider> --env <ENV_VAR>")
+	fmt.Fprintln(os.Stderr, "  kilroy auth prefer <provider/method[/tool]> <ENV_VAR>")
+	fmt.Fprintln(os.Stderr, "  kilroy auth remove-source <provider/method[/tool]> <ENV_VAR>")
 	fmt.Fprintln(os.Stderr, "  kilroy auth list [--pretty] [--json] [--chains]")
 	fmt.Fprintln(os.Stderr, "  kilroy auth check [--pretty] [--json] [--project <dir>]")
+	fmt.Fprintln(os.Stderr, "  kilroy auth doctor [--pretty] [--json] [--project <dir>]")
 	fmt.Fprintln(os.Stderr, "  kilroy auth suggest-fix [<provider>]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  defaults prints the default_chains.toml template verbatim.")
 	fmt.Fprintln(os.Stderr, "  init     generates ~/.config/kilroy/auth.toml from the template.")
+	fmt.Fprintln(os.Stderr, "  set      maps a provider's api_key chain to an env var in global auth.")
+	fmt.Fprintln(os.Stderr, "  prefer   moves an env source to the front of a global auth chain.")
 	fmt.Fprintln(os.Stderr, "  list     outputs JSON by default; pass --pretty for human-readable.")
 	fmt.Fprintln(os.Stderr, "  list --chains pivots to a chain-centric view (one row per configured binding).")
 	fmt.Fprintln(os.Stderr, "  check    runs the auth resolver for every configured binding and reports status.")

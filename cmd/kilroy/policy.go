@@ -16,7 +16,6 @@ import (
 	"github.com/danshapiro/kilroy/internal/attractor/projectroot"
 	"github.com/danshapiro/kilroy/internal/attractor/rundb"
 	"github.com/danshapiro/kilroy/internal/auth/binding"
-	"github.com/danshapiro/kilroy/internal/config"
 	"github.com/danshapiro/kilroy/internal/policy"
 )
 
@@ -32,6 +31,14 @@ func policyCmd(args []string) {
 		policyShow(args[1:])
 	case "resolve":
 		policyResolve(args[1:])
+	case "prefer":
+		policySetOverride(policy.OverrideModePrefer, args[1:])
+	case "pin":
+		policySetOverride(policy.OverrideModePin, args[1:])
+	case "clear":
+		policyClearOverride(args[1:])
+	case "overrides":
+		policyOverrides(args[1:])
 	case "explain":
 		policyExplain(args[1:])
 	case "-h", "--help", "help":
@@ -52,6 +59,10 @@ func policyUsage() {
 	fmt.Fprintln(os.Stderr, "    resolve runs the resolver against the current machine state")
 	fmt.Fprintln(os.Stderr, "    and reports which candidate would be picked for the class.")
 	fmt.Fprintln(os.Stderr, "    --project <dir>  project root containing .kilroy/ (default: nearest .kilroy/ above cwd)")
+	fmt.Fprintln(os.Stderr, "  kilroy policy prefer <class-name> <model-id> [--driver <driver>] [--scope global|project]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy pin <class-name> <model-id> [--driver <driver>] [--scope global|project]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy clear <class-name> [--scope global|project]")
+	fmt.Fprintln(os.Stderr, "  kilroy policy overrides [--json] [--scope global|project|all]")
 	fmt.Fprintln(os.Stderr, "  kilroy policy explain <run-id> [--json]")
 	fmt.Fprintln(os.Stderr, "    explain reports which candidate each agentic node in the run")
 	fmt.Fprintln(os.Stderr, "    actually picked, reading per-step resolution.json artifacts.")
@@ -67,8 +78,10 @@ type policyListJSON struct {
 }
 
 type classJSON struct {
-	Description string          `json:"description"`
-	Chain       []candidateJSON `json:"chain"`
+	Description  string          `json:"description"`
+	Chain        []candidateJSON `json:"chain"`
+	PolicySource string          `json:"policy_source,omitempty"`
+	OverrideMode string          `json:"override_mode,omitempty"`
 }
 
 type candidateJSON struct {
@@ -119,10 +132,15 @@ func dataToPolicyListJSON(d *policy.Data, resolver *binding.Resolver) policyList
 			cj.AuthMethod, cj.AuthSource, cj.SkipReason = candidateAuthStatus(resolver, c)
 			chain[i] = cj
 		}
-		classes[name] = classJSON{
+		cj := classJSON{
 			Description: cls.Description,
 			Chain:       chain,
 		}
+		if ov, ok := d.AppliedOverrides[name]; ok {
+			cj.PolicySource = ov.Source
+			cj.OverrideMode = ov.Mode
+		}
+		classes[name] = cj
 	}
 	aliases := make([]aliasJSON, 0, len(d.Aliases))
 	for _, a := range d.Aliases {
@@ -191,6 +209,18 @@ func resolveProjectRoot(projectDir string) (string, error) {
 	return root, nil
 }
 
+func loadEffectivePolicyForProject(projectDir string) (*policy.Data, string, error) {
+	projectRoot, err := resolveProjectRoot(projectDir)
+	if err != nil {
+		return nil, "", err
+	}
+	d, err := policy.LoadEffective(projectRoot)
+	if err != nil {
+		return nil, "", err
+	}
+	return d, projectRoot, nil
+}
+
 // resolveAlias looks up className against the alias table; returns (resolved, aliasUsed, originalFrom).
 func resolveAlias(d *policy.Data, className string) (string, bool) {
 	for _, a := range d.Aliases {
@@ -219,15 +249,9 @@ func policyList(args []string) {
 		os.Exit(1)
 	}
 
-	d, err := policy.Load()
+	d, projectRoot, err := loadEffectivePolicyForProject(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "policy load error: %v\n", err)
-		os.Exit(1)
-	}
-
-	projectRoot, err := resolveProjectRoot(projectDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "project root: %v\n", err)
 		os.Exit(1)
 	}
 	resolver, err := resolverForProject(projectRoot)
@@ -311,7 +335,7 @@ func policyShow(args []string) {
 		os.Exit(1)
 	}
 
-	d, err := policy.Load()
+	d, projectRoot, err := loadEffectivePolicyForProject(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "policy load error: %v\n", err)
 		os.Exit(1)
@@ -332,11 +356,6 @@ func policyShow(args []string) {
 		os.Exit(1)
 	}
 
-	projectRoot, err := resolveProjectRoot(projectDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "project root: %v\n", err)
-		os.Exit(1)
-	}
 	resolver, err := resolverForProject(projectRoot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "auth resolver: %v\n", err)
@@ -347,6 +366,10 @@ func policyShow(args []string) {
 		cj := classJSON{
 			Description: cls.Description,
 			Chain:       make([]candidateJSON, len(cls.Chain)),
+		}
+		if ov, ok := d.AppliedOverrides[className]; ok {
+			cj.PolicySource = ov.Source
+			cj.OverrideMode = ov.Mode
 		}
 		for i, c := range cls.Chain {
 			cd := candidateJSON{
@@ -448,33 +471,11 @@ func policyResolve(args []string) {
 		os.Exit(1)
 	}
 
-	data, err := policy.Load()
+	data, projectRoot, err := loadEffectivePolicyForProject(projectDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load policy: %v\n", err)
 		os.Exit(1)
 	}
-
-	projectRoot := projectDir
-	if projectRoot == "" {
-		root, _, findErr := projectroot.Find("")
-		if findErr != nil {
-			fmt.Fprintf(os.Stderr, "project root: %v\n", findErr)
-			os.Exit(1)
-		}
-		projectRoot = root
-	}
-
-	// Load project config (non-fatal if missing).
-	cfg, cfgErr := config.LoadConfig(projectRoot)
-	if cfgErr != nil {
-		var noCfg *config.ErrNoConfig
-		if !errors.As(cfgErr, &noCfg) {
-			fmt.Fprintf(os.Stderr, "config load: %v\n", cfgErr)
-			os.Exit(1)
-		}
-		cfg = config.Config{}
-	}
-	_ = cfg
 
 	resolver, rErr := engine.DefaultBindingResolver(projectRoot)
 	if rErr != nil {
@@ -499,6 +500,8 @@ func policyResolve(args []string) {
 				"skipped":       res.Skipped,
 				"request_type":  res.RequestType,
 				"request_value": res.RequestValue,
+				"policy_source": res.PolicySource,
+				"override_mode": res.OverrideMode,
 			}
 		}
 		enc := json.NewEncoder(os.Stdout)
@@ -527,6 +530,15 @@ func policyResolve(args []string) {
 	fmt.Printf("  auth:         %s", res.AuthMethod())
 	if res.AuthSource() != "" {
 		fmt.Printf(" (%s)", res.AuthSource())
+	}
+	fmt.Println()
+	source := res.PolicySource
+	if source == "" {
+		source = policy.PolicySourceBuiltIn
+	}
+	fmt.Printf("  policy:       %s", source)
+	if res.OverrideMode != "" {
+		fmt.Printf(" (%s)", res.OverrideMode)
 	}
 	fmt.Println()
 
@@ -571,6 +583,290 @@ func parsePolicyResolveArgs(args []string) (className string, asJSON bool, proje
 		return "", false, "", fmt.Errorf("class name required\n%s", usage)
 	}
 	return className, asJSON, projectDir, nil
+}
+
+// ── kilroy policy prefer/pin/clear/overrides ────────────────────────────────
+
+type policyOverrideTarget struct {
+	Scope string
+	Path  string
+}
+
+func policySetOverride(mode string, args []string) {
+	className, modelID, driver, scope, projectDir, err := parsePolicySetOverrideArgs(mode, args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	target, err := resolvePolicyOverrideTarget(scope, projectDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := policy.SetOverride(target.Path, className, mode, modelID, driver); err != nil {
+		fmt.Fprintf(os.Stderr, "policy %s: %v\n", mode, err)
+		os.Exit(1)
+	}
+	fmt.Printf("wrote %s policy override: %s %s -> %s\n", target.Scope, className, mode, modelID)
+	fmt.Printf("path: %s\n", target.Path)
+}
+
+func parsePolicySetOverrideArgs(mode string, args []string) (className, modelID, driver, scope, projectDir string, err error) {
+	usage := fmt.Sprintf("usage: kilroy policy %s <class-name> <model-id> [--driver <driver>] [--scope global|project]", mode)
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch a {
+		case "--driver":
+			i++
+			if i >= len(args) {
+				return "", "", "", "", "", fmt.Errorf("--driver requires an argument\n%s", usage)
+			}
+			driver = args[i]
+		case "--scope":
+			i++
+			if i >= len(args) {
+				return "", "", "", "", "", fmt.Errorf("--scope requires global or project\n%s", usage)
+			}
+			scope = args[i]
+		case "--project":
+			i++
+			if i >= len(args) {
+				return "", "", "", "", "", fmt.Errorf("--project requires a directory argument\n%s", usage)
+			}
+			projectDir = args[i]
+		case "-h", "--help":
+			return "", "", "", "", "", fmt.Errorf("%s", usage)
+		default:
+			if strings.HasPrefix(a, "--") {
+				return "", "", "", "", "", fmt.Errorf("unknown flag %q\n%s", a, usage)
+			}
+			switch {
+			case className == "":
+				className = a
+			case modelID == "":
+				modelID = a
+			default:
+				return "", "", "", "", "", fmt.Errorf("unexpected extra argument %q\n%s", a, usage)
+			}
+		}
+	}
+	if className == "" || modelID == "" {
+		return "", "", "", "", "", fmt.Errorf("class name and model id are required\n%s", usage)
+	}
+	return className, modelID, driver, scope, projectDir, nil
+}
+
+func policyClearOverride(args []string) {
+	className, scope, projectDir, err := parsePolicyClearOverrideArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	target, err := resolvePolicyOverrideTarget(scope, projectDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	removed, err := policy.ClearOverride(target.Path, className)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "policy clear: %v\n", err)
+		os.Exit(1)
+	}
+	if removed {
+		fmt.Printf("cleared %s policy override for %s\n", target.Scope, className)
+	} else {
+		fmt.Printf("no %s policy override for %s\n", target.Scope, className)
+	}
+	fmt.Printf("path: %s\n", target.Path)
+}
+
+func parsePolicyClearOverrideArgs(args []string) (className, scope, projectDir string, err error) {
+	usage := "usage: kilroy policy clear <class-name> [--scope global|project]"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch a {
+		case "--scope":
+			i++
+			if i >= len(args) {
+				return "", "", "", fmt.Errorf("--scope requires global or project\n%s", usage)
+			}
+			scope = args[i]
+		case "--project":
+			i++
+			if i >= len(args) {
+				return "", "", "", fmt.Errorf("--project requires a directory argument\n%s", usage)
+			}
+			projectDir = args[i]
+		case "-h", "--help":
+			return "", "", "", fmt.Errorf("%s", usage)
+		default:
+			if strings.HasPrefix(a, "--") {
+				return "", "", "", fmt.Errorf("unknown flag %q\n%s", a, usage)
+			}
+			if className != "" {
+				return "", "", "", fmt.Errorf("unexpected extra argument %q\n%s", a, usage)
+			}
+			className = a
+		}
+	}
+	if className == "" {
+		return "", "", "", fmt.Errorf("class name required\n%s", usage)
+	}
+	return className, scope, projectDir, nil
+}
+
+func resolvePolicyOverrideTarget(scope, projectDir string) (policyOverrideTarget, error) {
+	scope = strings.TrimSpace(scope)
+	switch scope {
+	case "", "auto":
+		root, err := resolveProjectRoot(projectDir)
+		if err != nil {
+			return policyOverrideTarget{}, fmt.Errorf("project root: %w", err)
+		}
+		if root != "" {
+			return policyOverrideTarget{Scope: "project", Path: policy.ProjectOverridePath(root)}, nil
+		}
+		return policyOverrideTarget{Scope: "global", Path: policy.DefaultUserOverridePath()}, nil
+	case "global":
+		return policyOverrideTarget{Scope: "global", Path: policy.DefaultUserOverridePath()}, nil
+	case "project":
+		root, err := resolveProjectRoot(projectDir)
+		if err != nil {
+			return policyOverrideTarget{}, fmt.Errorf("project root: %w", err)
+		}
+		if root == "" {
+			return policyOverrideTarget{}, fmt.Errorf("project scope requires a .kilroy/ project root (or --project <dir>)")
+		}
+		return policyOverrideTarget{Scope: "project", Path: policy.ProjectOverridePath(root)}, nil
+	default:
+		return policyOverrideTarget{}, fmt.Errorf("unknown policy override scope %q (expected global or project)", scope)
+	}
+}
+
+type policyOverridesJSON struct {
+	Overrides []policyOverrideJSON `json:"overrides"`
+}
+
+type policyOverrideJSON struct {
+	Scope   string `json:"scope"`
+	Path    string `json:"path"`
+	Class   string `json:"class"`
+	Mode    string `json:"mode"`
+	ModelID string `json:"model_id"`
+	Driver  string `json:"driver,omitempty"`
+}
+
+func policyOverrides(args []string) {
+	scope, projectDir, asJSON, err := parsePolicyOverridesArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	targets, err := resolvePolicyOverrideListTargets(scope, projectDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	var rows []policyOverrideJSON
+	for _, target := range targets {
+		cfg, exists, err := policy.LoadOverrideFile(target.Path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "policy overrides: %v\n", err)
+			os.Exit(1)
+		}
+		if !exists {
+			continue
+		}
+		names := make([]string, 0, len(cfg.Classes))
+		for name := range cfg.Classes {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, className := range names {
+			ov := cfg.Classes[className]
+			rows = append(rows, policyOverrideJSON{
+				Scope:   target.Scope,
+				Path:    target.Path,
+				Class:   className,
+				Mode:    ov.Mode,
+				ModelID: ov.ModelID,
+				Driver:  ov.Driver,
+			})
+		}
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(policyOverridesJSON{Overrides: rows}); err != nil {
+			fmt.Fprintf(os.Stderr, "encode: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(rows) == 0 {
+		fmt.Println("No policy overrides configured.")
+		return
+	}
+	for _, row := range rows {
+		driver := ""
+		if row.Driver != "" {
+			driver = " driver=" + row.Driver
+		}
+		fmt.Printf("%s: %s %s -> %s%s\n", row.Scope, row.Class, row.Mode, row.ModelID, driver)
+		fmt.Printf("  %s\n", row.Path)
+	}
+}
+
+func parsePolicyOverridesArgs(args []string) (scope, projectDir string, asJSON bool, err error) {
+	usage := "usage: kilroy policy overrides [--json] [--scope global|project|all]"
+	scope = "all"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch a {
+		case "--json":
+			asJSON = true
+		case "--scope":
+			i++
+			if i >= len(args) {
+				return "", "", false, fmt.Errorf("--scope requires global, project, or all\n%s", usage)
+			}
+			scope = args[i]
+		case "--project":
+			i++
+			if i >= len(args) {
+				return "", "", false, fmt.Errorf("--project requires a directory argument\n%s", usage)
+			}
+			projectDir = args[i]
+		case "-h", "--help":
+			return "", "", false, fmt.Errorf("%s", usage)
+		default:
+			return "", "", false, fmt.Errorf("unknown flag %q\n%s", a, usage)
+		}
+	}
+	return scope, projectDir, asJSON, nil
+}
+
+func resolvePolicyOverrideListTargets(scope, projectDir string) ([]policyOverrideTarget, error) {
+	switch strings.TrimSpace(scope) {
+	case "", "all":
+		targets := []policyOverrideTarget{{Scope: "global", Path: policy.DefaultUserOverridePath()}}
+		root, err := resolveProjectRoot(projectDir)
+		if err != nil {
+			return nil, fmt.Errorf("project root: %w", err)
+		}
+		if root != "" {
+			targets = append(targets, policyOverrideTarget{Scope: "project", Path: policy.ProjectOverridePath(root)})
+		}
+		return targets, nil
+	case "global", "project":
+		target, err := resolvePolicyOverrideTarget(scope, projectDir)
+		if err != nil {
+			return nil, err
+		}
+		return []policyOverrideTarget{target}, nil
+	default:
+		return nil, fmt.Errorf("unknown policy override scope %q (expected global, project, or all)", scope)
+	}
 }
 
 // ── kilroy policy explain ────────────────────────────────────────────────────

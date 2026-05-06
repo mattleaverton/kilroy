@@ -17,19 +17,20 @@ Each item is described to stand alone — what it is, why it matters, what "done
 
 ## Auth as a real product surface
 
-Today auth is a read-only surface. Users edit `~/.config/kilroy/auth.toml` directly or set shell environment variables. There is no imperative way to add, change, or remove credentials. This is the largest onboarding scar after workflow discoverability.
+Alpha now has env-var mapping commands: `kilroy auth set <provider> --env
+<NAME>`, `auth prefer <provider/method[/tool]> <NAME>`, `auth remove-source
+<provider/method[/tool]> <NAME>`, and `auth init --rescan`. These commands
+write only global Kilroy auth config and never store secret values.
 
-### Auth write surface
+### Auth guided setup
 
-Add an imperative interface for managing credentials. Two shapes are viable and both may be useful:
+Add a guided, outcome-oriented setup flow that chooses the right env-var mapping
+commands after inspecting `auth list` and `auth check`. Keep it env-based for
+now; provider login flows and keychain storage are deferred.
 
-- `kilroy auth set <provider> --api-key <value>` — flag-driven imperative, suits scripted setup.
-- `kilroy auth login --provider <name>` — interactive oauth dance for providers that support it (anthropic, google, openai), suits human first-run setup.
-- `kilroy auth remove <provider>` — explicit removal.
-
-Decide which shapes ship together. The interactive `login` flow is the larger UX shift; the imperative `set` is the smaller code change. Reasonable to ship `set` and `remove` first, then add `login` when oauth flow design is settled.
-
-Done when: a new user can configure all supported providers without editing `auth.toml` by hand. `kilroy auth check` passes after a guided setup that uses only the new commands.
+Done when: a new user can run one guided command, see which env vars or CLI
+sessions are missing, apply the suggested `auth set/prefer/remove-source`
+commands, and end with `kilroy auth check` passing without hand-editing TOML.
 
 ### opencode auth binder integration
 
@@ -37,11 +38,15 @@ The opencode tool today is not auto-detected by the auth resolver. Workflows tha
 
 Done when: opencode appears in `kilroy auth list` with its session source, `kilroy auth check` validates an opencode session without manual config plumbing, and a workflow targeting opencode launches without `--config`.
 
-### `kilroy auth init --rescan`
+### Auth env command hardening
 
-Today `kilroy auth init` is one-shot: it generates a config from detected sources at first run. Add an incremental rescan that picks up new env vars, new CLI sessions, and new keychain entries without overwriting existing configuration. Useful for the common "I added a new credential, refresh the config" path.
+Keep the new env management commands focused on outcomes rather than TOML
+editing. Improve errors, add richer `--json` output, and make suggestions from
+`auth check` directly point at the command that fixes the specific broken chain.
 
-Done when: `kilroy auth init --rescan` adds newly-detected sources to the config in place, preserves existing entries, and reports what was added.
+Done when: common auth failures produce copy/pasteable `auth set`,
+`auth prefer`, or `auth remove-source` repairs, and command output is stable for
+agents.
 
 ---
 
@@ -111,6 +116,31 @@ suggestion: list available workflows with `kilroy workflows list`,
 Once embedded shipped workflows ship, the suggestion adjusts: shipped names are always present, so a not-found means a typo or a missing user-defined workflow.
 
 Done when: a user who fat-fingers a workflow name gets an actionable error that names the searched paths and suggests a recovery step.
+
+### Flatten daily workflow commands
+
+The `kilroy workflows ...` namespace is accurate to the internal registry, but
+it is not the best operator surface. Daily use should read as `kilroy <verb>`:
+
+```bash
+kilroy list
+kilroy describe implement
+kilroy check implement
+kilroy run implement
+```
+
+Keep `kilroy workflows list|describe|validate` as compatibility and scripting
+aliases, but teach users and agents the flattened verbs. `kilroy check
+<workflow>` is the important addition: it runs the same package, graph, policy,
+auth, secret, and local-tool validation that `kilroy run <workflow>` performs
+before execution, then stops before creating the worker run. It should accept
+the same launch-shaping inputs that matter for validation (`--input-file`,
+policy override flags once they exist, labels only if needed for parity).
+
+Done when: top-level `list`, `describe`, and `check` work; `check` and pre-run
+validation share one implementation; `run` cannot pass a check that `check`
+would fail; and human docs prefer the flattened verbs while legacy grouped
+commands remain available.
 
 ### Workflows list discoverability footer
 
@@ -229,29 +259,20 @@ The opencode auth probe has a schema mismatch issue. Fix the probe so opencode s
 
 Done when: `kilroy auth check` validates opencode sessions correctly across the schema versions opencode ships in production.
 
-### Linux libsecret keychain probe
+### Credential store probes (deferred)
 
-Add a Linux credential source backed by libsecret. Cross-platform expansion.
+Linux libsecret, Windows Credential Manager, and macOS Keychain support are
+explicitly deferred. The near-term auth product should stay env-var based; no
+current post-alpha feature should depend on local credential-store support.
 
-Done when: a Linux user with credentials in libsecret can use `kilroy auth init` to detect them and `kilroy auth check` to validate them.
-
-### Windows Credential Manager probe
-
-Add a Windows credential source backed by Credential Manager. Cross-platform expansion.
-
-Done when: a Windows user with credentials in Credential Manager can use `kilroy auth init` to detect them and `kilroy auth check` to validate them.
+Done when: the team deliberately reopens credential-store support with a
+cross-platform design and clear migration path from env-var mappings.
 
 ### `kilroy auth profile <name>` environment switching
 
 Switchable named profiles for swapping between credential environments (personal vs work, dev vs prod). Each profile is a named auth.toml; switching is a CLI command that updates a pointer.
 
 Done when: a user can maintain multiple credential profiles and switch between them with one command.
-
-### macOS Keychain integration for auth
-
-Optional credential source backed by the macOS keychain so users don't need to keep secrets in shell exports.
-
-Done when: macOS users can store credentials in the keychain, `kilroy auth init` detects them, and `kilroy auth check` validates them.
 
 ---
 
@@ -290,6 +311,31 @@ Done when: shipped workflows source a single helper for stage context, diff fetc
 A documented set of error codes and structured error payloads emitted by the CLI for machine consumption. Standard envelope, stable codes, machine-parseable.
 
 Done when: the CLI's error-emission contract is documented, every error path uses a coded error, and downstream tooling (CI, scripts, agent-driven directors) can switch on codes without parsing English.
+
+### Optional cheap provider auth probe
+
+`kilroy check` and pre-run validation should always prove that each resolved
+agent route has a configured auth source and, for CLI routes, that the required
+binary exists and responds. That catches missing env vars, missing CLI sessions,
+bad policy routes, and absent tools before any worker starts.
+
+A later optional mode can go one step further and make a cheap provider call to
+prove the selected credential is valid, not merely present. This should be
+off-by-default or explicitly bounded because it may cost money, consume rate
+limit, require network access, and behave differently across providers.
+
+Possible shape:
+
+```bash
+kilroy check implement --probe-auth
+kilroy run implement --probe-auth
+```
+
+Done when: the normal check remains no-LLM/no-provider-call, `--probe-auth`
+performs a minimal provider-specific credential probe for each selected route,
+results are cached within the check/run invocation, failures produce typed
+remediation, and the output clearly distinguishes "source present" from
+"provider accepted credential".
 
 ### Concurrency guarantees documentation
 

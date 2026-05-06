@@ -34,6 +34,8 @@ type ResolveResult struct {
 	FallbackRank  int // 0-indexed position in chain (or -1 in strict mode)
 	Skipped       []SkipRecord
 	PolicyVersion string
+	PolicySource  string // "built_in" | "global_override" | "project_override"
+	OverrideMode  string // "prefer" | "pin" when PolicySource is an override
 	ResolvedAt    time.Time
 }
 
@@ -222,6 +224,13 @@ func resolveClass(req ResolveRequest, data *Data, authResolver *binding.Resolver
 		}
 	}
 
+	policySource := PolicySourceBuiltIn
+	overrideMode := ""
+	if ov, ok := data.AppliedOverrides[classID]; ok {
+		policySource = ov.Source
+		overrideMode = ov.Mode
+	}
+
 	// 4. Walk chain, first reachable wins.
 	var skipped []SkipRecord
 	for i, c := range class.Chain {
@@ -238,6 +247,8 @@ func resolveClass(req ResolveRequest, data *Data, authResolver *binding.Resolver
 				FallbackRank:  i,
 				Skipped:       skipped,
 				PolicyVersion: data.PolicyVersion,
+				PolicySource:  policySource,
+				OverrideMode:  overrideMode,
 				ResolvedAt:    time.Now(),
 			}, nil
 		}
@@ -304,6 +315,7 @@ func resolveStrict(req ResolveRequest, data *Data, authResolver *binding.Resolve
 				FallbackRank:  -1,
 				Skipped:       nil,
 				PolicyVersion: data.PolicyVersion,
+				PolicySource:  PolicySourceBuiltIn,
 				ResolvedAt:    time.Now(),
 			}, nil
 		}

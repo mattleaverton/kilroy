@@ -513,6 +513,7 @@ func workflowsValidate(args []string) {
 	report, _ := engine.ValidatePreLaunch(g, engine.RunOptions{
 		PackageDir:      d.Dir,
 		RequiredSecrets: requiredSecrets,
+		Workspace:       projectRoot,
 	}, engine.PolicyDeps{})
 	out.PreLaunch = report
 
@@ -573,6 +574,12 @@ func workflowsValidate(args []string) {
 					}
 					if n.ResolvedModel != "" {
 						fmt.Printf(" → %s via %s", n.ResolvedModel, n.ResolvedDriver)
+					}
+					if n.PolicySource != "" {
+						fmt.Printf(" policy=%s", n.PolicySource)
+						if n.OverrideMode != "" {
+							fmt.Printf(":%s", n.OverrideMode)
+						}
 					}
 					fmt.Println()
 					for _, e := range n.Errors {

@@ -397,3 +397,122 @@ func TestPolicyList_JSONOutput_ParsesAsJSON(t *testing.T) {
 		t.Errorf("expected JSON to contain class %q, classes: %v", "hard_coding", v.Classes)
 	}
 }
+
+func writeGlobalOpenAIAuth(t *testing.T, tmpHome string) {
+	t.Helper()
+	writeAuthConfig(t, tmpHome, `
+[bindings]
+"openai/api_key" = "openai_api_key"
+
+[chains.openai_api_key]
+requires = { provider = "openai", method = "api_key" }
+sources = [
+  { kind = "env_var", name = "OPENAI_API_KEY_KILROY" },
+]
+`)
+}
+
+func policyOverrideEnv(tmpHome string, extra ...string) []string {
+	add := []string{
+		"HOME=" + tmpHome,
+		"XDG_CONFIG_HOME=" + filepath.Join(tmpHome, ".config"),
+	}
+	add = append(add, extra...)
+	return envWithout([]string{
+		"HOME",
+		"XDG_CONFIG_HOME",
+		"KILROY_PROJECT_ROOT",
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_API_KEY_KILROY",
+		"OPENAI_API_KEY",
+		"OPENAI_API_KEY_KILROY",
+	}, add...)
+}
+
+func TestPolicyPrefer_ProjectOverrideAffectsResolve(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir()
+	writeGlobalOpenAIAuth(t, tmpHome)
+	projectRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".kilroy"), 0o755); err != nil {
+		t.Fatalf("mkdir .kilroy: %v", err)
+	}
+
+	prefer := exec.Command(bin, "policy", "prefer", "hard_coding", "gpt-5", "--scope", "project")
+	prefer.Dir = projectRoot
+	prefer.Env = policyOverrideEnv(tmpHome)
+	var preferErr strings.Builder
+	prefer.Stderr = &preferErr
+	if out, err := prefer.Output(); err != nil {
+		t.Fatalf("policy prefer failed: %v\nstdout: %s\nstderr: %s", err, out, preferErr.String())
+	}
+
+	resolve := exec.Command(bin, "policy", "resolve", "hard_coding", "--json")
+	resolve.Dir = projectRoot
+	resolve.Env = policyOverrideEnv(tmpHome, "OPENAI_API_KEY_KILROY=present")
+	out, err := resolve.Output()
+	if err != nil {
+		t.Fatalf("policy resolve failed: %v\nstdout: %s", err, out)
+	}
+	var got struct {
+		Resolved struct {
+			ModelID      string `json:"model_id"`
+			Driver       string `json:"driver"`
+			PolicySource string `json:"policy_source"`
+			OverrideMode string `json:"override_mode"`
+		} `json:"resolved"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, out)
+	}
+	if got.Error != "" {
+		t.Fatalf("resolve error: %s", got.Error)
+	}
+	if got.Resolved.ModelID != "gpt-5" || got.Resolved.Driver != "openai_sdk" {
+		t.Fatalf("resolved = %+v, want gpt-5 via openai_sdk", got.Resolved)
+	}
+	if got.Resolved.PolicySource != "project_override" || got.Resolved.OverrideMode != "prefer" {
+		t.Fatalf("policy source/mode = %q/%q, want project_override/prefer",
+			got.Resolved.PolicySource, got.Resolved.OverrideMode)
+	}
+}
+
+func TestPolicyPin_GlobalOverrideFailsWithoutPinnedAuth(t *testing.T) {
+	bin := buildTestBinary(t)
+	tmpHome := t.TempDir()
+	writeAuthConfig(t, tmpHome, `
+[bindings]
+"anthropic/api_key" = "anthropic_api_key"
+
+[chains.anthropic_api_key]
+requires = { provider = "anthropic", method = "api_key" }
+sources = [
+  { kind = "env_var", name = "ANTHROPIC_API_KEY_KILROY" },
+]
+`)
+
+	pin := exec.Command(bin, "policy", "pin", "hard_coding", "gpt-5", "--scope", "global")
+	pin.Env = policyOverrideEnv(tmpHome)
+	var pinErr strings.Builder
+	pin.Stderr = &pinErr
+	if out, err := pin.Output(); err != nil {
+		t.Fatalf("policy pin failed: %v\nstdout: %s\nstderr: %s", err, out, pinErr.String())
+	}
+
+	resolve := exec.Command(bin, "policy", "resolve", "hard_coding", "--json")
+	resolve.Env = policyOverrideEnv(tmpHome, "ANTHROPIC_API_KEY_KILROY=present")
+	out, err := resolve.Output()
+	if err == nil {
+		t.Fatalf("resolve should fail because pinned gpt-5 has no OpenAI auth; stdout: %s", out)
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("parse JSON: %v\nraw: %s", err, out)
+	}
+	if !strings.Contains(got.Error, "no viable candidate") {
+		t.Fatalf("error = %q, want no viable candidate", got.Error)
+	}
+}

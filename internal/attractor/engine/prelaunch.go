@@ -36,6 +36,16 @@ import (
 // workspace (not the not-yet-created worktree) so prelaunch and
 // execution agree about the project's auth.toml chain.
 func buildPreLaunchDeps(opts RunOptions, deps PolicyDeps) PolicyDeps {
+	root := strings.TrimSpace(opts.Workspace)
+	if root == "" {
+		root = strings.TrimSpace(opts.RepoPath)
+	}
+	load := deps.Load
+	if load == nil {
+		load = func() (*policy.Data, error) {
+			return policy.LoadEffective(root)
+		}
+	}
 	base := deps.Resolver
 	if base == nil {
 		base = DefaultBindingResolver
@@ -49,18 +59,15 @@ func buildPreLaunchDeps(opts RunOptions, deps PolicyDeps) PolicyDeps {
 		if loaded {
 			return cached, cachedErr
 		}
-		root := strings.TrimSpace(opts.Workspace)
-		if root == "" {
-			root = strings.TrimSpace(opts.RepoPath)
+		resolverRoot := root
+		if resolverRoot == "" {
+			resolverRoot = projectRoot
 		}
-		if root == "" {
-			root = projectRoot
-		}
-		cached, cachedErr = base(root)
+		cached, cachedErr = base(resolverRoot)
 		loaded = true
 		return cached, cachedErr
 	}
-	return PolicyDeps{Load: deps.Load, Resolver: resolver, ProviderRuntimes: deps.ProviderRuntimes}
+	return PolicyDeps{Load: load, Resolver: resolver, ProviderRuntimes: deps.ProviderRuntimes}
 }
 
 // tomlDecodeBytes is a tiny indirection so unit tests can swap in a fake
@@ -114,6 +121,8 @@ type PreLaunchNodeCheck struct {
 	ResolvedDriver string `json:"resolved_driver,omitempty"`
 	AuthMethod     string `json:"auth_method,omitempty"`
 	AuthSource     string `json:"auth_source,omitempty"`
+	PolicySource   string `json:"policy_source,omitempty"`
+	OverrideMode   string `json:"override_mode,omitempty"`
 	// BinaryFound is set only for CLI drivers (claude_cli, codex_cli, gemini_cli).
 	// nil = not applicable; *true / *false = applicable.
 	BinaryFound *bool    `json:"binary_found,omitempty"`
@@ -246,6 +255,10 @@ func ValidatePreLaunch(g *model.Graph, opts RunOptions, deps PolicyDeps) (*PreLa
 		check.ResolvedDriver = route.Driver
 		check.AuthMethod = route.AuthMethod()
 		check.AuthSource = route.AuthSource()
+		if route.ClassResult != nil {
+			check.PolicySource = route.ClassResult.PolicySource
+			check.OverrideMode = route.ClassResult.OverrideMode
+		}
 
 		// Freeze the per-node route. Execution reads this rather than
 		// re-resolving from policy, DOT attrs, or config, so drift between

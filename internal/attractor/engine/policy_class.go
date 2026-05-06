@@ -124,7 +124,10 @@ func ResolveAgentClass(node *model.Node, exec *Execution, deps PolicyDeps) (Clas
 
 	load := deps.Load
 	if load == nil {
-		load = policy.Load
+		projectRoot := projectRootForExec(exec)
+		load = func() (*policy.Data, error) {
+			return policy.LoadEffective(projectRoot)
+		}
 	}
 	data, err := load()
 	if err != nil {
@@ -214,6 +217,8 @@ type resolutionDetails struct {
 	FallbackRank  int                 `json:"fallback_rank"`
 	Skipped       []resolutionSkipped `json:"skipped"`
 	PolicyVersion string              `json:"policy_version"`
+	PolicySource  string              `json:"policy_source,omitempty"`
+	OverrideMode  string              `json:"override_mode,omitempty"`
 	ResolvedAt    string              `json:"resolved_at"`
 }
 
@@ -342,6 +347,8 @@ func persistResolution(exec *Execution, nodeID, className string, res policy.Res
 			FallbackRank:  res.FallbackRank,
 			Skipped:       skipped,
 			PolicyVersion: res.PolicyVersion,
+			PolicySource:  res.PolicySource,
+			OverrideMode:  res.OverrideMode,
 			ResolvedAt:    resolvedAt.Format(time.RFC3339Nano),
 		},
 	}
@@ -439,6 +446,8 @@ func emitResolutionEvents(exec *Execution, nodeID, className string, res policy.
 		"model":         res.ModelID,
 		"driver":        res.Driver,
 		"fallback_rank": res.FallbackRank,
+		"policy_source": res.PolicySource,
+		"override_mode": res.OverrideMode,
 	})
 	exec.Engine.appendProgress(map[string]any{
 		"event":       "auth_credential_selected",

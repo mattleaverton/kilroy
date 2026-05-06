@@ -27,6 +27,8 @@ func authInitCmd(args []string) {
 		switch args[i] {
 		case "--force":
 			opts.force = true
+		case "--rescan":
+			opts.rescan = true
 		case "--path":
 			if i+1 >= len(args) {
 				fmt.Fprintln(os.Stderr, "--path requires an argument")
@@ -39,13 +41,14 @@ func authInitCmd(args []string) {
 		case "--pretty":
 			opts.jsonOut = false
 		case "-h", "--help":
-			fmt.Fprintln(os.Stderr, "usage: kilroy auth init [--force] [--path <dir>] [--json|--pretty]")
+			fmt.Fprintln(os.Stderr, "usage: kilroy auth init [--force|--rescan] [--path <dir>] [--json|--pretty]")
 			fmt.Fprintln(os.Stderr, "")
 			fmt.Fprintln(os.Stderr, "  Generates ~/.config/kilroy/auth.toml from the default template.")
 			fmt.Fprintln(os.Stderr, "  Active sources (detected on this machine) are emitted as live entries.")
 			fmt.Fprintln(os.Stderr, "  Undetected sources are commented; uncomment after adding the credential.")
 			fmt.Fprintln(os.Stderr, "")
 			fmt.Fprintln(os.Stderr, "  --force        overwrite an existing auth.toml")
+			fmt.Fprintln(os.Stderr, "  --rescan       update an existing auth.toml with newly detected template sources")
 			fmt.Fprintln(os.Stderr, "  --path <dir>   write to <dir>/auth.toml instead of the default location")
 			fmt.Fprintln(os.Stderr, "  --json         print machine-readable summary instead of human-friendly")
 			os.Exit(0)
@@ -63,12 +66,19 @@ func authInitCmd(args []string) {
 // authInitOpts holds the parsed flags for auth init.
 type authInitOpts struct {
 	force   bool
+	rescan  bool
 	pathDir string // override directory; file name is always "auth.toml"
 	jsonOut bool
 }
 
 // authInitRun is the testable core of kilroy auth init.
 func authInitRun(opts authInitOpts, out io.Writer) error {
+	if opts.rescan {
+		if opts.force {
+			return fmt.Errorf("--force and --rescan cannot be used together")
+		}
+		return authInitRescanRun(opts, out)
+	}
 	// 1. Load the template.
 	tmpl, err := binding.LoadDefaultTemplates()
 	if err != nil {
@@ -114,6 +124,91 @@ func authInitRun(opts authInitOpts, out io.Writer) error {
 	}
 	printInitSummaryPretty(out, summary)
 	return nil
+}
+
+func authInitRescanRun(opts authInitOpts, out io.Writer) error {
+	tmpl, err := binding.LoadDefaultTemplates()
+	if err != nil {
+		return fmt.Errorf("load default templates: %w", err)
+	}
+	detected := auth.ListAll(version.Version, auth.DefaultDetectors())
+	view := binding.AuthListView{List: detected}
+
+	destDir := opts.pathDir
+	if destDir == "" {
+		destDir = authDefaultConfigDir()
+	}
+	dest := filepath.Join(destDir, "auth.toml")
+
+	cfg, exists, err := loadAuthConfigFromPath(dest)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("auth config does not exist at %s; run `kilroy auth init` first", dest)
+	}
+	added := mergeDetectedTemplateSources(&cfg, tmpl, view)
+	if err := saveGlobalAuthConfig(dest, cfg); err != nil {
+		return err
+	}
+
+	summary := buildInitSummary(dest, cfg, view)
+	summary.AddedSources = added
+	if opts.jsonOut {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(summary)
+	}
+	printInitSummaryPretty(out, summary)
+	return nil
+}
+
+func loadAuthConfigFromPath(path string) (binding.Config, bool, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return binding.Config{}, false, nil
+		}
+		return binding.Config{}, false, fmt.Errorf("stat %s: %w", path, err)
+	}
+	cfg, err := binding.LoadConfigFromPaths(path, "")
+	if err != nil {
+		return binding.Config{}, true, err
+	}
+	ensureConfigMaps(&cfg)
+	return cfg, true, nil
+}
+
+func mergeDetectedTemplateSources(cfg *binding.Config, tmpl binding.Config, view binding.DetectionView) []string {
+	ensureConfigMaps(cfg)
+	added := []string{}
+	for reqKey, chainName := range tmpl.Bindings {
+		if strings.TrimSpace(cfg.Bindings[reqKey]) == "" {
+			cfg.Bindings[reqKey] = chainName
+		}
+	}
+	for _, chainName := range sortedChainNames(tmpl) {
+		templateChain := tmpl.Chains[chainName]
+		effectiveName := cfg.Bindings[templateChain.Requires.Key()]
+		if effectiveName == "" {
+			effectiveName = chainName
+			cfg.Bindings[templateChain.Requires.Key()] = chainName
+		}
+		chain := cfg.Chains[effectiveName]
+		chain.Name = effectiveName
+		if chain.Requires.Provider == "" {
+			chain.Requires = templateChain.Requires
+		}
+		for _, src := range templateChain.Sources {
+			if !sourcePresent(view, src) || sourceInChain(chain.Sources, src) {
+				continue
+			}
+			chain.Sources = append(chain.Sources, src)
+			added = append(added, effectiveName+":"+src.ID())
+		}
+		cfg.Chains[effectiveName] = chain
+	}
+	sort.Strings(added)
+	return added
 }
 
 // authDefaultConfigDir returns the XDG-aware config directory for kilroy.
@@ -242,10 +337,11 @@ func sortedKeys(m map[string]string) []string {
 
 // initSummary is the JSON/pretty-print shape for the init summary.
 type initSummary struct {
-	Destination string        `json:"destination"`
-	Chains      []chainStatus `json:"chains"`
-	OK          int           `json:"ok"`
-	NoUsable    int           `json:"no_usable_source"`
+	Destination  string        `json:"destination"`
+	AddedSources []string      `json:"added_sources,omitempty"`
+	Chains       []chainStatus `json:"chains"`
+	OK           int           `json:"ok"`
+	NoUsable     int           `json:"no_usable_source"`
 }
 
 // chainStatus describes one chain's detected vs. skipped sources.
@@ -299,6 +395,14 @@ func buildInitSummary(dest string, tmpl binding.Config, view binding.DetectionVi
 // printInitSummaryPretty writes a human-readable summary to w.
 func printInitSummaryPretty(w io.Writer, s initSummary) {
 	fmt.Fprintf(w, "Wrote: %s\n\n", s.Destination)
+
+	if len(s.AddedSources) > 0 {
+		fmt.Fprintf(w, "Added sources (%d):\n", len(s.AddedSources))
+		for _, src := range s.AddedSources {
+			fmt.Fprintf(w, "  • %s\n", src)
+		}
+		fmt.Fprintln(w)
+	}
 
 	if s.OK > 0 {
 		fmt.Fprintf(w, "Chains with usable sources (%d):\n", s.OK)
