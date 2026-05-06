@@ -121,8 +121,6 @@ func main() {
 		attractorStop(args[1:])
 	case "ingest":
 		attractorIngest(args[1:])
-	case "serve":
-		attractorServe(args[1:])
 	case "attractor":
 		fmt.Fprintln(os.Stderr, "kilroy attractor: removed — use top-level commands. Run `kilroy --help`.")
 		os.Exit(2)
@@ -236,9 +234,6 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "Auth & policy:")
 	fmt.Fprintln(os.Stderr, "  kilroy auth defaults | init | list | check | suggest-fix")
 	fmt.Fprintln(os.Stderr, "  kilroy policy list | show <class> | resolve <class> | explain <run-id>")
-	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "Server / model metadata:")
-	fmt.Fprintln(os.Stderr, "  kilroy serve [--addr <host:port>]")
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "  kilroy --version    |    kilroy <command> --help    (per-command flags)")
 }
