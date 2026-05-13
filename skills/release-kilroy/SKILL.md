@@ -141,7 +141,7 @@ done
 ```bash
 scripts/e2e.sh
 scripts/check-ergonomics-docs.sh
-scripts/check-using-kilroy-skill.sh
+go test ./cmd/kilroy -run TestUsingKilroySkillFrontmatterAndRunCommandsStayAgentSafe
 ```
 
 ### 5. Prepare the release (on the release branch)
