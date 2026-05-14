@@ -109,104 +109,102 @@ kilroy auth check --pretty
 kilroy policy resolve hard_coding
 ```
 
-## Director Workflow
+## Factory Workflow
 
-Use Kilroy like a worker pool: write focused task specs, launch one run per
-task, tag every run, then integrate results after each run finishes.
+Use the default surface as a small factory line: plan the seed, run the coding
+loop, then validate the result. Tag every run with the same session label so the
+whole conversation stays auditable.
 
-1. Write a task file.
+1. Create a session workspace outside the repo.
 
 ```bash
-mkdir -p /tmp/kilroy-tasks
-$EDITOR /tmp/kilroy-tasks/T-001-investigate-auth.md
+SESSION=dark-mode-$(date +%Y%m%d%H%M%S)
+TASK_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/kilroy/sessions/$SESSION"
+mkdir -p "$TASK_ROOT"
+$EDITOR "$TASK_ROOT/goal.md"
 ```
 
-2. Pick a workflow.
+2. Run `plan` first.
 
 ```bash
-kilroy list --pretty
-kilroy describe investigate --pretty
-kilroy check investigate --pretty
-```
-
-3. Launch with labels.
-
-```bash
-kilroy run investigate \
-  --input-file question=/tmp/kilroy-tasks/T-001-investigate-auth.md \
-  --label scope=auth \
+kilroy run plan \
+  --input-file goal="$TASK_ROOT/goal.md" \
+  --label session="$SESSION" \
+  --label phase=plan \
   --label wave=1 \
-  --label task=T-001
+  --label task=dark-mode \
+  --label scope=theme
 ```
 
-For a read-only investigation that must inspect the current repo exactly as it
-is, including dirty and untracked files, add `--in-place`. In-place workflows
-still write their declared outputs and Kilroy metadata in the repo.
+`plan` writes `plan-status.json`, `task-packet.md`, `testing-plan.md`, and
+`validation-plan.md`. On a first pass it normally returns `NEEDS_CLARIFICATION`
+unless the user explicitly said to proceed with best judgment. Add answers as a
+`clarifications` input and rerun `plan` until the status is
+`READY_TO_IMPLEMENT` or `NEEDS_DECOMPOSITION`.
 
-```bash
-kilroy run investigate \
-  --in-place \
-  --input-file question=/tmp/kilroy-tasks/T-001-investigate-auth.md \
-  --label scope=auth \
-  --label wave=1 \
-  --label task=T-001
-```
-
-For implementation:
+3. Run `implement` from the plan artifacts.
 
 ```bash
 kilroy run implement \
-  --input-file prompt=/tmp/kilroy-tasks/T-002-implement.md \
-  --input-file verify_command=/tmp/kilroy-tasks/T-002-verify-command.txt \
-  --label scope=auth \
-  --label wave=1 \
-  --label task=T-002
+  --input-file task_packet="$TASK_ROOT/task-packet.md" \
+  --input-file testing_plan="$TASK_ROOT/testing-plan.md" \
+  --input-file validation_plan="$TASK_ROOT/validation-plan.md" \
+  --input-file verify_command="$TASK_ROOT/verify-command.txt" \
+  --label session="$SESSION" \
+  --label phase=implement \
+  --label wave=2 \
+  --label task=dark-mode \
+  --label scope=theme
 ```
 
-4. Survey and wait.
+`implement` is the public coding loop. It plans one small step, codes it,
+verifies, critiques, and repeats until the critic says `COMPLETE` or the loop
+cap is reached. It emits `result.md`, `STATUS.md`, and `implementation.patch`.
+
+4. Integrate or continue from the run worktree, then run `validate`.
 
 ```bash
-kilroy runs list --label wave=1 --pretty
-kilroy status --latest --watch
-kilroy runs wait --latest --label task=T-002 --timeout 1h
+kilroy run validate \
+  --input-file task_packet="$TASK_ROOT/task-packet.md" \
+  --input-file validation_plan="$TASK_ROOT/validation-plan.md" \
+  --input-file validation_command="$TASK_ROOT/validation-command.txt" \
+  --label session="$SESSION" \
+  --label phase=validate \
+  --label wave=3 \
+  --label task=dark-mode \
+  --label scope=theme
 ```
 
-5. Read the result.
+`validate` writes `evidence.md` and `evidence.json` with terminal state
+`PR_READY` or `FAILED_VALIDATION`. If validation fails, feed the evidence back
+into another `implement` run from the same worktree or from an integrated branch.
+
+5. Survey and inspect by session.
 
 ```bash
-kilroy runs show --latest --label task=T-002
-kilroy runs show --latest --label task=T-002 --outputs
-kilroy runs show --latest --label task=T-002 --print result.md
+kilroy runs list --label session="$SESSION" --pretty
+kilroy runs show --latest --label phase=implement --outputs
+kilroy runs show --latest --label phase=implement --print result.md
+kilroy runs show --latest --label phase=validate --print evidence.md
 ```
-
-6. Integrate code changes manually.
 
 `kilroy runs show` reports `worktree`, `run_branch`, `logs_root`, `outputs`,
-and `final_sha` when available. Review the run's worktree or branch before
-bringing changes back to the original repo. A typical integration pass is:
-
-```bash
-kilroy runs show <run-id>
-git show <final-sha>
-git cherry-pick --no-commit <final-sha>
-git diff
-```
-
-Do not blindly merge a run branch. Inspect outputs and the diff first.
+and `final_sha` when available. Inspect outputs and the diff before bringing
+worker changes back to the original repo.
 
 ## Choosing Workflows
 
-The default `kilroy list` hides experimental workflows. Add `--all` when
-you deliberately want test harnesses or exploratory loops.
+The default `kilroy list` shows only the three demo workflows.
 
 | Workflow | Use when |
 |---|---|
-| `investigate` | You need read-only research and a structured `result.md`. |
-| `implement` | You have a directed code change and a verification command. |
-| `fix` | You have a bug description, expected behavior, and preferably a repro. |
-| `review` | You need a structured review of a patch or branch. |
-| `coding-relay` | You want a longer experimental planner/coder/critic loop. |
-| `build-test` | You want no-LLM build/test verification. Use `--all` to list it. |
+| `plan` | You have a raw user goal and need classification, clarification, a task packet, a testing plan, and a validation plan. |
+| `implement` | You have a task packet and want the planner/coder/critic loop to produce code plus `implementation.patch`. |
+| `validate` | You have a worktree, branch, or patch to prove against the task packet and validation plan. |
+
+Add `--all` when you deliberately want internal station workflows such as
+`investigate`, `fix`, `review`, `build-test`, `coding-loop`,
+`coding-relay`, `implement-codex`, or `implement-oneshot`.
 
 Workflow discovery order is:
 
@@ -403,21 +401,23 @@ Every run is recorded in Kilroy's local run database. Labels are the main way a
 director keeps related worker runs together:
 
 ```bash
-kilroy run investigate \
-  --input-file question=/tmp/T-101.md \
-  --label conversation=alpha-docs \
+kilroy run plan \
+  --input-file goal="$TASK_ROOT/goal.md" \
+  --label session=alpha-docs \
+  --label phase=plan \
   --label wave=2 \
   --label task=T-101 \
   --label scope=docs
 
-kilroy runs list --label conversation=alpha-docs --pretty
+kilroy runs list --label session=alpha-docs --pretty
 kilroy runs list --label wave=2 --status running --pretty
 kilroy runs show --latest --label task=T-101
 ```
 
 Use stable labels such as:
 
-- `conversation=<slug>`
+- `session=<slug-or-ulid>`
+- `phase=plan|implement|validate`
 - `wave=<N>`
 - `task=<id>`
 - `scope=<area>`

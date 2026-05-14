@@ -20,7 +20,7 @@ You are a **director**. Your job is to plan work, dispatch parallel runs of Kilr
    - **Verification** — exact commands the agent must run green before claiming done
    - **Out of scope** — explicit non-goals
    - **Report** — what to put in `result.md`
-3. **Dispatch.** Pick the workflow that fits the task (see below). Launch with `kilroy run <workflow> --input-file prompt=/path/to/T-XXX.md --label …`. Run multiple in parallel when independent.
+3. **Dispatch.** Pick the workflow that fits the task (see below). Launch with `kilroy run <workflow> --input-file KEY=/path/to/T-XXX.md --label …`. Run multiple in parallel when independent.
 4. **Oversee.** `kilroy runs list --label wave=N` to see your wave's status. `kilroy runs show <id> --json` for details. `kilroy status --latest --watch` to follow a single run live. `kilroy runs wait <id> --timeout 1h` to block on a single run.
 5. **Integrate.** When a run finishes:
    - Find the agent's code commit: `git log --pretty='format:%h %s' feat/v2-reframe..attractor/run/<run-id> | grep -vE 'attractor\(|critic:'` — the per-stage `attractor(<run-id>): agent` commit captures the change
@@ -34,6 +34,8 @@ You are a **director**. Your job is to plan work, dispatch parallel runs of Kilr
 Always tag dispatched runs so you can filter and audit them later. Standard labels:
 
 - `scope=<short-slug>` — what work area this run targets
+- `session=<slug>` — shared id for related plan/implement/validate runs
+- `phase=plan|implement|validate|station` — where this run sits in the line
 - `wave=<N>` — which dispatch wave this is part of (helps when multiple are in flight)
 - `task=<id>` — the task ID from your spec file (e.g. `task=A`, `task=137`)
 - `workflow=<name>` — auto-set by `kilroy run` from the workflow name; you can override
@@ -44,23 +46,26 @@ Always tag dispatched runs so you can filter and audit them later. Standard labe
 
 | Workflow | When | Iterations | Default class |
 |---|---|---|---|
-| `implement` | Surgical edit, well-scoped change with build+test verification (e.g. fix this test, add this flag, rename this function) | Single-shot + verify + retry-once | `hard_coding` |
-| `fix` | Bug fix with reproduction. Small scope, focused root-cause work | Single-shot + verify + retry-once | `hard_coding` |
-| `investigate` | Research/code-spelunking question. No code changes. Returns a research artifact | Read-only | `deep_investigation` |
-| `coding-relay` | Experimental multi-step planner→coder→critic→status loop. Right when scope is bounded but spans multiple commits | 20 iterations max | mixed direct routing + `quick_easy` |
-| `review` | Review a change. Stages diff, reads context, returns a structured review | Single-shot | `hard_coding` |
-| `coding-loop` | Experimental chooser→implementer→reviewer→gate loop | 12 iterations max | mixed `quick_easy`/`hard_coding` |
-| `build-test` | No-LLM build/test detector and reporter; useful as a child pipeline | Single-shot | none |
+| `plan` | Raw goal, unclear seed, or need for task/testing/validation packet | Single fast intake node | `quick_easy` |
+| `implement` | Public coding loop from task packet + testing/validation plan | 20 iterations max | mixed direct routing + `quick_easy` |
+| `validate` | Evidence collection against task packet and validation plan | Single script node | none |
+| `implement-oneshot` | Internal surgical edit when you already have a tight prompt | Single-shot + verify + retry-once | `hard_coding` |
+| `fix` | Internal bug-fix station with reproduction and patch output | Single-shot + verify + retry-once | `hard_coding` |
+| `investigate` | Internal read-only research/code-spelunking station | Read-only | `deep_investigation` |
+| `review` | Internal review of a diff/branch/patch | Single-shot | `hard_coding` |
+| `build-test` | Internal no-LLM build/test detector and reporter | Single-shot | none |
 
 ### Picking the right one
 
-- **One file or one focused change** → `implement`. Smallest spec; verifies via `go build && go test`.
-- **A bug with a known repro** → `fix`. Same shape as implement, framed around the failure.
-- **"How does X work?" or "Where is Y?"** → `investigate`. No code, returns a research artifact you can use to spec the next task.
-- **Multi-file refactor or feature** → `coding-relay`. Uses kimi-k2 via opencode for the coder stage (paid), anthropic SDK for planner, codex CLI for critic. Treat it as experimental until the demo surface is polished.
+- **Unclear or product-shaped request** → `plan` first. Use the generated task packet before coding.
+- **Main demo path** → `plan` → `implement` → `validate`.
+- **One file or one focused Kilroy self-change** → `implement-oneshot` is still available with `--all`.
+- **A bug with a known repro** → `fix` remains an internal station when that framing is useful.
+- **"How does X work?" or "Where is Y?"** → `investigate` remains the internal read-only station.
 - **Need a structured opinion on a diff** → `review`.
 
-If a `coding-relay` task is stalling (no progress for 10 min), the kimi connection may have died. Watchdog will fail the run; re-dispatch as `implement` if the remaining work fits.
+Default `kilroy list` shows only `plan`, `implement`, and `validate`. Use
+`kilroy list --all` to see internal station workflows.
 
 ## Local install / demo smoke
 
@@ -156,7 +161,7 @@ integration tests internally before validating shipped DOT files:
 
 ## Authoring workflows
 
-A workflow package is `workflows/<name>/` with at minimum `workflow.toml` + `graph.dot`. Optional: `prompts/` (prompt fragments referenced from nodes) and `scripts/` (shell helpers). Use a shipped workflow as a template — `workflows/implement/` is the simplest representative.
+A workflow package is `workflows/<name>/` with at minimum `workflow.toml` + `graph.dot`. Optional: `prompts/` (prompt fragments referenced from nodes) and `scripts/` (shell helpers). Use a shipped workflow as a template — `workflows/implement-oneshot/` is the simplest coding representative, while `workflows/validate/` is the simplest script-only representative.
 
 `workflow.toml` skeleton:
 

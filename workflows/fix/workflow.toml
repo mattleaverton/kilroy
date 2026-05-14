@@ -16,6 +16,7 @@ verify retries the agent once.
 agent_description = "Fix a described bug; verifies via build+test and emits a fix.patch."
 default_class     = "hard_coding"
 graph             = "graph.dot"
+experimental      = true
 
 [inputs.issue]
 type        = "string"

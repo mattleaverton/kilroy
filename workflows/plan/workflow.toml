@@ -1,0 +1,67 @@
+# Plan workflow: fast intake/clarification plus task-packet generation.
+# Public factory entrypoint for turning a user goal into implementation,
+# testing, and validation artifacts.
+
+[workflow]
+name              = "plan"
+version           = "1"
+description       = """
+Classify a user goal, ask high-leverage clarification questions by default,
+or produce a manufacturable task packet with testing and validation plans
+when the goal is ready to implement.
+"""
+agent_description = "Classify a goal and produce plan-status.json plus task/testing/validation plans."
+default_class     = "quick_easy"
+graph             = "graph.dot"
+
+[inputs.goal]
+type        = "string"
+required    = true
+description = "The user's raw goal or request."
+
+[inputs.clarifications]
+type        = "string"
+required    = false
+description = "User answers or explicit instruction to proceed without asking questions."
+
+[inputs.preferences]
+type        = "string"
+required    = false
+description = "User/project preferences, budget/risk posture, or rules of engagement."
+
+[inputs.context_files]
+type        = "string"
+required    = false
+description = "Newline-separated paths the planner should read for extra context."
+
+[outputs."plan-status.json"]
+type        = "path"
+description = "Structured status: NEEDS_CLARIFICATION, READY_TO_IMPLEMENT, NEEDS_DECOMPOSITION, or ESCALATE_RISK."
+path        = "plan-status.json"
+
+[outputs."task-packet.md"]
+type        = "path"
+description = "Factory task packet for implement."
+path        = "task-packet.md"
+
+[outputs."testing-plan.md"]
+type        = "path"
+description = "Testing plan for implement and validate."
+path        = "testing-plan.md"
+
+[outputs."validation-plan.md"]
+type        = "path"
+description = "External validation/integration plan for validate."
+path        = "validation-plan.md"
+
+[side_effects]
+mutates_git    = false
+writes_files   = true
+network_egress = false
+idempotent     = true
+
+[nodes.planner]
+class = "quick_easy"
+
+[defaults]
+labels = { workflow = "plan" }

@@ -1,47 +1,101 @@
+// implement: public planner/coder/critic/status loop.
+
 digraph implement {
     graph [
-        inputs="prompt",
-        outputs="result.md",
-        max_node_visits="3",
-        model_stylesheet="
-            * { agent_class: hard_coding; }
-        "
+        inputs="task_packet",
+        outputs="result.md,implementation.patch,STATUS.md",
+        model_stylesheet=""
     ]
 
-    start         [shape=Mdiamond, label="Start"]
-    stage_context [shape=parallelogram, label="stage-context",
-                   tool_command="bash .kilroy/package/scripts/stage-context.sh"]
-    agent         [shape=box, label="implement", agent_tool="claude", agent_class="hard_coding",
-                   prompt="You are working in a kilroy worktree. Code changes are auto-committed at node end. Do not run git commit yourself. Your task is in .kilroy/INPUT.md under the ## prompt section. If a ## context_files section is present, those paths point at files the user wants you to read for context. If a ## scope_directive section is present, treat it as a hard guardrail: do not touch files outside the named scope. Do NOT run go test ./... — too noisy; use go test <package> -run <pattern> for targeted verification. Time-cap your work: if a single approach is not converging within ~15 minutes, write what you have to result.md with a BLOCKED: prefix and stop. Output: write result.md at the workspace root. Required sections: Summary (1-2 sentences), Files touched (list), Diff outline (bullets), Tests added (if any), Open questions. When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.",
-                   outputs="result.md"]
-    verify        [shape=parallelogram, label="verify",
-                   tool_command="bash .kilroy/package/scripts/verify.sh"]
-    summary       [shape=parallelogram, label="summary",
-                   tool_command="bash .kilroy/package/scripts/summary.sh",
-                   max_retries="0"]
-    done          [shape=Msquare, label="Done"]
-    failed        [shape=Msquare, terminal_status="fail", label="Failed",
-                   failure_reason="agent_did_not_write_result"]
+    start  [shape=Mdiamond, label="Start"]
+    done   [shape=Msquare,  label="Done"]
+    failed [shape=Msquare,  terminal_status="fail", label="Failed",
+            failure_reason="implement_loop_did_not_complete"]
 
-    // Failure paths route through `summary` so the run captures what
-    // happened in result.md before terminating. summary itself fails
-    // (exit 1, status=fail) when it had to synthesize a BLOCKED stub
-    // because the agent didn't write result.md — and the failed
-    // terminal then records FinalFail at the run level, so dashboards
-    // can trust final.json.
-    //
-    // max_node_visits=3 caps agent at 2 executions (original + the one
-    // retry advertised on the verify→agent edge). On a third visit
-    // attempt the engine halts with a stuck-cycle FinalFail before
-    // executing — enforcing the "retry once" contract regardless of
-    // whether failure signatures vary across attempts.status.
+    stage_context [
+        shape=parallelogram,
+        label="stage-context",
+        tool_command="bash .kilroy/package/scripts/stage-context.sh"
+    ]
+
+    loop_begin [
+        shape=trapezium,
+        label="Loop Begin",
+        loop_id="main",
+        loop_max=20,
+        loop_until_file_contains=".kilroy/decision.md:COMPLETE"
+    ]
+
+    loop_end [
+        shape=invtrapezium,
+        label="Loop End",
+        loop_id="main",
+        loop_max=20,
+        loop_until_file_contains=".kilroy/decision.md:COMPLETE"
+    ]
+
+    planner [
+        shape=box,
+        label="Planner",
+        agent_mode="agent_loop",
+        llm_provider="anthropic",
+        llm_model="claude-sonnet-4.6",
+        prompt="You are the planner in Kilroy's public implement workflow. Pick ONE narrow next sub-task.\n\nSteps:\n1. Read .kilroy/INPUT.md. The ## task_packet section is authoritative. The optional ## testing_plan and ## validation_plan sections are requirements.\n2. If ## context_files_contents exists, skim it.\n3. If .kilroy/feedback/latest.md exists, read it for critic feedback from the prior iteration.\n4. Run: git log --oneline -10\n5. Run: git status -sb\n6. Pick EXACTLY ONE smallest-possible self-contained sub-task. Do not bundle features.\n   - No code yet -> pick a red test or smallest foundation step only.\n   - Foundation exists -> pick the single smallest remaining behavior.\n   - Validation failed -> pick just the failure repair.\n7. Write .kilroy/plan.md under 40 lines with sections:\n   ## What to implement\n   ## Acceptance criteria\n   ## Test obligation\n   ## Validation obligation\n   ## Files likely affected\n   ## Guardrail\nThe guardrail section must say: Do NOT implement any other features in this iteration. Stop immediately after the scoped sub-task is complete.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    coder [
+        shape=box,
+        label="Coder",
+        agent_tool="opencode",
+        llm_provider="kimi",
+        llm_model="kimi-k2.5",
+        prompt="You are the coder in Kilroy's public implement workflow. Implement EXACTLY what .kilroy/plan.md asks for, nothing more.\n\nSteps:\n1. Read .kilroy/plan.md.\n2. Read .kilroy/INPUT.md, especially ## task_packet, ## testing_plan, and ## validation_plan.\n3. Implement only the scoped sub-task. Use existing project patterns. Do not refactor unrelated code.\n4. Run the targeted test/build named in .kilroy/plan.md if practical. Broader verify runs separately.\n5. Before committing, remove generated caches/build artifacts such as __pycache__, .pytest_cache, node_modules, dist, coverage, binaries, and temporary logs unless the task explicitly asks for them. Add a minimal ignore rule if the project lacks one and the command generated common cache artifacts.\n6. Stage and commit only substantive source/test/doc/config changes with a clear message.\n\nIf the task is genuinely already done, write .kilroy/no-op.md with evidence and commit that. Do not claim completion without either a substantive code/test commit or a no-op evidence file.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    verify_build [
+        shape=parallelogram,
+        label="verify-build",
+        tool_command="bash .kilroy/package/scripts/verify-build.sh"
+    ]
+
+    critic [
+        shape=box,
+        label="Critic",
+        agent_tool="codex",
+        llm_provider="openai",
+        llm_model="gpt-5.4-mini",
+        prompt="You are the critic in Kilroy's public implement workflow. Be strict: it should be hard to exit the loop, but judge the substantive run diff, not engine bookkeeping commits.\n\nSteps:\n1. Read .kilroy/plan.md.\n2. Read .kilroy/INPUT.md and judge against ## task_packet, ## testing_plan, and ## validation_plan.\n3. Read BASE from .kilroy/base-sha.txt if it exists. Otherwise infer the last non-attractor commit before this run from git log.\n4. Run: git log --oneline -10\n5. Run: git diff --stat \"$BASE\"..HEAD -- . ':(exclude).kilroy/**' ':(exclude)STATUS.md' 2>/dev/null || git diff --stat HEAD~5..HEAD\n6. Read .kilroy/build-output.txt.\n7. Check for generated junk in the substantive diff: git diff --name-only \"$BASE\"..HEAD -- . ':(exclude).kilroy/**' ':(exclude)STATUS.md' 2>/dev/null || true\n8. Compute iteration number:\n   mkdir -p .kilroy/feedback\n   N=$(find .kilroy/feedback -maxdepth 1 -name 'iter-*.md' 2>/dev/null | wc -l | tr -d ' ')\n   ITER=$((N + 1))\n   PADDED=$(printf '%03d' $ITER)\n9. Write .kilroy/feedback/iter-${PADDED}.md and overwrite .kilroy/feedback/latest.md with sections:\n   ## Iteration ${PADDED}\n   ## What changed\n   ## Build outcome\n   ## Against task packet\n   ## Against testing plan\n   ## Against validation plan\n   ## Quality notes\n   ## Recommendation\nRecommendation must be CONTINUE if required task items remain, build or required tests fail, validation evidence is missing, implementation has a bug, generated cache/build artifacts are tracked, or the substantive diff since BASE is empty without .kilroy/no-op.md. Recommendation may be COMPLETE only when all required items are correctly implemented, required tests/build passed or are explicitly impossible with evidence, validation obligations are satisfied enough for validate to run, and there is a non-empty substantive diff since BASE unless this is a documented NO_OP.\n10. Stage and commit feedback with: git add -f .kilroy/feedback/ && git commit -m \"critic: iteration ${PADDED} feedback\"\n11. Write exactly COMPLETE or CONTINUE to .kilroy/decision.md.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    status_pulse [
+        shape=box,
+        label="Status Pulse",
+        agent_class="quick_easy",
+        prompt="Write STATUS.md for external monitors of this implement run.\n\nRead .kilroy/INPUT.md, .kilroy/plan.md, .kilroy/feedback/latest.md, .kilroy/decision.md if present, git log --oneline -10, and .kilroy/build-output.txt. Overwrite STATUS.md with sections:\n# Implement Status\n_last updated: <ISO 8601 timestamp>_\n\n## Goal\n(1-3 sentences from task_packet)\n\n## Progress\n- Iterations completed: N / 20\n- Most recent task: ...\n- Latest decision: COMPLETE | CONTINUE | none\n- Build: PASS | FAIL | not attempted\n\n## Trajectory\n(3-6 bullets from feedback)\n\n## Stuck signal\nSTUCK or PROGRESSING with one concrete reason.\n\nKeep STATUS.md under 60 lines. When finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    final_report [
+        shape=parallelogram,
+        label="final-report",
+        tool_command="bash .kilroy/package/scripts/final-report.sh",
+        max_retries="0"
+    ]
+
     start         -> stage_context
-    stage_context -> agent          [condition="outcome=success"]
-    stage_context -> summary        [condition="outcome!=success"]
-    agent         -> verify         [condition="outcome=success"]
-    agent         -> summary        [condition="outcome!=success"]
-    verify        -> summary        [condition="outcome=success"]
-    verify        -> agent          [condition="outcome!=success", label="retry once"]
-    summary       -> done            [condition="outcome=success"]
-    summary       -> failed          [condition="outcome!=success"]
+    stage_context -> loop_begin     [condition="outcome=success"]
+    stage_context -> final_report   [condition="outcome!=success"]
+
+    loop_begin    -> planner
+    planner       -> coder          [condition="outcome=success"]
+    planner       -> final_report   [condition="outcome!=success"]
+    coder         -> verify_build   [condition="outcome=success"]
+    coder         -> final_report   [condition="outcome!=success"]
+    verify_build  -> critic
+    critic        -> status_pulse   [condition="outcome=success"]
+    critic        -> final_report   [condition="outcome!=success"]
+    status_pulse  -> loop_end
+    loop_end      -> final_report
+
+    final_report  -> done           [condition="outcome=success"]
+    final_report  -> failed         [condition="outcome!=success"]
 }

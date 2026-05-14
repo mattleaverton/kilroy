@@ -50,22 +50,22 @@ kilroy check implement --pretty
 
 ## Classify The Request
 
-Before launching anything, classify the user's request and decide whether the
-seed is good enough for a worker.
+Default to the three public workflows. Do not make the user choose from the
+internal station list.
 
-| Request shape | Use | Notes |
+| Request state | Use | Notes |
 |---|---|---|
-| "How does X work?", "where is Y?", risk/context discovery | `investigate` | Read-only. Prefer `--in-place` so dirty files are visible. |
-| Small directed feature/change with clear acceptance | `implement` | Default code-change worker. Provide a verification command when possible. |
-| Bug with symptom, expected behavior, repro, logs, or failing test | `fix` | Include reproduction and expected behavior in the issue file. |
-| Validate current state without LLM judgment | `build-test` | Use `kilroy list --all` if hidden. Good after implementation. |
-| Review a diff, branch, patch, or worker result | `review` | Read-only independent judgment. Use a checklist when quality bar matters. |
-| Larger bounded project that can run in the background | `coding-relay` | Experimental. Use only with a written spec and patience for iteration. |
-| Vague, high-risk, or product-shaped request | Build a task packet first | Clarify intent, validation, budget/risk, and no-op/escalation rules before code. |
+| Raw goal, vague ask, bug report, feature idea, greenfield idea, or risky request | `plan` | Fast intake. Produces status, task packet, testing plan, and validation plan. |
+| Task packet is ready and code should be produced | `implement` | Public planner/coder/critic loop. Uses testing and validation plans. |
+| A worktree, patch, branch, or run result needs evidence | `validate` | Runs declared validation and writes evidence artifacts. |
+
+Use `kilroy list --all` only when you intentionally need an internal station
+workflow such as `investigate`, `fix`, `review`, `build-test`,
+`implement-oneshot`, `implement-codex`, or `coding-relay`.
 
 If the user asks for broad autonomous work, do not hand a vague sentence to a
-coding worker. First turn the request into a seed/task packet, then decide
-whether to run one worker, several workers, or a loop.
+coding worker. First run `plan` to turn the request into a seed/task packet and
+to surface clarification, risk, budget, no-op, and validation needs.
 
 ## Route To Specific Skills
 
@@ -84,10 +84,33 @@ one specialized artifact, switch to the narrower skill after classification:
 Use the narrower skill for the specialized work, then come back here to launch,
 watch, chain, and inspect runs.
 
+## Make A Session Workspace
+
+Put temporary prompt files and handoff artifacts outside the working branch.
+Use one session label for every related run.
+
+```bash
+SESSION=<short-slug-or-ulid>
+TASK_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/kilroy/sessions/$SESSION"
+mkdir -p "$TASK_ROOT"
+```
+
+Recommended labels on every run:
+
+- `session=<same-id-for-the-whole-conversation>`
+- `phase=plan|implement|validate`
+- `wave=<N>`
+- `task=<slug>`
+- `scope=<area>`
+
+Do not write transient task files, copied run outputs, or scratch notes into the
+repo unless the user or repo conventions explicitly require it.
+
 ## Make A Good Seed
 
-For code-producing work, write a short task packet in `/tmp/kilroy-tasks/` or
-the repo's planning area. Include only facts and decisions the worker needs:
+For code-producing work, `plan` should create or refine the task packet. When
+you write one manually, put it in the session workspace. Include only facts and
+decisions the worker needs:
 
 ```markdown
 # Task
@@ -119,13 +142,12 @@ Allowed network, paid tokens, staging/prod deploys, destructive actions.
 
 Prefer validation that exercises the delivered behavior from the outside
 (CLI/browser/API/logs) over tests that only assert internals. If validation is
-unclear, run `investigate` first or use the `build-dod` skill when available.
+unclear, run `plan` and let it produce a validation plan before coding.
 
 ## Choose The Work Environment
 
-- **Read current messy repo state:** use `--in-place` only for read-only
-  workflows (`investigate`, `review`) when the worker must see dirty or
-  untracked files.
+- **Read current messy repo state:** use `--in-place` only for read-only or
+  evidence-collection work when the worker must see dirty or untracked files.
 - **Make code changes in a repo:** use the default Kilroy worktree behavior.
   Do not use `--in-place`; inspect and integrate the worker result manually.
 - **Continue a previous worker's unintegrated work:** launch the next worker
@@ -136,96 +158,113 @@ unclear, run `investigate` first or use the `build-dod` skill when available.
   seed/spec there, and run Kilroy from that repo. Use this for technology
   spikes or ground-up experiments that should not touch the product repo.
 - **Multiple independent jobs:** write one task packet per job, label each run,
-  and launch them separately. Kilroy is a worker pool; the caller owns the
-  decomposition until a factory-manager layer exists.
+  and launch them separately. Use the same `session` and different `task` or
+  `wave` labels.
 
 ## Chain Runs Deliberately
 
-Useful chains:
+Normal chain:
 
-1. `investigate` -> task packet -> `implement` or `fix`
-2. `implement` or `fix` -> `build-test` -> `review`
-3. failed/uncertain worker result -> `investigate` or `review` -> revised task
-4. several `investigate` runs in parallel -> synthesize plan -> implementation
+1. `plan` -> `task-packet.md`, `testing-plan.md`, `validation-plan.md`
+2. `implement` -> `result.md`, `STATUS.md`, `implementation.patch`
+3. integrate or continue from the reported worktree
+4. `validate` -> `evidence.md`, `evidence.json`
+5. if validation fails, feed `evidence.md` and the prior result back into
+   another `implement` run from the same work environment
 
 After every run, read the outputs before deciding the next run:
 
 ```bash
-kilroy runs show --latest --label task=<slug> --outputs
-kilroy runs show --latest --label task=<slug> --print result.md
+kilroy runs show --latest --label session=<session> --outputs
+kilroy runs show --latest --label phase=plan --print plan-status.json
+kilroy runs show --latest --label phase=implement --print result.md
+kilroy runs show --latest --label phase=validate --print evidence.md
 ```
 
 Treat `result.md`, patches, build reports, review JSON, logs, and screenshots
 as evidence. Do not chain another coding worker just because the prior worker
 claimed success; check whether the evidence supports the next step.
 
-## Investigate A Repo Question
-
-When asked to use Kilroy to answer a repo question, do this:
+## Run Plan
 
 ```bash
 cd <repo>
-printf '%s\n' '<question>' > /tmp/kilroy-question.md
-kilroy run investigate \
-  --in-place \
-  --input-file question=/tmp/kilroy-question.md \
-  --label conversation=<slug> \
+printf '%s\n' '<goal>' > "$TASK_ROOT/goal.md"
+kilroy run plan \
+  --input-file goal="$TASK_ROOT/goal.md" \
+  --label session=<session> \
+  --label phase=plan \
+  --label wave=1 \
   --label task=<slug> \
   --label scope=<slug>
 ```
 
-Then either return the run ID to the user or, if asked to wait:
+If `plan-status.json` is `NEEDS_CLARIFICATION`, ask the user the generated
+questions, write answers to `$TASK_ROOT/clarifications.md`, and rerun:
 
 ```bash
-kilroy runs wait --latest --label task=<slug> --timeout 1h
-kilroy runs show --latest --label task=<slug> --print result.md
+kilroy run plan \
+  --input-file goal="$TASK_ROOT/goal.md" \
+  --input-file clarifications="$TASK_ROOT/clarifications.md" \
+  --label session=<session> \
+  --label phase=plan \
+  --label wave=2 \
+  --label task=<slug> \
+  --label scope=<slug>
 ```
 
-Use `--in-place` for repo investigation so the worker sees the current working
-tree, including uncommitted and untracked files. Use it only for read-only
-workflows such as `investigate` and `review`. In-place workflows still write
-their declared outputs and Kilroy metadata in the repo.
+If the user explicitly says not to ask questions, or says to use good judgment,
+include that in the `goal` or `clarifications` input so `plan` can proceed.
 
-Do not look for a separate launch workflow. Do not run `kilroy run <name>
---help`; use `kilroy describe <name> --pretty`.
+## Run Implement
 
-## Worker Pattern
-
-Use Kilroy like a worker pool:
-
-1. Write one focused task/spec file.
-2. Pick a workflow with `kilroy list --pretty` and
-   `kilroy describe <name> --pretty`.
-3. Optionally run `kilroy check <name> --pretty` for validation without launch.
-4. Launch with labels for later grouping.
-5. Watch or wait by label.
-6. Read `result.md` or other declared outputs.
-7. Review and integrate code changes manually from the reported worktree,
-   run branch, or final SHA.
-
-Example:
+Copy the plan outputs to the session workspace if needed, then launch:
 
 ```bash
-kilroy run investigate \
-  --input-file question=/tmp/T-001.md \
-  --label conversation=my-session \
-  --label wave=1 \
-  --label task=T-001 \
-  --label scope=auth
-
-kilroy runs list --label wave=1 --pretty
-kilroy runs wait --latest --label task=T-001 --timeout 1h
-kilroy runs show --latest --label task=T-001 --print result.md
+kilroy run implement \
+  --input-file task_packet="$TASK_ROOT/task-packet.md" \
+  --input-file testing_plan="$TASK_ROOT/testing-plan.md" \
+  --input-file validation_plan="$TASK_ROOT/validation-plan.md" \
+  --input-file verify_command="$TASK_ROOT/verify-command.txt" \
+  --label session=<session> \
+  --label phase=implement \
+  --label wave=3 \
+  --label task=<slug> \
+  --label scope=<slug>
 ```
 
-Recommended labels:
+`implement` should be hard to exit. A success with an empty implementation
+patch is a Kilroy failure unless the run produced an explicit `.kilroy/no-op.md`
+with evidence.
 
-- `conversation=<slug>`
-- `wave=<N>`
-- `task=<id>`
-- `scope=<area>`
+## Run Validate
 
-There is no `kilroy discover` command; use `kilroy list`.
+```bash
+kilroy run validate \
+  --input-file task_packet="$TASK_ROOT/task-packet.md" \
+  --input-file validation_plan="$TASK_ROOT/validation-plan.md" \
+  --input-file validation_command="$TASK_ROOT/validation-command.txt" \
+  --label session=<session> \
+  --label phase=validate \
+  --label wave=4 \
+  --label task=<slug> \
+  --label scope=<slug>
+```
+
+`validate` returns `PR_READY` or `FAILED_VALIDATION` in `evidence.json`.
+Failed validation is not the end of the factory line; pass `evidence.md` back
+into `implement` as context and continue in the same work environment.
+
+## Kilroy-First Means Kilroy-First
+
+If the user explicitly says Kilroy must be used for research, planning,
+implementation, or validation, do not do that phase locally while waiting for a
+run. Launch another Kilroy run for side research or follow-up work, wait for the
+outputs, then inspect and integrate. Local work is for orchestration,
+verification, and integration unless the user relaxes the constraint.
+
+There is no `kilroy discover` command; use `kilroy list`. Do not run
+`kilroy run <name> --help`; use `kilroy describe <name> --pretty`.
 
 ## Workflow Discovery
 
@@ -245,12 +284,12 @@ Use `kilroy list --all --pretty` to include experimental workflows.
 
 ## Choosing Workflows
 
-- `investigate`: read-only research, writes `result.md`.
-- `implement`: directed code change with build/test verification.
-- `fix`: bug fix from issue/repro, emits `result.md` and `fix.patch`.
-- `review`: read-only review of a patch or branch.
-- `coding-relay`: experimental planner/coder/critic/status loop.
-- `build-test`: no-LLM build/test verification, hidden unless `--all`.
+- `plan`: fast intake, clarification, task packet, testing plan, validation plan.
+- `implement`: public planner/coder/critic/status coding loop.
+- `validate`: evidence collection against the task packet and validation plan.
+
+Internal station workflows are hidden from default discovery. Use
+`kilroy list --all --pretty` only when you deliberately need one.
 
 Use `kilroy describe <name> --pretty` for exact inputs and outputs.
 

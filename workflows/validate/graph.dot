@@ -1,0 +1,17 @@
+digraph validate {
+    graph [
+        inputs="task_packet",
+        outputs="evidence.md,evidence.json"
+    ]
+
+    start    [shape=Mdiamond, label="Start"]
+    validate [shape=parallelogram, label="validate",
+              tool_command="bash .kilroy/package/scripts/validate.sh"]
+    done     [shape=Msquare, label="Done"]
+    failed   [shape=Msquare, terminal_status="fail", label="Failed",
+              failure_reason="validation_failed"]
+
+    start    -> validate
+    validate -> done   [condition="outcome=success"]
+    validate -> failed [condition="outcome!=success"]
+}

@@ -1,12 +1,13 @@
-# Implement workflow: stage context, run agent (class=hard_coding), verify
-# build+test, write a summary. Dogfood workhorse for kilroy's own v2 work.
+# Implement-oneshot workflow: stage context, run agent (class=hard_coding),
+# verify build+test, write a summary. Kept as an experimental station now
+# that the public `implement` workflow is the planner/coder/critic loop.
 #
 # v2 workflow.toml schema (plan §5.2). Loader supports both shapes during
 # the transition; this manifest is on the v2 shape as of the schema
 # parser landing.
 
 [workflow]
-name              = "implement-codex"
+name              = "implement-oneshot"
 version           = "1"
 description       = """
 Implement a directed change with build+test verification. The agent stages
@@ -14,7 +15,7 @@ the context, makes the change, the verify stage runs your build+test
 command, and a summary is written. Failed verify retries the agent once.
 """
 agent_description = "Implement a directed change in a kilroy worktree; verifies via build+test."
-default_class     = "coding_codex_apikey"
+default_class     = "hard_coding"
 graph             = "graph.dot"
 experimental      = true
 
@@ -51,7 +52,7 @@ network_egress = true
 idempotent     = false
 
 [nodes.agent]
-class = "coding_codex_apikey"
+class = "hard_coding"
 
 [defaults]
-labels = { workflow = "implement-codex" }
+labels = { workflow = "implement-oneshot" }

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Inline context_files into INPUT.md so the agents can read them without
-# repeated tool calls per iteration.
 set -euo pipefail
 INPUT="${INPUT_FILE:-.kilroy/INPUT.md}"
-
+# Engine wrote ## prompt, ## context_files, etc. already. Optional: append
+# the contents of any listed context files for the agent's convenience.
 if grep -q '^## context_files' "$INPUT" 2>/dev/null; then
     {
         echo
         echo "## context_files_contents"
         echo
+        # Extract paths from the ## context_files section
         sed -n '/^## context_files$/,/^## /p' "$INPUT" \
             | grep -v '^##' \
             | sed '/^$/d' \
@@ -23,15 +23,4 @@ if grep -q '^## context_files' "$INPUT" 2>/dev/null; then
             done
     } >> "$INPUT"
 fi
-
-# Seed empty feedback dir + decision file so iter-1 readers don't error.
-mkdir -p .kilroy/feedback
-: > .kilroy/build-output.txt
-touch .kilroy/decision.md
-if [ -n "${KILROY_BASE_SHA:-}" ]; then
-    printf '%s\n' "$KILROY_BASE_SHA" > .kilroy/base-sha.txt
-else
-    git rev-parse HEAD > .kilroy/base-sha.txt 2>/dev/null || true
-fi
-
 echo '{"status":"success"}' > "${KILROY_STAGE_STATUS_PATH:-/dev/null}" 2>/dev/null || true

@@ -250,6 +250,59 @@ func TestWorkflowsDescribe_SourceBuiltInOutsideRepo(t *testing.T) {
 	}
 }
 
+func TestWorkflowsList_SourceBuiltInCuratedSurface(t *testing.T) {
+	bin := buildTestBinary(t)
+	cmd := exec.Command(bin, "workflows", "list")
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(),
+		"KILROY_WORKFLOW_PATHS=",
+		"KILROY_PROJECT_ROOT=",
+		"XDG_CONFIG_HOME="+t.TempDir(),
+		"XDG_DATA_HOME="+t.TempDir(),
+		"LOCALAPPDATA=",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("workflows list source built-ins: %v\n%s", err, out)
+	}
+
+	var got struct {
+		Workflows []workflowListTestEntry `json:"workflows"`
+	}
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
+	}
+	var names []string
+	for _, wf := range got.Workflows {
+		names = append(names, wf.Name)
+	}
+	want := []string{"implement", "plan", "validate"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("curated workflow names = %v, want %v\nfull output:\n%s", names, want, out)
+	}
+}
+
+func TestPublicWorkflowGraphInputsOnlyRequireSeed(t *testing.T) {
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(filepath.Dir(wd))
+	for rel, want := range map[string]string{
+		"workflows/plan/graph.dot":      `inputs="goal"`,
+		"workflows/implement/graph.dot": `inputs="task_packet"`,
+		"workflows/validate/graph.dot":  `inputs="task_packet"`,
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("%s must declare only required graph inputs %s; optional manifest inputs should not become launch-required", rel, want)
+		}
+	}
+}
+
 // TestWorkflowsList_DefaultsToV2_HidesLegacy confirms the curated default
 // list excludes legacy `[[inputs]]` packages. The packages remain
 // reachable via `kilroy run <name>` and via --all.

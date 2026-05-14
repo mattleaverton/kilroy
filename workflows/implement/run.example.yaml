@@ -1,0 +1,20 @@
+# Minimal direct-mode config for local debugging of the public implement
+# workflow. Normal usage should prefer:
+#
+#   cd <repo>
+#   kilroy run implement --input-file task_packet=...
+#
+version: 1
+
+repo:
+  path: /tmp/kilroy-implement-smoke
+
+llm:
+  cli_profile: real
+  providers:
+    anthropic:
+      backend: api
+    kimi:
+      backend: api
+    openai:
+      backend: cli

@@ -1,0 +1,52 @@
+# Validate workflow: run declared validation commands and capture evidence.
+# Public factory station for proving a task result against its packet.
+
+[workflow]
+name              = "validate"
+version           = "1"
+description       = """
+Validate a completed worktree/patch against a task packet and validation
+plan. Runs optional commands, captures git state, and writes evidence.md
+plus evidence.json.
+"""
+agent_description = "Run validation and produce evidence artifacts."
+graph             = "graph.dot"
+
+[inputs.task_packet]
+type        = "string"
+required    = true
+description = "The task packet produced by plan."
+
+[inputs.validation_plan]
+type        = "string"
+required    = false
+description = "Validation plan produced by plan."
+
+[inputs.validation_command]
+type        = "string"
+required    = false
+description = "Shell command to run as the validation check in the current workspace."
+
+[inputs.target]
+type        = "string"
+required    = false
+description = "Human-readable target being validated: worktree path, run id, branch, patch path, or PR."
+
+[outputs."evidence.md"]
+type        = "path"
+description = "Human-readable validation evidence and residual risk."
+path        = "evidence.md"
+
+[outputs."evidence.json"]
+type        = "path"
+description = "Structured validation status and command result."
+path        = "evidence.json"
+
+[side_effects]
+mutates_git    = false
+writes_files   = true
+network_egress = false
+idempotent     = false
+
+[defaults]
+labels = { workflow = "validate" }

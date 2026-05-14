@@ -13,6 +13,7 @@ result.md with TL;DR, findings, open questions, and methodology.
 agent_description = "Research a question and produce structured findings in result.md."
 default_class     = "deep_investigation"
 graph             = "graph.dot"
+experimental      = true
 
 [inputs.question]
 type        = "string"

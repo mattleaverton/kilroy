@@ -28,9 +28,23 @@ func TestUsingKilroySkillFrontmatterAndRunCommandsStayAgentSafe(t *testing.T) {
 		"kilroy runs show <run-id> --pretty",
 		"quick-launch workflow",
 		"kilroy run investigate --help",
+		"conversation=<slug>",
+		"/tmp/kilroy-tasks",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("using-kilroy skill still contains unsafe/stale instruction %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"session=<same-id-for-the-whole-conversation>",
+		"phase=plan|implement|validate",
+		"kilroy run plan",
+		"kilroy run implement",
+		"kilroy run validate",
+		"${XDG_STATE_HOME:-$HOME/.local/state}/kilroy/sessions/$SESSION",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("using-kilroy skill missing required three-workflow guidance %q", required)
 		}
 	}
 }

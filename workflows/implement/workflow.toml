@@ -1,56 +1,68 @@
-# Implement workflow: stage context, run agent (class=hard_coding), verify
-# build+test, write a summary. Dogfood workhorse for kilroy's own v2 work.
-#
-# v2 workflow.toml schema (plan §5.2). Loader supports both shapes during
-# the transition; this manifest is on the v2 shape as of the schema
-# parser landing.
+# Implement workflow: public iterative coding loop with mixed provider
+# routing. Consumes the task packet produced by `plan`, then loops
+# planner/coder/critic/status until complete or capped.
 
 [workflow]
 name              = "implement"
 version           = "1"
 description       = """
-Implement a directed change with build+test verification. The agent stages
-the context, makes the change, the verify stage runs your build+test
-command, and a summary is written. Failed verify retries the agent once.
+Iterative coding loop with four roles handed off in sequence:
+- planner   (anthropic SDK, sonnet 4.6) reads task packet + prior feedback, scopes one sub-task.
+- coder     (opencode + kimi-k2.5)      implements the task, attempts a build.
+- critic    (codex CLI + gpt-5.4-mini)  judges work against spec, writes feedback + decision.
+- status    (quick_easy class)          writes STATUS.md for external monitoring.
+
+Loop bound: 20 iterations or until critic writes COMPLETE to .kilroy/decision.md.
 """
-agent_description = "Implement a directed change in a kilroy worktree; verifies via build+test."
-default_class     = "hard_coding"
+agent_description = "Implement a task packet with planner/coder/critic/status loop. Monitor STATUS.md while it runs; read result.md and implementation.patch when done."
 graph             = "graph.dot"
 
-[inputs.prompt]
+[inputs.task_packet]
 type        = "string"
 required    = true
-description = "What to implement. Tightly scoped and specific."
+description = "Task packet produced by the plan workflow."
+
+[inputs.testing_plan]
+type        = "string"
+required    = false
+description = "Testing plan produced by the plan workflow."
+
+[inputs.validation_plan]
+type        = "string"
+required    = false
+description = "Validation plan produced by the plan workflow."
 
 [inputs.context_files]
 type        = "string"
 required    = false
-description = "Newline-separated absolute paths the agent should read for context."
+description = "Newline-separated absolute paths the agents should read for additional context."
 
 [inputs.verify_command]
 type        = "string"
 required    = false
-description = "Shell command run by the verify stage. Default builds and runs targeted tests."
-default     = "go build ./... && go test ./... -timeout 60s"
-
-[inputs.scope_directive]
-type        = "string"
-required    = false
-description = "Hard scope guardrail rendered into the agent's prompt."
+description = "Shell command run after each coder iteration to capture build output. Default builds Go; override per-project."
+default     = "go build ./... 2>&1"
 
 [outputs.result]
 type        = "path"
-description = "Structured run summary the agent (or summary.sh) writes."
+description = "Final summary written when the loop terminates (success or failure)."
 path        = "result.md"
+
+[outputs."implementation.patch"]
+type        = "path"
+description = "Git diff capturing the implementation against the launch HEAD."
+path        = "implementation.patch"
+
+[outputs.status]
+type        = "path"
+description = "Live status overview, refreshed every iteration. Safe for external readers to poll."
+path        = "STATUS.md"
 
 [side_effects]
 mutates_git    = true
 writes_files   = true
 network_egress = true
 idempotent     = false
-
-[nodes.agent]
-class = "hard_coding"
 
 [defaults]
 labels = { workflow = "implement" }

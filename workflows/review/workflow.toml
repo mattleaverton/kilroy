@@ -21,6 +21,7 @@ nothing is posted upstream.
 agent_description = "Review a change and emit result.md plus review.json findings."
 default_class     = "hard_coding"
 graph             = "graph.dot"
+experimental      = true
 
 [inputs.target]
 type        = "string"
