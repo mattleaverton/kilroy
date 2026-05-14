@@ -185,6 +185,38 @@ Treat `result.md`, patches, build reports, review JSON, logs, and screenshots
 as evidence. Do not chain another coding worker just because the prior worker
 claimed success; check whether the evidence supports the next step.
 
+## Wait For Runs Calmly
+
+After launching an async run, capture the `run_id` and wait for the terminal
+state. Do not tight-poll `runs show`, `runs list`, `status`, or local repo
+state while the worker is running.
+
+Preferred pattern:
+
+```bash
+RUN_ID=<id-from-kilroy-run-output>
+kilroy runs wait "$RUN_ID" --timeout 30m --interval 60s --json
+kilroy runs show "$RUN_ID" --outputs
+```
+
+Notes:
+
+- `kilroy runs wait` does not support `--pretty`; use plain output or `--json`.
+- Use `--interval 30s` for quick `plan` runs and `--interval 60s` or longer
+  for `implement` runs.
+- Use `kilroy run <workflow> --wait` when you want launch-and-block in one
+  command, but still avoid separate status polling loops.
+- Use `kilroy status --logs-root <dir> --watch` only for human-facing live
+  monitoring, not as an agent's background loop.
+- If the wait times out, report that the run is still running with its `run_id`
+  and `logs_root`, then wait again with a longer timeout or move to genuinely
+  independent work.
+
+While waiting, do not locally inspect, research, or implement the same phase the
+Kilroy worker is doing. If more help is useful, launch another clearly separate
+Kilroy run with the same `session` label; otherwise let the worker finish and
+inspect its outputs once.
+
 ## Run Plan
 
 ```bash
