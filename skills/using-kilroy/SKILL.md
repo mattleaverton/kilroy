@@ -106,6 +106,22 @@ Recommended labels on every run:
 Do not write transient task files, copied run outputs, or scratch notes into the
 repo unless the user or repo conventions explicitly require it.
 
+## Stay In Your Stream
+
+Your stream is the current session label, the run IDs launched for that session,
+their reported worktrees, and commits you deliberately integrated. Similar topic
+names in other worktrees or branches are not part of your stream.
+
+It is fine to run `git worktree list` once to avoid path or branch collisions.
+If you see pre-existing worktrees with similar names, treat them as owned by
+another human or agent unless the user explicitly named them as input. Do not
+inspect, diff, reuse, or compare unrelated worktrees just because they look
+relevant. A similar name is not context.
+
+Only use another stream's work when the user says to continue it, the plan
+artifact explicitly names it as authorized source context, or you have already
+integrated its commit into your current branch.
+
 ## Make A Good Seed
 
 For code-producing work, `plan` should create or refine the task packet. When
@@ -150,10 +166,11 @@ unclear, run `plan` and let it produce a validation plan before coding.
   evidence-collection work when the worker must see dirty or untracked files.
 - **Make code changes in a repo:** use the default Kilroy worktree behavior.
   Do not use `--in-place`; inspect and integrate the worker result manually.
-- **Continue a previous worker's unintegrated work:** launch the next worker
-  from that run's reported worktree, or integrate/cherry-pick the result first
-  and launch from the main project. Do not accidentally start from the original
-  repo if the next run depends on unmerged worker changes.
+- **Continue a previous worker's unintegrated work:** only do this for a run in
+  your stream, or a run the user explicitly told you to continue. Launch the
+  next worker from that run's reported worktree, or integrate/cherry-pick the
+  result first and launch from the main project. Do not accidentally start from
+  the original repo if the next run depends on unmerged worker changes.
 - **Clean-room experiment or prototype:** create a temporary git repo, put the
   seed/spec there, and run Kilroy from that repo. Use this for technology
   spikes or ground-up experiments that should not touch the product repo.
