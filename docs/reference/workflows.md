@@ -17,7 +17,7 @@ Kilroy workflows are reusable, packaged pipelines for common software developmen
 
 ### build-test
 
-**Status:** Experimental (not shown in default `kilroy workflows list`)
+**Status:** Experimental (not shown in default `kilroy list`)
 
 **Description:**  
 Detect the project's build system, build, run tests, and write a
@@ -58,7 +58,7 @@ appropriate for the detected system.
 
 ### coding-loop
 
-**Status:** Experimental (not shown in default `kilroy workflows list`)
+**Status:** Experimental (not shown in default `kilroy list`)
 
 **Description:**  
 Iterative coding workflow: a task chooser selects sub-tasks, an
@@ -98,16 +98,16 @@ comes first.
 
 ### coding-relay
 
-**Status:** Experimental (not shown in default `kilroy workflows list`)
+**Status:** Experimental (not shown in default `kilroy list`)
 
 **Description:**  
 Iterative coding loop with four roles handed off in sequence:
 - planner (anthropic SDK, sonnet 4.6) reads spec + prior feedback, scopes one sub-task.
-- coder (opencode + kimi-k2) implements the task, attempts a build.
-- critic (codex CLI + gpt-5) judges work against spec, writes feedback + decision.
+- coder (opencode + kimi-k2.5) implements the task, attempts a build.
+- critic (codex CLI + gpt-5.4-mini) judges work against spec, writes feedback + decision.
 - status (quick_easy class) writes STATUS.md for external monitoring.
 
-Loop bound: 6 iterations or until critic writes COMPLETE to `.kilroy/decision.md`.
+Loop bound: 20 iterations or until critic writes COMPLETE to `.kilroy/decision.md`.
 Exercises agents.Dispatcher driver routing (SDK vs CLI), the auth binder
 across three providers, and the class resolver via the status node.
 
@@ -262,46 +262,6 @@ result.md with TL;DR, findings, open questions, and methodology.
 
 ---
 
-### multi-tool-exercise
-
-**Status:** Experimental (not shown in default `kilroy workflows list`)
-
-**Description:**  
-Three CLI tools (claude, codex, opencode) each write a short perspective
-on the input topic. A combine step assembles them into combined-output.md;
-a validate step confirms the output is non-empty. Useful as a smoke test
-for cross-tool routing and the `.kilroy/` convention surface.
-
-**Agent Description:** Run three CLI tools on the same topic and combine their outputs.
-
-**Default Class:** *(routes via `agent_tool` + legacy stylesheet attributes)*
-
-**Inputs:**
-
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `topic` | string | **required** | — | Subject for the agents to write about. |
-| `style` | string | optional | — | Optional writing style (e.g. technical, poetic, humorous). |
-
-**Outputs:**
-
-| Name | Type | Path | Description |
-|------|------|------|-------------|
-| `combined-output.md` | path | `combined-output.md` | Final combined output assembled from all three agents. |
-
-**Side Effects:**
-
-- `mutates_git`: true
-- `writes_files`: true
-- `network_egress`: true
-- `idempotent`: false
-
-**When to use:** As a smoke test for cross-tool routing and the `.kilroy/` convention surface. Good for testing that multiple CLI tools are properly configured.
-
-**When NOT to use:** For production work — this is a test/exercise workflow.
-
----
-
 ### review
 
 **Description:**  
@@ -347,29 +307,30 @@ nothing is posted upstream.
 
 ## Command Transcript
 
-The following shows sample output from the `kilroy workflows` CLI:
+The following shows sample output from the `kilroy` workflow CLI:
 
-### `kilroy workflows list --pretty`
+### `kilroy list --pretty`
 
 ```
-NAME         CLASS               DESCRIPTION
------------  ------------------  ------------------------------
-fix          hard_coding         Fix a described bug. The agent stages context, makes the smallest change
-implement    hard_coding         Implement a directed change with build+test verification. The agent stages
-investigate  deep_investigation  Research a focused question. The agent reads context files and URLs
-review       hard_coding         Review a change. The stage_context step gathers the diff to review
+NAME             CLASS                DESCRIPTION
+---------------  -------------------  ------------------------------
+fix              hard_coding          Fix a described bug. The agent stages context, makes the smallest change
+implement        hard_coding          Implement a directed change with build+test verification. The agent stages
+implement-codex  coding_codex_apikey  Implement a directed change with build+test verification. The agent stages
+investigate      deep_investigation   Research a focused question. The agent reads context files and URLs
+review           hard_coding          Review a change. The stage_context step gathers the diff to review
 ```
 
-*Note: Experimental workflows (`build-test`, `coding-loop`, `coding-relay`, `multi-tool-exercise`) are excluded from the default curated list.*
+*Note: Experimental workflows (`build-test`, `coding-loop`, `coding-relay`) are excluded from the default curated list.*
 
-### `kilroy workflows describe implement --pretty`
+### `kilroy describe implement --pretty`
 
 ```
 name:        implement
 version:     1
 schema:      v2
-source:      /Users/matt/.local/state/kilroy/attractor/runs/01KQTZT4868M8V4K7G1MG25ZGY/worktree/.kilroy/workflows
-dir:         /Users/matt/.local/state/kilroy/attractor/runs/01KQTZT4868M8V4K7G1MG25ZGY/worktree/.kilroy/workflows/implement
+source:      /Users/matt/.local/share/kilroy/workflows
+dir:         /Users/matt/.local/share/kilroy/workflows/implement
 default class: hard_coding
 
 agent description:
@@ -404,14 +365,14 @@ node overrides:
   agent: class=hard_coding
 ```
 
-### `kilroy workflows describe review --pretty`
+### `kilroy describe review --pretty`
 
 ```
 name:        review
 version:     1
 schema:      v2
-source:      /Users/matt/.local/state/kilroy/attractor/runs/01KQTZT4868M8V4K7G1MG25ZGY/worktree/.kilroy/workflows
-dir:         /Users/matt/.local/state/kilroy/attractor/runs/01KQTZT4868M8V4K7G1MG25ZGY/worktree/.kilroy/workflows/review
+source:      /Users/matt/.local/share/kilroy/workflows
+dir:         /Users/matt/.local/share/kilroy/workflows/review
 default class: hard_coding
 
 agent description:

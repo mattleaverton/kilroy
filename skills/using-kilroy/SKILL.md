@@ -23,6 +23,31 @@ worker is launched. The returned JSON handle includes `prelaunch`.
 
 For the full external-repo guide, read `docs/usage.md`.
 
+## Local Install / Refresh
+
+From a Kilroy checkout, refresh the local demo install with:
+
+```bash
+./scripts/install.sh
+```
+
+The installer builds `kilroy`, copies it to `~/.local/bin/kilroy`, refreshes
+built-in workflows under `$XDG_DATA_HOME/kilroy/workflows`, and installs the
+first-party Kilroy skills into:
+
+- `~/.claude/skills`
+- `~/.codex/skills`
+- `~/.agents/skills`
+- `~/.config/opencode/skills`
+
+After install, smoke discovery from a non-Kilroy repo:
+
+```bash
+kilroy list --pretty
+kilroy describe implement --pretty
+kilroy check implement --pretty
+```
+
 ## Investigate A Repo Question
 
 When asked to use Kilroy to answer a repo question, do this:
@@ -148,7 +173,9 @@ Prefer `_KILROY` env vars for Kilroy-specific budgets:
 `ANTHROPIC_API_KEY_KILROY`, `OPENAI_API_KEY_KILROY`,
 `GEMINI_API_KEY_KILROY`.
 
-Current caveat: opencode remains a separate auth surface.
+Current caveat: opencode account/session storage is still a separate surface.
+For env-key routes, Kilroy prelaunch and run-config auto-detection both honor
+`_KILROY` variants before canonical provider env vars.
 
 ## Policy
 
@@ -182,6 +209,25 @@ candidates. `policy resolve --json` reports `policy_source` and
 If a local workflow needs routing that no class or existing candidate
 represents, pick the closest class or change Kilroy itself. There is no
 `kilroy policy init/copy/validate` file-management workflow.
+
+## Provider Smoke Checks
+
+Before a demo, check auth and policy in this order:
+
+```bash
+kilroy auth init --rescan
+kilroy auth list --pretty
+kilroy auth list --chains --pretty
+kilroy auth check --pretty
+kilroy policy resolve hard_coding
+kilroy policy resolve coding_codex_apikey
+```
+
+For opencode-routed local workflows, set `agent_tool="opencode"` and an
+explicit `llm_provider` on the node. Prelaunch validates the provider key and
+run-config auto-detection adds the provider when either the canonical env var
+or the `_KILROY` budget-isolated variant is present, for example
+`KIMI_API_KEY_KILROY` before `KIMI_API_KEY`.
 
 ## Local Workflow Authoring
 

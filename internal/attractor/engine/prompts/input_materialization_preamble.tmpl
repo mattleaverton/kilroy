@@ -1,4 +1,5 @@
 Input materialization contract:
 - Consult `${{.InputsManifestPathEnvKey}}` for the complete resolved input set for this stage.
 - The manifest path for this stage is `{{.ManifestPath}}`.
-- Treat manifest file paths as authoritative run-local inputs.
+- Use `resolved_files` and `source_target_map[].target` as paths relative to cwd.
+- Do not read `source` paths directly when they point outside cwd.

@@ -58,9 +58,13 @@ digraph G {
 	if !filepath.IsAbs(manifestPath) {
 		t.Fatalf("manifest path must be absolute, got %q", manifestPath)
 	}
+	if !pathWithin(manifestPath, res.WorktreeDir) {
+		t.Fatalf("agent-facing manifest path must be inside worktree: got %q worktree %q", manifestPath, res.WorktreeDir)
+	}
 	assertExists(t, manifestPath)
 	assertExists(t, inputRunManifestPath(res.LogsRoot))
 	assertExists(t, inputStageManifestPath(res.LogsRoot, "a"))
+	assertExists(t, inputStageAgentManifestPath(res.WorktreeDir, res.RunID, "a"))
 
 	promptPath := filepath.Join(res.LogsRoot, "a", "prompt.md")
 	prompt, err := os.ReadFile(promptPath)
@@ -69,6 +73,9 @@ digraph G {
 	}
 	if !strings.Contains(string(prompt), "Input materialization contract") {
 		t.Fatalf("prompt missing input materialization preamble: %s", promptPath)
+	}
+	if !strings.Contains(string(prompt), manifestPath) {
+		t.Fatalf("prompt missing agent-facing input manifest path %q", manifestPath)
 	}
 }
 

@@ -15,7 +15,7 @@ appropriate for the detected system.
 agent_description = "Detect, build, test, and report — no LLM involvement."
 graph             = "graph.dot"
 # Experimental: harness/utility workflow, not part of the curated
-# default surface that `kilroy workflows list` shows.
+# default surface that `kilroy list` shows.
 experimental      = true
 
 [inputs.build_command]

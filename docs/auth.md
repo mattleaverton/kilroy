@@ -136,6 +136,6 @@ Multiple chains can satisfy the same `(provider, method)` requirement. Today, th
 
 The auth-chain resolver model fits one-driver-one-chain tools (claude, codex, gemini). It does NOT cover:
 
-- **opencode**: a multi-provider tool with its own `~/.local/share/opencode/opencode.db` config DB. opencode runs through tmux honor whatever canonical env vars are set in the launcher; they do NOT follow the resolver's chain decision (so `_KILROY` precedence isn't honored, and claude/codex-style env-scrubs don't apply). Treat opencode as a separate auth surface for now.
+- **opencode account sessions**: opencode is a multi-provider tool with its own `~/.local/share/opencode/opencode.db` config DB. Env-key opencode routes are still validated by Kilroy prelaunch, and run-config auto-detection honors `_KILROY` env vars before canonical names. opencode session/account selection remains outside Kilroy's auth-chain resolver, and claude/codex-style env-scrubs do not apply.
 - **Bare `kilroy run` without `agent_class=`**: legacy stylesheet routing skips the resolver entirely. Class-routed nodes (`agent_class="..."`) flow through the resolver; non-class nodes don't.
 - **Provider-specific env vars beyond the chain**: `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, etc. are still read directly from env by the LLM client constructors. These are operational overrides, not credentials, but they can affect routing in ways the chain doesn't see.

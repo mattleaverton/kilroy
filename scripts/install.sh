@@ -18,6 +18,19 @@ CONFIG_WORKFLOW_DIR="${CONFIG_DIR}/workflows"
 
 say() { printf '  %s\n' "$1"; }
 
+is_shipped_workflow() {
+    # Keep dev-only harnesses in the repo without making them global defaults
+    # for downstream project repos.
+    case "$(basename "$1")" in
+        multi-tool-exercise)
+            return 1
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+}
+
 replace_link() {
     local target="$1" linkname="$2"
     mkdir -p "$(dirname "$linkname")"
@@ -44,7 +57,16 @@ refresh_workflows() {
 
     rm -rf "$WORKFLOW_DIR"
     mkdir -p "$WORKFLOW_DIR"
-    cp -R "$REPO/workflows/." "$WORKFLOW_DIR/"
+
+    local workflow name
+    while IFS= read -r workflow; do
+        if ! is_shipped_workflow "$workflow"; then
+            continue
+        fi
+        name="$(basename "$workflow")"
+        mkdir -p "$WORKFLOW_DIR/$name"
+        cp -R "$workflow/." "$WORKFLOW_DIR/$name/"
+    done < <(find "$REPO/workflows" -mindepth 1 -maxdepth 1 -type d | sort)
 }
 
 install_skills_for_root() {
@@ -77,6 +99,7 @@ refresh_workflows
 
 echo "installing agent skills..."
 install_skills_for_root "$HOME/.claude/skills"
+install_skills_for_root "$HOME/.codex/skills"
 install_skills_for_root "$HOME/.agents/skills"
 install_skills_for_root "$HOME/.config/opencode/skills"
 
@@ -84,7 +107,7 @@ echo ""
 echo "installed:"
 echo "  binary:    ${BIN_DIR}/kilroy"
 echo "  workflows: ${WORKFLOW_DIR}/"
-echo "  skills:    ${HOME}/.claude/skills/, ${HOME}/.agents/skills/, ${HOME}/.config/opencode/skills/"
+echo "  skills:    ${HOME}/.claude/skills/, ${HOME}/.codex/skills/, ${HOME}/.agents/skills/, ${HOME}/.config/opencode/skills/"
 echo ""
 if ! echo ":${PATH}:" | grep -q ":${BIN_DIR}:"; then
     echo "note: add ${BIN_DIR} to your PATH"

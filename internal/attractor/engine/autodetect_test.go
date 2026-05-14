@@ -9,11 +9,27 @@ import (
 	"testing"
 )
 
+func clearAutodetectEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_KILROY",
+		"OPENAI_API_KEY", "OPENAI_API_KEY_KILROY",
+		"GOOGLE_API_KEY", "GOOGLE_API_KEY_KILROY",
+		"GEMINI_API_KEY", "GEMINI_API_KEY_KILROY",
+		"GOOGLE_GENERATIVE_AI_API_KEY",
+		"KIMI_API_KEY", "KIMI_API_KEY_KILROY",
+		"ZAI_API_KEY", "ZAI_API_KEY_KILROY",
+		"CEREBRAS_API_KEY", "CEREBRAS_API_KEY_KILROY",
+		"MINIMAX_API_KEY", "MINIMAX_API_KEY_KILROY",
+		"INCEPTION_API_KEY", "INCEPTION_API_KEY_KILROY",
+	} {
+		t.Setenv(name, "")
+	}
+}
+
 func TestDetectProviders_AnthropicAPIKey(t *testing.T) {
+	clearAutodetectEnv(t)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-123")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("GOOGLE_API_KEY", "")
 
 	// No CLI binary on path — should fall back to API backend.
 	detected := detectProvidersWithLookPath(func(name string) (string, error) {
@@ -35,10 +51,8 @@ func TestDetectProviders_AnthropicAPIKey(t *testing.T) {
 }
 
 func TestDetectProviders_CLIPreferred(t *testing.T) {
+	clearAutodetectEnv(t)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-test-123")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("GOOGLE_API_KEY", "")
 
 	// Simulate claude binary on path.
 	detected := detectProvidersWithLookPath(func(name string) (string, error) {
@@ -63,9 +77,7 @@ func TestDetectProviders_CLIPreferred(t *testing.T) {
 }
 
 func TestDetectProviders_GoogleFallbackKey(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
+	clearAutodetectEnv(t)
 	t.Setenv("GOOGLE_API_KEY", "goog-test-123")
 
 	detected := detectProvidersWithLookPath(func(name string) (string, error) {
@@ -83,16 +95,30 @@ func TestDetectProviders_GoogleFallbackKey(t *testing.T) {
 	}
 }
 
+func TestDetectProviders_KilroySuffixedKey(t *testing.T) {
+	clearAutodetectEnv(t)
+	t.Setenv("KIMI_API_KEY_KILROY", "kimi-test-123")
+
+	detected := detectProvidersWithLookPath(func(name string) (string, error) {
+		return "", fmt.Errorf("not found: %s", name)
+	})
+	var found *DetectedProvider
+	for i := range detected {
+		if detected[i].Key == "kimi" {
+			found = &detected[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected kimi provider to be detected via KIMI_API_KEY_KILROY")
+	}
+	if found.Backend != BackendAPI {
+		t.Fatalf("expected api backend, got %q", found.Backend)
+	}
+}
+
 func TestDetectProviders_NoKeysNoResults(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("GEMINI_API_KEY", "")
-	t.Setenv("GOOGLE_API_KEY", "")
-	t.Setenv("KIMI_API_KEY", "")
-	t.Setenv("ZAI_API_KEY", "")
-	t.Setenv("CEREBRAS_API_KEY", "")
-	t.Setenv("MINIMAX_API_KEY", "")
-	t.Setenv("INCEPTION_API_KEY", "")
+	clearAutodetectEnv(t)
 
 	detected := detectProvidersWithLookPath(func(name string) (string, error) {
 		return "", fmt.Errorf("not found: %s", name)

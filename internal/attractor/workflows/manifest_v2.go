@@ -43,9 +43,8 @@ type Manifest struct {
 
 	// Experimental marks workflows that aren't part of the curated default
 	// surface. `kilroy workflows list` hides experimental entries unless
-	// --all is passed. Used to keep harnesses/exercises (build-test,
-	// coding-loop, multi-tool-exercise) reachable but not surfaced
-	// alongside the shipped tools (fix, implement, investigate, review).
+	// --all is passed. Used to keep harnesses and exploratory loops reachable
+	// but not surfaced alongside the primary tools.
 	Experimental bool
 
 	// Defaults preserves legacy [defaults] for back-compat with run-config

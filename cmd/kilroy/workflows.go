@@ -67,10 +67,10 @@ func workflowsList(args []string) {
 	// --pretty switches to the human-readable column view.
 	asJSON := true
 	// Curated by default: hide workflows marked [workflow].experimental
-	// = true (build-test, coding-loop, multi-tool-exercise — useful as
-	// harnesses but not what you'd point a user at). Experimental
-	// workflows stay reachable via `kilroy run <name>` if you know the
-	// name, and via `--all` here.
+	// = true (build-test, coding-loop, coding-relay — useful as harnesses or
+	// exploratory loops but not what you'd point a user at first).
+	// Experimental workflows stay reachable via `kilroy run <name>` if you
+	// know the name, and via `--all` here.
 	includeAll := false
 	for _, a := range args {
 		switch a {

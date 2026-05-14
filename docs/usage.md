@@ -64,13 +64,27 @@ Not supported today:
 
 ## First-Time Setup
 
-Run these from the project where Kilroy will be used:
+From a local Kilroy checkout, install or refresh the binary, built-in
+workflows, and first-party agent skills:
+
+```bash
+./scripts/install.sh
+```
+
+The installer copies `kilroy` to `~/.local/bin/kilroy`, refreshes built-in
+workflows under `$XDG_DATA_HOME/kilroy/workflows`, and installs Kilroy skills
+into `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, and
+`~/.config/opencode/skills`.
+
+Then run these from the project where Kilroy will be used:
 
 ```bash
 kilroy auth init
 kilroy auth list --pretty
 kilroy auth check --pretty
 kilroy list --pretty
+kilroy describe implement --pretty
+kilroy check implement --pretty
 kilroy policy list
 ```
 
@@ -313,9 +327,10 @@ If auth is broken:
 `auth set` and `auth prefer` never store the key value. They store the env var
 name Kilroy should read at check/run time.
 
-Current caveat: `opencode` is a separate auth surface. Workflows that route
-through opencode may depend on opencode's own config/env behavior rather than
-Kilroy's auth-chain materialization.
+Current caveat: `opencode` account/session storage is a separate auth surface.
+For env-key routes, Kilroy prelaunch and run-config auto-detection honor
+`_KILROY` variants before canonical provider env vars, so
+`KIMI_API_KEY_KILROY` is enough to launch an opencode/Kimi workflow.
 
 ## Policy State
 

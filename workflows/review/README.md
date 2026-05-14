@@ -42,7 +42,7 @@ target: /abs/path/to/changes.patch
 Then run:
 
 ```bash
-kilroy run review --detach --wait --input review-patch.yaml
+kilroy run review --input review-patch.yaml --sync
 ```
 
 ### Review a branch ref
@@ -57,7 +57,7 @@ context_files: |
 ```
 
 ```bash
-kilroy run review --detach --wait --input review-branch.yaml
+kilroy run review --input review-branch.yaml --sync
 ```
 
 ### With a scope directive
@@ -69,13 +69,13 @@ scope_directive: "Focus only on the authentication subsystem. Ignore UI changes.
 ```
 
 ```bash
-kilroy run review --detach --wait --input review-scoped.yaml
+kilroy run review --input review-scoped.yaml --sync
 ```
 
 ### Non-blocking
 
 ```bash
-kilroy run review --detach --input review-patch.yaml --label task=my-pr-review
+kilroy run review --input review-patch.yaml --label task=my-pr-review
 ```
 
 Inspect the run and its outputs:
@@ -123,7 +123,7 @@ Use `[]` when there are no actionable findings. Use `null` for `line` on file-le
 The agent node uses `class=hard_coding`, so the concrete provider/driver comes from policy resolution. On machines where `hard_coding` resolves to a CLI/tmux driver, launch detached and inspect outputs through the run database:
 
 ```bash
-kilroy run review --detach --wait --input review-patch.yaml --label task=my-pr-review
+kilroy run review --input review-patch.yaml --label task=my-pr-review --sync
 kilroy runs show --latest --label task=my-pr-review --outputs
 kilroy runs show --latest --label task=my-pr-review --print result.md
 ```

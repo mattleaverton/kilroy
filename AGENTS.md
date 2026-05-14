@@ -47,21 +47,51 @@ Always tag dispatched runs so you can filter and audit them later. Standard labe
 | `implement` | Surgical edit, well-scoped change with build+test verification (e.g. fix this test, add this flag, rename this function) | Single-shot + verify + retry-once | `hard_coding` |
 | `fix` | Bug fix with reproduction. Small scope, focused root-cause work | Single-shot + verify + retry-once | `hard_coding` |
 | `investigate` | Research/code-spelunking question. No code changes. Returns a research artifact | Read-only | `deep_investigation` |
-| `coding-relay` | Multi-step refactor with iterative planner→coder→critic→status loop. Right when scope is bounded but spans multiple commits | 6 iterations max | `hard_coding` (mixed) |
+| `coding-relay` | Experimental multi-step planner→coder→critic→status loop. Right when scope is bounded but spans multiple commits | 20 iterations max | mixed direct routing + `quick_easy` |
 | `review` | Review a change. Stages diff, reads context, returns a structured review | Single-shot | `hard_coding` |
-| `coding-loop` | Light code-then-review loop for less-demanding tasks | Loop until satisfied | `quick_easy` |
-| `multi-tool-exercise` | Drives multiple tools in one run; integration shape | Single-shot | `hard_coding` |
-| `build-test` | Runs build+test only; useful as a child pipeline | Single-shot | `hard_coding` |
+| `coding-loop` | Experimental chooser→implementer→reviewer→gate loop | 12 iterations max | mixed `quick_easy`/`hard_coding` |
+| `build-test` | No-LLM build/test detector and reporter; useful as a child pipeline | Single-shot | none |
 
 ### Picking the right one
 
 - **One file or one focused change** → `implement`. Smallest spec; verifies via `go build && go test`.
 - **A bug with a known repro** → `fix`. Same shape as implement, framed around the failure.
 - **"How does X work?" or "Where is Y?"** → `investigate`. No code, returns a research artifact you can use to spec the next task.
-- **Multi-file refactor or feature** → `coding-relay`. Uses kimi-k2 via opencode for the coder stage (paid), anthropic SDK for planner, codex CLI for critic. Hitting the 6-iter cap is normal — iter 5 typically has the work, iter 6 is polish.
+- **Multi-file refactor or feature** → `coding-relay`. Uses kimi-k2 via opencode for the coder stage (paid), anthropic SDK for planner, codex CLI for critic. Treat it as experimental until the demo surface is polished.
 - **Need a structured opinion on a diff** → `review`.
 
 If a `coding-relay` task is stalling (no progress for 10 min), the kimi connection may have died. Watchdog will fail the run; re-dispatch as `implement` if the remaining work fits.
+
+## Local install / demo smoke
+
+For a local checkout install, run:
+
+```bash
+./scripts/install.sh
+```
+
+The installer builds `kilroy`, copies it to `~/.local/bin/kilroy`, refreshes
+the global built-in workflow directory, and installs first-party Kilroy skills
+into all supported user-level agent skill roots:
+
+- `~/.claude/skills`
+- `~/.codex/skills`
+- `~/.agents/skills`
+- `~/.config/opencode/skills`
+
+After reinstall, smoke from a non-Kilroy repo:
+
+```bash
+kilroy list --pretty
+kilroy describe implement --pretty
+kilroy check implement --pretty
+kilroy auth init --rescan
+kilroy auth list --pretty
+kilroy auth list --chains --pretty
+kilroy auth check --pretty
+kilroy policy resolve hard_coding
+kilroy policy resolve coding_codex_apikey
+```
 
 ## Public CLI surface
 
@@ -72,8 +102,8 @@ kilroy list | describe <name> | check <name>
 kilroy run <workflow> [--input-file KEY=PATH ...] [--label K=V ...] [--sync] [--in-place] [--pretty]
 kilroy runs list | show <id> | wait <id>
 kilroy status [--logs-root <dir> | --latest] [--watch]
-kilroy auth defaults | init | list | check | suggest-fix
-kilroy policy list | show <class> | resolve <class> | explain <run-id>
+kilroy auth defaults | init | list | check | set | prefer | remove-source | suggest-fix
+kilroy policy list | show <class> | resolve <class> | prefer | pin | clear | overrides | explain <run-id>
 ```
 
 `kilroy run` is **async by default** — validates before detach and returns a run
@@ -185,7 +215,7 @@ CLI driver materialization (load-bearing): `claude_cli`, `codex_cli`, `gemini_cl
 
 - **Stale-build trap.** `--confirm-stale-build` is required if you don't rebuild between source changes. Always rebuild between dispatch rounds when source moved.
 - **Async-default flip.** Tests asserting on artifacts immediately after `kilroy run` returns need `--sync`. If a test is flaky, check first.
-- **kimi auth silent fail (was).** Before P1.15 (commit `089c592`), missing `KIMI_API_KEY` made coding-relay spin 6 iterations producing nothing. Now prelaunch dies in <1s. If you see this regress, file it as critical.
+- **kimi auth silent fail (was).** Before P1.15 (commit `089c592`), missing `KIMI_API_KEY` made coding-relay spin producing nothing. Now prelaunch dies in <1s. If you see this regress, file it as critical.
 - **Shell snapshot inheritance.** Agent sessions may not see `.zshrc` exports added after the session started. If `kilroy auth check` shows missing keys you know are set, restart the session or write a repo-local `.env` (gitignored) with the missing values.
 - **Migration version collisions.** New rundb migration files must check `schema_migrations` MAX(version) before assigning a number.
 

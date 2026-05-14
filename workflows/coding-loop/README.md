@@ -20,12 +20,11 @@ cat > /tmp/coding-loop-input.yaml <<'YAML'
 spec: /abs/path/to/spec.md
 YAML
 
-kilroy run coding-loop --detach --wait \
-  --workspace /abs/path/to/target-repo \
-  --input /tmp/coding-loop-input.yaml
+kilroy run coding-loop --input /tmp/coding-loop-input.yaml --sync
 ```
 
-- `--workspace` — the repo being coded against (must already exist; the caller handles `git init` / `go mod init` etc.)
+Run from the target repo. Use `--sync` if you want to block until completion.
+
 - `--input` — path to a YAML or JSON input file. For this workflow, `spec` must be the absolute path to the spec/requirements file. Do not use `--input-file spec=...`; that would inline the spec contents, but this older workflow expects a path value and then reads the file itself.
 
 ## Input contract

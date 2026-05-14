@@ -8,7 +8,7 @@ version           = "1"
 description       = """
 Iterative coding loop with four roles handed off in sequence:
 - planner   (anthropic SDK, sonnet 4.6) reads spec + prior feedback, scopes one sub-task.
-- coder     (opencode + kimi-k2)        implements the task, attempts a build.
+- coder     (opencode + kimi-k2.5)      implements the task, attempts a build.
 - critic    (codex CLI + gpt-5.4-mini)  judges work against spec, writes feedback + decision.
 - status    (quick_easy class)          writes STATUS.md for external monitoring.
 

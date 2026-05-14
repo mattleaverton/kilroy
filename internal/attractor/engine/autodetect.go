@@ -31,11 +31,7 @@ func detectProvidersWithLookPath(lookPath func(string) (string, error)) []Detect
 		if spec.API == nil || spec.API.DefaultAPIKeyEnv == "" {
 			continue
 		}
-		apiKey := strings.TrimSpace(os.Getenv(spec.API.DefaultAPIKeyEnv))
-		// Google also accepts GOOGLE_API_KEY as a fallback.
-		if apiKey == "" && key == "google" {
-			apiKey = strings.TrimSpace(os.Getenv("GOOGLE_API_KEY"))
-		}
+		apiKey := firstSetEnv(apiKeyEnvCandidates(key, spec)...)
 		if apiKey == "" {
 			continue
 		}
@@ -52,6 +48,52 @@ func detectProvidersWithLookPath(lookPath func(string) (string, error)) []Detect
 		})
 	}
 	return detected
+}
+
+func firstSetEnv(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func apiKeyEnvCandidates(key string, spec providerspec.Spec) []string {
+	var candidates []string
+	add := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		for _, existing := range candidates {
+			if existing == name {
+				return
+			}
+		}
+		candidates = append(candidates, name)
+	}
+
+	defaultEnv := ""
+	if spec.API != nil {
+		defaultEnv = spec.API.DefaultAPIKeyEnv
+	}
+	if strings.HasSuffix(defaultEnv, "_API_KEY") {
+		add(strings.TrimSuffix(defaultEnv, "_API_KEY") + "_API_KEY_KILROY")
+	}
+	add(defaultEnv)
+
+	// Google API credentials are accepted under multiple names across SDKs and
+	// CLIs; keep auto-detection aligned with the auth template's budget-first
+	// ordering.
+	if key == "google" {
+		add("GOOGLE_API_KEY_KILROY")
+		add("GEMINI_API_KEY_KILROY")
+		add("GOOGLE_API_KEY")
+		add("GEMINI_API_KEY")
+		add("GOOGLE_GENERATIVE_AI_API_KEY")
+	}
+	return candidates
 }
 
 // ApplyDetectedProviders populates cfg.LLM.Providers from auto-detected

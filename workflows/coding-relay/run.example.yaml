@@ -3,15 +3,15 @@
 # workflows/coding-relay/run.yaml — until kilroy auto-discovers per-workflow
 # run configs you must point at it explicitly.
 #
-# Why this exists: the coder node uses kimi via opencode, which auto-detection
-# does not know about (auto-detection covers anthropic/openai/google only).
-# Run-with-config refuses to start when a graph references a provider whose
-# backend isn't declared.
+# Why this exists: the coder node uses kimi via opencode. Current Kilroy
+# auto-detection can add kimi when KIMI_API_KEY_KILROY or KIMI_API_KEY is
+# present, but this explicit config remains useful for reproducible demos and
+# hosts that do not expose provider keys in the launcher environment.
 version: 1
 
-# repo.path must be set when --config is used. The CLI's --workspace flag
-# sets it for default invocations but not when an explicit config is loaded.
-# Use a placeholder here; kilroy run --workspace <path> will override at launch.
+# repo.path must be set when --config is used. For normal packaged workflow
+# runs, prefer `cd <repo> && kilroy run coding-relay ...` without this file.
+# Keep this as a placeholder for direct-mode/local-debug runs.
 repo:
   path: /tmp/coding-relay-smoke
 

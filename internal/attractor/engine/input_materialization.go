@@ -767,6 +767,19 @@ func inputStageManifestPath(logsRoot string, nodeID string) string {
 	return filepath.Join(strings.TrimSpace(logsRoot), strings.TrimSpace(nodeID), inputManifestFileName)
 }
 
+func inputStageAgentManifestPath(worktreeDir string, runID string, nodeID string) string {
+	worktreeDir = strings.TrimSpace(worktreeDir)
+	nodeID = strings.TrimSpace(nodeID)
+	if worktreeDir == "" || nodeID == "" {
+		return ""
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		runID = "unknown_run"
+	}
+	return filepath.Join(kilroyDirPath(worktreeDir), "runs", runID, "stages", nodeID, inputManifestFileName)
+}
+
 func inputSnapshotFilesRoot(logsRoot string) string {
 	return filepath.Join(strings.TrimSpace(logsRoot), inputSnapshotDirName, inputSnapshotFilesSubdir)
 }
@@ -830,7 +843,15 @@ func (e *Engine) materializeStageInputs(ctx context.Context, nodeID string) erro
 		runManifest := *manifest
 		e.attachRunManifestLineage(&runManifest)
 		_ = writeJSON(inputRunManifestPath(e.LogsRoot), &runManifest)
-		e.currentInputManifestPath = manifestPath
+		agentManifestPath := inputStageAgentManifestPath(e.WorktreeDir, e.Options.RunID, nodeID)
+		if strings.TrimSpace(agentManifestPath) != "" {
+			if err := writeJSON(agentManifestPath, manifest); err != nil {
+				return err
+			}
+			e.currentInputManifestPath = agentManifestPath
+		} else {
+			e.currentInputManifestPath = manifestPath
+		}
 	}
 	return nil
 }

@@ -5,7 +5,7 @@
 #   1. installs an executable kilroy binary;
 #   2. fully refreshes the global workflow package directory;
 #   3. preserves auth/policy files outside the workflow directory;
-#   4. installs first-party Kilroy skills for Claude, Codex, and opencode;
+#   4. installs first-party Kilroy skills for Claude, Codex, generic agents, and opencode;
 #   5. removes stale global quick-launch / pr-review skills;
 #   6. keeps the local install surface to the canonical installer.
 
@@ -66,7 +66,9 @@ assert_contains() {
 
 tmp_home="$(mktemp -d -t kilroy-install-test-home.XXXXXX)"
 tmp_repo="$(mktemp -d -t kilroy-install-test-repo.XXXXXX)"
-trap 'chmod -R u+w "$tmp_home" "$tmp_repo" 2>/dev/null || true; rm -rf "$tmp_home" "$tmp_repo"' EXIT
+real_gocache="${GOCACHE:-$(go env GOCACHE)}"
+real_gomodcache="${GOMODCACHE:-$(go env GOMODCACHE)}"
+trap 'chmod -R u+w "$tmp_home" "$tmp_repo" 2>/dev/null || true; rm -rf "$tmp_home" "$tmp_repo" || true' EXIT
 
 assert_not_exists "$REPO/scripts/install-skills.sh" "old install-skills wrapper removed"
 assert_not_exists "$REPO/scripts/check-using-kilroy-skill.sh" "old using-kilroy check helper removed"
@@ -75,8 +77,8 @@ export HOME="$tmp_home"
 export XDG_CONFIG_HOME="$tmp_home/.config"
 export XDG_DATA_HOME="$tmp_home/.local/share"
 export XDG_STATE_HOME="$tmp_home/.local/state"
-export GOCACHE="${GOCACHE:-$(go env GOCACHE)}"
-export GOMODCACHE="${GOMODCACHE:-$(go env GOMODCACHE)}"
+export GOCACHE="$real_gocache"
+export GOMODCACHE="$real_gomodcache"
 
 workflow_dir="$XDG_DATA_HOME/kilroy/workflows"
 config_dir="$XDG_CONFIG_HOME/kilroy"
@@ -98,7 +100,7 @@ printf 'auth-preserved\n' > "$config_dir/auth.toml"
 printf 'policy-preserved\n' > "$config_dir/policy-overrides.toml"
 printf 'data-preserved\n' > "$XDG_DATA_HOME/kilroy/keep.txt"
 
-for root in "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.config/opencode/skills"; do
+for root in "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.agents/skills" "$HOME/.config/opencode/skills"; do
     mkdir -p "$root/quick-launch" "$root/pr-review"
     printf 'stale\n' > "$root/quick-launch/SKILL.md"
     printf 'stale\n' > "$root/pr-review/SKILL.md"
@@ -131,6 +133,7 @@ while IFS= read -r wf; do
     name="$(basename "$wf")"
     assert_file "$workflow_dir/$name/workflow.toml" "workflow installed: $name"
 done < <(find "$REPO/workflows" -mindepth 1 -maxdepth 1 -type d | sort)
+assert_not_exists "$workflow_dir/multi-tool-exercise" "dev-only workflow not installed: multi-tool-exercise"
 
 assert_contains "$config_dir/auth.toml" "auth-preserved" "auth config preserved"
 assert_contains "$config_dir/policy-overrides.toml" "policy-preserved" "policy overrides preserved"
@@ -139,13 +142,15 @@ assert_contains "$XDG_DATA_HOME/kilroy/keep.txt" "data-preserved" "non-workflow 
 while IFS= read -r skill; do
     name="$(basename "$(dirname "$skill")")"
     assert_dir "$HOME/.claude/skills/$name" "Claude skill installed: $name"
-    assert_dir "$HOME/.agents/skills/$name" "Codex skill installed: $name"
+    assert_dir "$HOME/.codex/skills/$name" "Codex skill installed: $name"
+    assert_dir "$HOME/.agents/skills/$name" "generic agent skill installed: $name"
     assert_dir "$HOME/.config/opencode/skills/$name" "opencode skill installed: $name"
 done < <(find "$REPO/skills" -mindepth 2 -maxdepth 2 -name SKILL.md | sort)
 
 for stale in quick-launch pr-review; do
     assert_not_exists "$HOME/.claude/skills/$stale" "stale Claude skill removed: $stale"
-    assert_not_exists "$HOME/.agents/skills/$stale" "stale Codex skill removed: $stale"
+    assert_not_exists "$HOME/.codex/skills/$stale" "stale Codex skill removed: $stale"
+    assert_not_exists "$HOME/.agents/skills/$stale" "stale generic agent skill removed: $stale"
     assert_not_exists "$HOME/.config/opencode/skills/$stale" "stale opencode skill removed: $stale"
 done
 
@@ -157,6 +162,11 @@ done
 )
 assert_contains "$tmp_home/list.out" "implement" "installed binary discovers workflows from another repo"
 assert_contains "$tmp_home/describe.out" "source:      $workflow_dir" "discovery uses refreshed workflow dir"
+if grep -q "multi-tool-exercise" "$tmp_home/list.out"; then
+    fail "dev-only workflow hidden from installed workflow discovery"
+else
+    ok "dev-only workflow hidden from installed workflow discovery"
+fi
 
 echo ""
 echo "passed: $PASS"

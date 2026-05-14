@@ -5,8 +5,8 @@ Background-friendly iterative coding loop with **four** roles handed off in a re
 | Role     | Driver path           | Provider/model              | Cost profile     |
 |----------|-----------------------|-----------------------------|------------------|
 | Planner  | `anthropic_sdk` (API) | `anthropic / claude-sonnet-4.6` | mid              |
-| Coder    | `opencode` (CLI/tmux) | `kimi / kimi-k2`            | cheap, fast      |
-| Critic   | `codex_cli` (CLI/tmux)| `openai / gpt-5`            | high but slow    |
+| Coder    | `opencode` (CLI/tmux) | `kimi / kimi-k2.5`          | cheap, fast      |
+| Critic   | `codex_cli` (CLI/tmux)| `openai / gpt-5.4-mini`    | high but slow    |
 | Status   | `agent_class=quick_easy` (resolved via policy) | machine-dependent (haiku/sonnet) | very cheap |
 
 Each iteration runs all four. The critic owns the loop decision via
@@ -19,10 +19,11 @@ see progress without reading run logs.
 You're an agent (or a person) and you have a coding task that's:
 
 1. Specifiable in a markdown file (a few paragraphs of intent + acceptance criteria),
-2. Plausibly doable in 6 narrow iterations, and
+2. Plausibly doable in 20 narrow iterations, and
 3. Worth running in the background while you work on something else.
 
-You hand it a prompt file, run it detached, and check `STATUS.md` periodically.
+You hand it a prompt file, run it asynchronously, and check `STATUS.md` or the
+Kilroy run status periodically.
 
 ## Why mixed providers
 
@@ -58,30 +59,30 @@ way this one can.
 ## How to launch
 
 ```bash
-kilroy run coding-relay --detach \
-  --workspace /abs/path/to/target-repo \
-  --input-file prompt=/abs/path/to/spec.md
+cd /abs/path/to/target-repo
+kilroy run coding-relay \
+  --input-file prompt=/abs/path/to/spec.md \
+  --label scope=<short-slug>
 ```
 
 Then poll:
 
 ```bash
-watch -n 10 cat /abs/path/to/target-repo/STATUS.md
+kilroy status --latest --watch
 ```
 
 Or block on completion:
 
 ```bash
-kilroy run coding-relay --detach --wait \
-  --workspace /abs/path/to/target-repo \
-  --input-file prompt=/abs/path/to/spec.md
+kilroy run coding-relay \
+  --input-file prompt=/abs/path/to/spec.md \
+  --label scope=<short-slug> \
+  --sync
 ```
 
 ## Known prerequisites / gaps
 
-This workflow intentionally exercises mixed routing. See `UPSTREAM-FEEDBACK.md`
-in this directory for the historical feedback that led to the current template
-behavior.
+This workflow intentionally exercises mixed routing.
 
 - The opencode coder route uses Kimi. You must have a Kimi credential
   available in the launch environment: the coder prefers `KIMI_API_KEY_KILROY`

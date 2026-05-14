@@ -2,14 +2,14 @@
 //
 // Roles (each iteration):
 //   planner  : anthropic SDK + sonnet 4.6   — picks ONE next sub-task
-//   coder    : opencode + kimi-k2 (CLI)     — implements the sub-task
-//   critic   : codex CLI + gpt-5            — judges work, writes COMPLETE/CONTINUE
+//   coder    : opencode + kimi-k2.5 (CLI)   — implements the sub-task
+//   critic   : codex CLI + gpt-5.4-mini     — judges work, writes COMPLETE/CONTINUE
 //   status   : agent_class=quick_easy       — refreshes STATUS.md for external readers
 //
 // Pre-coder tool node `stage_context` inlines context_files into INPUT.md.
 // Post-coder tool node `verify_build` captures build output to .kilroy/build-output.txt.
 //
-// Loop bound: loop_max=6 iterations or critic writes COMPLETE to
+// Loop bound: loop_max=20 iterations or critic writes COMPLETE to
 // .kilroy/decision.md, whichever comes first.
 //
 // Exercises:
@@ -64,9 +64,8 @@ digraph coding_relay {
         prompt="You are the planner in an iterative coding workflow. Pick ONE narrow next sub-task.\n\nSteps:\n1. Read .kilroy/INPUT.md. The '## prompt' section names the spec file path; read that file in full.\n2. If '## context_files_contents' exists in INPUT.md, that's already-inlined context — skim it.\n3. If .kilroy/feedback/latest.md exists, read it for what the critic said last iteration.\n4. Run: git log --oneline -10\n5. Run: git status -sb\n6. Pick EXACTLY ONE smallest-possible self-contained sub-task. Do NOT bundle features.\n   - No code yet → pick the foundation step ONLY (one file, one type, the bootstrap).\n   - Foundation exists → pick the SINGLE smallest unimplemented feature.\n   - All features done but critic flagged a bug → pick JUST that bug.\n7. Write .kilroy/plan.md (under 30 lines). Required sections:\n   - ## What to implement (one thing, narrowly scoped)\n   - ## Acceptance criteria (2-4 bullets, this sub-task only)\n   - ## Files likely affected (best guess)\n   - ## Guardrail (verbatim line: 'Do NOT implement any other features in this iteration. Stop immediately after the scoped sub-task is complete.')\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
     ]
 
-    // Coder: opencode CLI + kimi-k2. The opencode template has partial
-    // binder integration: provider-aware OPENCODE_CONFIG_CONTENT plus
-    // _KILROY env-var preference for budget isolation.
+    // Coder: opencode CLI + kimi-k2.5. The opencode template has provider-aware
+    // OPENCODE_CONFIG_CONTENT plus _KILROY env-var preference for budget isolation.
     coder [
         shape=box,
         label="Coder",
@@ -83,7 +82,7 @@ digraph coding_relay {
         tool_command="bash .kilroy/package/scripts/verify-build.sh"
     ]
 
-    // Critic: codex CLI + gpt-5. Strong judge against spec; writes feedback + decision.
+    // Critic: codex CLI + gpt-5.4-mini. Strong judge against spec; writes feedback + decision.
     critic [
         shape=box,
         label="Critic",
@@ -99,7 +98,7 @@ digraph coding_relay {
         shape=box,
         label="Status Pulse",
         agent_class="quick_easy",
-        prompt="You write STATUS.md for external monitors of this background coding run.\n\nGoal: someone polling STATUS.md from outside this run should be able to tell at a glance:\n- What spec is being worked on\n- Which iteration we're in and how many remain\n- What the most recent task was\n- Whether the build is passing\n- Whether the critic thinks we're stuck or progressing\n- The plain-English progress narrative across iterations so far\n\nSteps:\n1. Read .kilroy/INPUT.md to find the spec path. If you can read the spec file in full, do so for the goal summary.\n2. Read .kilroy/plan.md for the current iteration's task.\n3. Read .kilroy/feedback/latest.md for the critic's view.\n4. Read .kilroy/decision.md if it exists.\n5. Run: ls .kilroy/feedback/iter-*.md 2>/dev/null | wc -l   to count completed iterations.\n6. Run: git log --oneline -10\n7. Read .kilroy/build-output.txt for build status.\n8. Overwrite STATUS.md at the workspace root with these sections:\n   # Coding Relay Status\n   _last updated: <ISO 8601 timestamp>_\n\n   ## Goal\n   (1-3 sentences from the spec)\n\n   ## Progress\n   - Iterations completed: N / 6\n   - Most recent task: (one sentence from plan.md)\n   - Latest decision: COMPLETE | CONTINUE | (none yet)\n   - Build: PASS | FAIL | (not yet attempted)\n\n   ## Trajectory\n   (3-6 bullets, one per iteration so far, from feedback/iter-*.md — what the critic flagged each iteration)\n\n   ## Stuck signal\n   (one sentence — STUCK if you see no meaningful progress across the last 2 iterations or repeated CONTINUE on the same complaint; PROGRESSING otherwise)\n\nKeep STATUS.md under 60 lines. Be specific — vague status text defeats the purpose.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+        prompt="You write STATUS.md for external monitors of this background coding run.\n\nGoal: someone polling STATUS.md from outside this run should be able to tell at a glance:\n- What spec is being worked on\n- Which iteration we're in and how many remain\n- What the most recent task was\n- Whether the build is passing\n- Whether the critic thinks we're stuck or progressing\n- The plain-English progress narrative across iterations so far\n\nSteps:\n1. Read .kilroy/INPUT.md to find the spec path. If you can read the spec file in full, do so for the goal summary.\n2. Read .kilroy/plan.md for the current iteration's task.\n3. Read .kilroy/feedback/latest.md for the critic's view.\n4. Read .kilroy/decision.md if it exists.\n5. Run: ls .kilroy/feedback/iter-*.md 2>/dev/null | wc -l   to count completed iterations.\n6. Run: git log --oneline -10\n7. Read .kilroy/build-output.txt for build status.\n8. Overwrite STATUS.md at the workspace root with these sections:\n   # Coding Relay Status\n   _last updated: <ISO 8601 timestamp>_\n\n   ## Goal\n   (1-3 sentences from the spec)\n\n   ## Progress\n   - Iterations completed: N / 20\n   - Most recent task: (one sentence from plan.md)\n   - Latest decision: COMPLETE | CONTINUE | (none yet)\n   - Build: PASS | FAIL | (not yet attempted)\n\n   ## Trajectory\n   (3-6 bullets, one per iteration so far, from feedback/iter-*.md — what the critic flagged each iteration)\n\n   ## Stuck signal\n   (one sentence — STUCK if you see no meaningful progress across the last 2 iterations or repeated CONTINUE on the same complaint; PROGRESSING otherwise)\n\nKeep STATUS.md under 60 lines. Be specific — vague status text defeats the purpose.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
     ]
 
     // Final report: tool node. Uses kilroy-write-result.sh helper for the
