@@ -3,7 +3,15 @@
 # repeated tool calls per iteration.
 set -euo pipefail
 INPUT="${INPUT_FILE:-.kilroy/INPUT.md}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+section() {
+    local name="$1"
+    awk -v name="$name" '
+        $0 == "## " name { in_section = 1; next }
+        /^## / && in_section { in_section = 0 }
+        in_section { print }
+    ' "$INPUT" 2>/dev/null
+}
 
 if grep -q '^## context_files' "$INPUT" 2>/dev/null; then
     {
@@ -45,11 +53,32 @@ NODE
     } >> "$INPUT"
 fi
 
-if [ -f package.json ]; then
-    if ! bash "$SCRIPT_DIR/node-setup.sh" .kilroy/setup-output.txt; then
-        printf '{"status":"fail","failure_reason":"dependency_setup_failed"}\n' > "${KILROY_STAGE_STATUS_PATH:-/dev/null}" 2>/dev/null || true
+SETUP_COMMAND="$(section setup_command | sed '/^[[:space:]]*$/d')"
+if [ -n "$SETUP_COMMAND" ]; then
+    mkdir -p .kilroy
+    SETUP_SCRIPT=.kilroy/setup-command.sh
+    SETUP_LOG=.kilroy/setup-output.txt
+    {
+        echo "#!/usr/bin/env bash"
+        echo "set -euo pipefail"
+        printf '%s\n' "$SETUP_COMMAND"
+    } > "$SETUP_SCRIPT"
+    {
+        echo "setup_command:"
+        printf '%s\n' "$SETUP_COMMAND"
+        echo "---"
+    } > "$SETUP_LOG"
+    if ! bash "$SETUP_SCRIPT" >> "$SETUP_LOG" 2>&1; then
+        RC=$?
+        {
+            echo "---"
+            echo "exit_code: $RC"
+        } >> "$SETUP_LOG"
+        printf '{"status":"fail","failure_reason":"setup_command_failed"}\n' > "${KILROY_STAGE_STATUS_PATH:-/dev/null}" 2>/dev/null || true
         exit 1
     fi
+    echo "---" >> "$SETUP_LOG"
+    echo "exit_code: 0" >> "$SETUP_LOG"
 fi
 
 # Seed empty feedback dir + decision file so iter-1 readers don't error.

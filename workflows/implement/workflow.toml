@@ -37,6 +37,11 @@ type        = "string"
 required    = false
 description = "Newline-separated absolute paths the agents should read for additional context."
 
+[inputs.setup_command]
+type        = "string"
+required    = false
+description = "Optional shell command or multiline shell script to prepare the isolated worktree before coding. Use only when authorized by the task packet or rules of engagement."
+
 [inputs.verify_command]
 type        = "string"
 required    = false

@@ -31,6 +31,7 @@ with evidence.
 | `testing_plan` | no | Testing plan produced by `plan`. |
 | `validation_plan` | no | Validation plan produced by `plan`. |
 | `context_files` | no | Newline-separated absolute paths to inline as context. |
+| `setup_command` | no | Optional setup script for the isolated worktree, only when authorized. |
 | `verify_command` | no | Post-coder build/test command. If omitted, Kilroy infers from package scripts or Go files. |
 
 ## Outputs
@@ -64,7 +65,6 @@ This workflow intentionally exercises mixed routing:
 - Critic uses Codex CLI.
 - Status resolves through the local `quick_easy` policy class.
 
-For JavaScript repos, the stage-context step installs dependencies in the
-isolated worktree before the coder runs so package scripts and commit hooks can
-execute. The planner/coder are given the actual `package.json` scripts and
-should not invent npm script names.
+The planner/coder are given the actual `package.json` scripts when present and
+should not invent npm script names. Dependency installation or other networked
+setup happens only through an explicit `setup_command` input.

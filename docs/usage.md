@@ -168,6 +168,9 @@ Before launching, write `verify-command.txt` from the testing plan or actual
 package scripts. For JavaScript repos, prefer existing scripts such as
 `turbo:check`, `check`, `typecheck`, `lint`, or `test`; do not invent npm
 script names.
+If the isolated worktree needs dependency installation or other setup, pass an
+explicit `setup_command` only when that work is authorized. Kilroy does not run
+networked setup implicitly based on language detection.
 
 4. Integrate or continue from the run worktree, then run `validate`.
 

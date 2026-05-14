@@ -5,7 +5,6 @@
 set -uo pipefail
 INPUT="${INPUT_FILE:-.kilroy/INPUT.md}"
 STATUS="${KILROY_STAGE_STATUS_PATH:-/dev/null}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 section() {
     local name="$1"
@@ -41,10 +40,6 @@ CMD="$(section verify_command | sed '/^[[:space:]]*$/d')"
 [ -n "$CMD" ] || CMD="$(infer_verify_command)"
 
 mkdir -p .kilroy
-if [ -f package.json ]; then
-    bash "$SCRIPT_DIR/node-setup.sh" .kilroy/setup-output.txt || true
-fi
-
 LOG=.kilroy/build-output.txt
 {
     echo "verify_command: $CMD"

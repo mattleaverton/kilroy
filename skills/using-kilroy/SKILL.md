@@ -283,6 +283,12 @@ Example:
 printf '%s\n' 'npm run turbo:check 2>&1' > "$TASK_ROOT/verify-command.txt"
 ```
 
+If the isolated Kilroy worktree will need dependency installation, database
+setup, emulator startup, or other environment preparation, make that explicit
+with `setup_command` only when the user, task packet, or project rules authorize
+that work. Do not silently run networked setup because a repo looks like
+JavaScript.
+
 Then launch:
 
 ```bash
