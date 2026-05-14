@@ -260,6 +260,14 @@ func (h *TmuxAgentHandler) ExecuteAgentWithSession(ctx context.Context, exec *en
 		}
 	}
 	_ = os.WriteFile(filepath.Join(stageDir, "tmux_command.txt"), []byte(command), 0o644)
+	launcherCommand, err := writeTmuxCommandScript(stageDir, command)
+	if err != nil {
+		return runtime.Outcome{
+			Status:        runtime.StatusFail,
+			FailureReason: fmt.Sprintf("write tmux command script: %v", err),
+		}, nil
+	}
+	_ = os.WriteFile(filepath.Join(stageDir, "tmux_launcher.txt"), []byte(launcherCommand), 0o644)
 
 	// Write prompt for debugging.
 	_ = os.WriteFile(filepath.Join(stageDir, "prompt.md"), []byte(prompt), 0o644)
@@ -276,7 +284,7 @@ func (h *TmuxAgentHandler) ExecuteAgentWithSession(ctx context.Context, exec *en
 
 	// Create tmux session.
 	sessionStartTime := time.Now()
-	session, err := h.Tmux.CreateSession(sessionName, exec.WorktreeDir, command, env)
+	session, err := h.Tmux.CreateSession(sessionName, exec.WorktreeDir, launcherCommand, env)
 	if err != nil {
 		return runtime.Outcome{
 			Status:         runtime.StatusFail,
@@ -510,6 +518,15 @@ func toolNameForDriver(driver string) string {
 	default:
 		return ""
 	}
+}
+
+func writeTmuxCommandScript(stageDir, command string) (string, error) {
+	scriptPath := filepath.Join(stageDir, "tmux_command.sh")
+	content := "#!/bin/sh\n" + command + "\n"
+	if err := os.WriteFile(scriptPath, []byte(content), 0o700); err != nil {
+		return "", err
+	}
+	return "exec /bin/sh " + transport.ShellQuoteSimple(scriptPath), nil
 }
 
 // engineBindWrapper wraps engine.Bind to return transport.BindResult.

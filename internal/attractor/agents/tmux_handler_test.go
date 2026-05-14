@@ -156,6 +156,100 @@ func TestTmuxAgentHandler_FakeAgent_SuccessfulExecution(t *testing.T) {
 	}
 }
 
+func TestWriteTmuxCommandScript_LongCommandUsesShortLauncher(t *testing.T) {
+	stageDir := t.TempDir()
+	longCommand := "fake-agent " + strings.Repeat("very-long-prompt ", 2000)
+
+	launcher, err := writeTmuxCommandScript(stageDir, longCommand)
+	if err != nil {
+		t.Fatalf("writeTmuxCommandScript: %v", err)
+	}
+	if strings.Contains(launcher, "very-long-prompt") {
+		t.Fatalf("launcher command includes the long prompt: %d bytes", len(launcher))
+	}
+	if len(launcher) > 512 {
+		t.Fatalf("launcher command = %d bytes, want short tmux command", len(launcher))
+	}
+
+	scriptPath := filepath.Join(stageDir, "tmux_command.sh")
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("read script: %v", err)
+	}
+	if !strings.Contains(string(data), longCommand) {
+		t.Fatalf("script does not contain original command")
+	}
+	info, err := os.Stat(scriptPath)
+	if err != nil {
+		t.Fatalf("stat script: %v", err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Fatalf("script mode = %v, want 0700", info.Mode().Perm())
+	}
+}
+
+func TestTmuxAgentHandler_FakeAgent_LongPromptUsesScriptLauncher(t *testing.T) {
+	requireIntegration(t)
+	scriptDir := t.TempDir()
+	script := writeFakeAgent(t, scriptDir, "FAKE_AGENT_LONG_PROMPT_OK", 0)
+
+	reg := templates.DefaultRegistry()
+	reg.Register(fakeAgentTemplate(script))
+
+	mgr := tmux.NewManager(testSocket)
+	defer exec.Command("tmux", "-u", "-L", testSocket, "kill-server").Run()
+
+	handler := &TmuxAgentHandler{
+		Tmux:      mgr,
+		Templates: reg,
+		Timeout:   30 * time.Second,
+	}
+
+	logsRoot := t.TempDir()
+	workDir := t.TempDir()
+
+	node := model.NewNode("long_prompt_node")
+	node.Attrs["agent_tool"] = "fake"
+	node.Attrs["prompt"] = strings.Repeat("very-long-prompt ", 2000)
+
+	exec := &engine.Execution{
+		Graph:       model.NewGraph("test"),
+		Context:     runtime.NewContext(),
+		LogsRoot:    logsRoot,
+		WorktreeDir: workDir,
+		Engine: &engine.Engine{
+			Options: engine.RunOptions{RunID: "test-run-long-prompt"},
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	outcome, err := handler.ExecuteAgent(ctx, exec, node, fakeAgentRoute(node.ID))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if outcome.Status != runtime.StatusSuccess {
+		t.Fatalf("status = %q, want success (reason: %s)", outcome.Status, outcome.FailureReason)
+	}
+
+	stageDir := filepath.Join(logsRoot, "long_prompt_node")
+	launcher, err := os.ReadFile(filepath.Join(stageDir, "tmux_launcher.txt"))
+	if err != nil {
+		t.Fatalf("read tmux launcher: %v", err)
+	}
+	if strings.Contains(string(launcher), "very-long-prompt") {
+		t.Fatalf("tmux launcher includes long prompt: %d bytes", len(launcher))
+	}
+	scriptData, err := os.ReadFile(filepath.Join(stageDir, "tmux_command.sh"))
+	if err != nil {
+		t.Fatalf("read tmux command script: %v", err)
+	}
+	if !strings.Contains(string(scriptData), "very-long-prompt") {
+		t.Fatalf("tmux command script does not contain long prompt")
+	}
+}
+
 func TestTmuxAgentHandler_FakeAgent_FailedExecution(t *testing.T) {
 	requireIntegration(t)
 	scriptDir := t.TempDir()
