@@ -1,6 +1,6 @@
 ---
 name: using-kilroy
-description: "Use when operating Kilroy from a project repository: discovering workflows, launching built-in or local worker runs, checking auth and policy resolution, watching runs, reading outputs, or authoring class-routed local workflow packages."
+description: "Use when operating Kilroy from a project repository: classifying work, preparing task packets, selecting workflows/worktrees, launching built-in or local worker runs, checking auth and policy resolution, watching runs, reading outputs, or authoring class-routed local workflow packages."
 ---
 
 # Using Kilroy
@@ -47,6 +47,117 @@ kilroy list --pretty
 kilroy describe implement --pretty
 kilroy check implement --pretty
 ```
+
+## Classify The Request
+
+Before launching anything, classify the user's request and decide whether the
+seed is good enough for a worker.
+
+| Request shape | Use | Notes |
+|---|---|---|
+| "How does X work?", "where is Y?", risk/context discovery | `investigate` | Read-only. Prefer `--in-place` so dirty files are visible. |
+| Small directed feature/change with clear acceptance | `implement` | Default code-change worker. Provide a verification command when possible. |
+| Bug with symptom, expected behavior, repro, logs, or failing test | `fix` | Include reproduction and expected behavior in the issue file. |
+| Validate current state without LLM judgment | `build-test` | Use `kilroy list --all` if hidden. Good after implementation. |
+| Review a diff, branch, patch, or worker result | `review` | Read-only independent judgment. Use a checklist when quality bar matters. |
+| Larger bounded project that can run in the background | `coding-relay` | Experimental. Use only with a written spec and patience for iteration. |
+| Vague, high-risk, or product-shaped request | Build a task packet first | Clarify intent, validation, budget/risk, and no-op/escalation rules before code. |
+
+If the user asks for broad autonomous work, do not hand a vague sentence to a
+coding worker. First turn the request into a seed/task packet, then decide
+whether to run one worker, several workers, or a loop.
+
+## Route To Specific Skills
+
+This skill is the intake and operations guide. If the request is mostly about
+one specialized artifact, switch to the narrower skill after classification:
+
+| Need | Skill |
+|---|---|
+| Turn a goal/spec into acceptance criteria, scenarios, or a Definition of Done | `build-dod` |
+| Author or repair a workflow graph/DOT file | `create-dotfile` |
+| Author or repair a run config | `create-runfile` |
+| Diagnose a stuck, failed, or surprising Kilroy run | `investigating-kilroy-runs` |
+| Bootstrap a new project repo for Kilroy/Attractor work | `starting-a-project` |
+| Prepare release notes, tags, or publishing | `release-kilroy` |
+
+Use the narrower skill for the specialized work, then come back here to launch,
+watch, chain, and inspect runs.
+
+## Make A Good Seed
+
+For code-producing work, write a short task packet in `/tmp/kilroy-tasks/` or
+the repo's planning area. Include only facts and decisions the worker needs:
+
+```markdown
+# Task
+
+## Intent
+What should become true?
+
+## Source
+Where did this come from? User request, bug, ticket, prior run, logs, PR.
+
+## Scope
+Repos/files/features in scope.
+
+## Non-goals
+What not to change.
+
+## Reproduction / starting evidence
+How to observe the bug or current behavior, if applicable.
+
+## Validation
+Commands, scenarios, screenshots, logs, or artifacts that prove success.
+
+## No-op / escalation rules
+When no code change is the right answer, or when a human must decide.
+
+## Budget / risk
+Allowed network, paid tokens, staging/prod deploys, destructive actions.
+```
+
+Prefer validation that exercises the delivered behavior from the outside
+(CLI/browser/API/logs) over tests that only assert internals. If validation is
+unclear, run `investigate` first or use the `build-dod` skill when available.
+
+## Choose The Work Environment
+
+- **Read current messy repo state:** use `--in-place` only for read-only
+  workflows (`investigate`, `review`) when the worker must see dirty or
+  untracked files.
+- **Make code changes in a repo:** use the default Kilroy worktree behavior.
+  Do not use `--in-place`; inspect and integrate the worker result manually.
+- **Continue a previous worker's unintegrated work:** launch the next worker
+  from that run's reported worktree, or integrate/cherry-pick the result first
+  and launch from the main project. Do not accidentally start from the original
+  repo if the next run depends on unmerged worker changes.
+- **Clean-room experiment or prototype:** create a temporary git repo, put the
+  seed/spec there, and run Kilroy from that repo. Use this for technology
+  spikes or ground-up experiments that should not touch the product repo.
+- **Multiple independent jobs:** write one task packet per job, label each run,
+  and launch them separately. Kilroy is a worker pool; the caller owns the
+  decomposition until a factory-manager layer exists.
+
+## Chain Runs Deliberately
+
+Useful chains:
+
+1. `investigate` -> task packet -> `implement` or `fix`
+2. `implement` or `fix` -> `build-test` -> `review`
+3. failed/uncertain worker result -> `investigate` or `review` -> revised task
+4. several `investigate` runs in parallel -> synthesize plan -> implementation
+
+After every run, read the outputs before deciding the next run:
+
+```bash
+kilroy runs show --latest --label task=<slug> --outputs
+kilroy runs show --latest --label task=<slug> --print result.md
+```
+
+Treat `result.md`, patches, build reports, review JSON, logs, and screenshots
+as evidence. Do not chain another coding worker just because the prior worker
+claimed success; check whether the evidence supports the next step.
 
 ## Investigate A Repo Question
 
