@@ -146,7 +146,7 @@ func CommitAllowEmptyWithExcludes(worktreeDir, message string, excludes []string
 }
 
 func commitAllowEmpty(worktreeDir, message string) (string, error) {
-	_, _, err := runGit(worktreeDir, "commit", "--allow-empty", "-m", message)
+	_, _, err := runGit(worktreeDir, "commit", "--no-verify", "--allow-empty", "-m", message)
 	if err != nil {
 		// If identity is missing, retry once with an explicit fallback committer identity
 		// (without mutating repo config).
@@ -157,7 +157,7 @@ func commitAllowEmpty(worktreeDir, message string) (string, error) {
 				worktreeDir,
 				"-c", "user.name=kilroy-attractor",
 				"-c", "user.email=kilroy-attractor@local",
-				"commit", "--allow-empty", "-m", message,
+				"commit", "--no-verify", "--allow-empty", "-m", message,
 			)
 		}
 		if err != nil {

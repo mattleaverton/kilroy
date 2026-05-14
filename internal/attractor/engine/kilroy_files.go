@@ -5,6 +5,7 @@ package engine
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -159,25 +160,48 @@ func (e *Engine) writeKilroyPreNodeFiles(node *model.Node, completed []string, n
 	}
 }
 
-// ensureGitignoreKilroy adds .kilroy/ to the workspace's .gitignore
-// if it's not already listed. Safe to call when no .gitignore exists.
+// ensureGitignoreKilroy adds .kilroy/ to the workspace-local git exclude file
+// when the workspace is a git repo. It intentionally does not mutate the
+// project's tracked .gitignore; .kilroy/ is Kilroy run scratch, not user code.
 func ensureGitignoreKilroy(worktreeDir string) {
-	gitignorePath := filepath.Join(worktreeDir, ".gitignore")
-	existing, _ := os.ReadFile(gitignorePath)
+	excludePath, err := gitExcludePath(worktreeDir)
+	if err != nil {
+		return
+	}
+	ensureIgnorePattern(excludePath, ".kilroy/")
+}
+
+func gitExcludePath(worktreeDir string) (string, error) {
+	cmd := exec.Command("git", "-C", worktreeDir, "rev-parse", "--git-path", "info/exclude")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	path := strings.TrimSpace(string(out))
+	if path == "" {
+		return "", fmt.Errorf("empty git exclude path")
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(worktreeDir, path)
+	}
+	return path, nil
+}
+
+func ensureIgnorePattern(path, pattern string) {
+	existing, _ := os.ReadFile(path)
 	content := string(existing)
 
-	// Check if .kilroy/ is already ignored.
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		if line == ".kilroy/" || line == ".kilroy" || line == "/.kilroy/" || line == "/.kilroy" {
+		if line == pattern || strings.TrimSuffix(line, "/") == strings.TrimSuffix(pattern, "/") {
 			return
 		}
 	}
 
-	// Append .kilroy/ to .gitignore.
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	content += ".kilroy/\n"
-	_ = os.WriteFile(gitignorePath, []byte(content), 0o644)
+	content += pattern + "\n"
+	_ = os.MkdirAll(filepath.Dir(path), 0o755)
+	_ = os.WriteFile(path, []byte(content), 0o644)
 }

@@ -68,6 +68,29 @@ func TestAddAllWithExcludes_DoesNotStageExcludedTrackedModifications(t *testing.
 	}
 }
 
+func TestCommitAllowEmptyWithExcludes_BypassesRepoHooks(t *testing.T) {
+	dir := initTestRepo(t)
+	hookPath := filepath.Join(dir, ".git", "hooks", "pre-commit")
+	if err := os.WriteFile(hookPath, []byte("#!/bin/sh\necho hook-ran >&2\nexit 42\n"), 0o755); err != nil {
+		t.Fatalf("write pre-commit hook: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "change.txt"), []byte("change"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sha, err := CommitAllowEmptyWithExcludes(dir, "checkpoint", nil)
+	if err != nil {
+		t.Fatalf("CommitAllowEmptyWithExcludes should bypass repo hooks: %v", err)
+	}
+	if strings.TrimSpace(sha) == "" {
+		t.Fatalf("empty checkpoint sha")
+	}
+	staged := stagedFiles(t, dir)
+	if len(staged) != 0 {
+		t.Fatalf("expected clean index after checkpoint, staged=%v", staged)
+	}
+}
+
 func stagedFiles(t *testing.T, dir string) []string {
 	t.Helper()
 	cmd := exec.Command("git", "-C", dir, "diff", "--cached", "--name-only")
