@@ -265,9 +265,25 @@ kilroy run plan \
 If the user explicitly says not to ask questions, or says to use good judgment,
 include that in the `goal` or `clarifications` input so `plan` can proceed.
 
+`plan-status.json` is authoritative. Do not feed `task-packet.md`,
+`testing-plan.md`, or `validation-plan.md` into `implement` unless the status
+is `READY_TO_IMPLEMENT`. For non-ready statuses, those files may be partial or
+placeholder artifacts for human review only.
+
 ## Run Implement
 
-Copy the plan outputs to the session workspace if needed, then launch:
+Copy the plan outputs to the session workspace if needed. Also write a
+project-appropriate verify command from the testing plan or package scripts.
+For JavaScript repos, prefer an existing script such as `turbo:check`, `check`,
+`typecheck`, `lint`, or `test`; never invent an npm script name.
+
+Example:
+
+```bash
+printf '%s\n' 'npm run turbo:check 2>&1' > "$TASK_ROOT/verify-command.txt"
+```
+
+Then launch:
 
 ```bash
 kilroy run implement \
@@ -287,6 +303,10 @@ patch is a Kilroy failure unless the run produced an explicit `.kilroy/no-op.md`
 with evidence.
 
 ## Run Validate
+
+`validation_command` may contain multiple lines. Kilroy runs it as a shell
+script and fails on the first failing command unless the script handles that
+failure explicitly.
 
 ```bash
 kilroy run validate \

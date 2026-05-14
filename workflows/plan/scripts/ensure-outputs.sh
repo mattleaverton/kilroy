@@ -34,12 +34,12 @@ PLAN_STATUS="$(extract_status)"
 
 if [ ! -s task-packet.md ]; then
     cat > task-packet.md <<EOF
-# Task Packet
+# NOT READY: Task Packet Placeholder
 
 Planner status: \`$PLAN_STATUS\`
 
 ## Intent
-See \`plan-status.json\`. The planner did not produce a full task packet.
+See \`plan-status.json\`. This is not a usable implementation task packet.
 
 ## Source
 The user's raw goal from this plan run.
@@ -68,24 +68,25 @@ fi
 
 if [ ! -s testing-plan.md ]; then
     cat > testing-plan.md <<EOF
-# Testing Plan
+# NOT READY: Testing Plan Placeholder
 
 Planner status: \`$PLAN_STATUS\`
 
-No concrete testing plan is available yet. Do not run \`implement\` until the
-task is clarified enough to define unit, integration, build, or scenario checks.
+No concrete testing plan is available yet. Do not run \`implement\` from this
+artifact until \`plan-status.json\` is \`READY_TO_IMPLEMENT\`.
 EOF
 fi
 
 if [ ! -s validation-plan.md ]; then
     cat > validation-plan.md <<EOF
-# Validation Plan
+# NOT READY: Validation Plan Placeholder
 
 Planner status: \`$PLAN_STATUS\`
 
 No concrete validation plan is available yet. Before implementation, define the
 external behavior or evidence that would convince a skeptical human the task is
-done.
+done. Do not run \`implement\` from this artifact until \`plan-status.json\` is
+\`READY_TO_IMPLEMENT\`.
 EOF
 fi
 

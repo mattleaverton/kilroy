@@ -31,7 +31,7 @@ with evidence.
 | `testing_plan` | no | Testing plan produced by `plan`. |
 | `validation_plan` | no | Validation plan produced by `plan`. |
 | `context_files` | no | Newline-separated absolute paths to inline as context. |
-| `verify_command` | no | Post-coder build/test command. Default `go build ./... 2>&1`. |
+| `verify_command` | no | Post-coder build/test command. If omitted, Kilroy infers from package scripts or Go files. |
 
 ## Outputs
 
@@ -63,3 +63,8 @@ This workflow intentionally exercises mixed routing:
 - Coder uses opencode with Kimi (`KIMI_API_KEY_KILROY` preferred).
 - Critic uses Codex CLI.
 - Status resolves through the local `quick_easy` policy class.
+
+For JavaScript repos, the stage-context step installs dependencies in the
+isolated worktree before the coder runs so package scripts and commit hooks can
+execute. The planner/coder are given the actual `package.json` scripts and
+should not invent npm script names.

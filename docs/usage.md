@@ -142,6 +142,10 @@ unless the user explicitly said to proceed with best judgment. Add answers as a
 `clarifications` input and rerun `plan` until the status is
 `READY_TO_IMPLEMENT` or `NEEDS_DECOMPOSITION`.
 
+Treat `plan-status.json` as authoritative. Do not pass the other artifacts to
+`implement` unless the status is `READY_TO_IMPLEMENT`; for non-ready statuses
+they may be placeholders for human review.
+
 3. Run `implement` from the plan artifacts.
 
 ```bash
@@ -160,6 +164,10 @@ kilroy run implement \
 `implement` is the public coding loop. It plans one small step, codes it,
 verifies, critiques, and repeats until the critic says `COMPLETE` or the loop
 cap is reached. It emits `result.md`, `STATUS.md`, and `implementation.patch`.
+Before launching, write `verify-command.txt` from the testing plan or actual
+package scripts. For JavaScript repos, prefer existing scripts such as
+`turbo:check`, `check`, `typecheck`, `lint`, or `test`; do not invent npm
+script names.
 
 4. Integrate or continue from the run worktree, then run `validate`.
 
@@ -178,6 +186,8 @@ kilroy run validate \
 `validate` writes `evidence.md` and `evidence.json` with terminal state
 `PR_READY` or `FAILED_VALIDATION`. If validation fails, feed the evidence back
 into another `implement` run from the same worktree or from an integrated branch.
+The `validation_command` input may contain multiple lines; Kilroy executes it
+as a shell script and stops on the first failing command.
 
 5. Survey and inspect by session.
 

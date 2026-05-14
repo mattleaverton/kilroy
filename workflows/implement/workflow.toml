@@ -40,8 +40,7 @@ description = "Newline-separated absolute paths the agents should read for addit
 [inputs.verify_command]
 type        = "string"
 required    = false
-description = "Shell command run after each coder iteration to capture build output. Default builds Go; override per-project."
-default     = "go build ./... 2>&1"
+description = "Shell command or multiline shell script run after each coder iteration. If omitted, Kilroy infers from package scripts or Go files."
 
 [outputs.result]
 type        = "path"

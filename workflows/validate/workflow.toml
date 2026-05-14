@@ -25,7 +25,7 @@ description = "Validation plan produced by plan."
 [inputs.validation_command]
 type        = "string"
 required    = false
-description = "Shell command to run as the validation check in the current workspace."
+description = "Shell command or multiline shell script to run as the validation check in the current workspace."
 
 [inputs.target]
 type        = "string"

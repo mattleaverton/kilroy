@@ -16,7 +16,7 @@ section() {
 
 TASK_PACKET="$(section task_packet)"
 VALIDATION_PLAN="$(section validation_plan)"
-VALIDATION_COMMAND="$(section validation_command | sed '/^$/d' | head -n 1)"
+VALIDATION_COMMAND="$(section validation_command | sed '/^[[:space:]]*$/d')"
 TARGET="$(section target | sed '/^$/d' | head -n 1)"
 
 COMMAND_STATUS="skipped"
@@ -24,7 +24,13 @@ COMMAND_EXIT=0
 COMMAND_OUTPUT=""
 if [ -n "$VALIDATION_COMMAND" ]; then
     COMMAND_STATUS="pass"
-    COMMAND_OUTPUT="$(bash -c "$VALIDATION_COMMAND" 2>&1)" || {
+    COMMAND_SCRIPT=".kilroy/validation-command.sh"
+    {
+        echo "#!/usr/bin/env bash"
+        echo "set -euo pipefail"
+        printf '%s\n' "$VALIDATION_COMMAND"
+    } > "$COMMAND_SCRIPT"
+    COMMAND_OUTPUT="$(bash "$COMMAND_SCRIPT" 2>&1)" || {
         COMMAND_EXIT=$?
         COMMAND_STATUS="fail"
     }
