@@ -978,9 +978,18 @@ func (h *ToolHandler) Execute(ctx context.Context, execCtx *Execution, node *mod
 	defer cancel()
 	cmd := exec.CommandContext(cctx, shellPath, "-c", cmdStr)
 	cmd.Dir = execCtx.WorktreeDir
+	toolEnv := BuildStageRuntimeEnv(execCtx, node.ID)
+	// Tool-command scripts may consume input values via KILROY_INPUT_*
+	// (e.g. build-test reads $KILROY_INPUT_BUILD_COMMAND). Agent paths
+	// intentionally do NOT receive these — see node_env.go.
+	if execCtx != nil && execCtx.Engine != nil {
+		for k, v := range InputEnvVars(execCtx.Engine.Options.Inputs) {
+			toolEnv[k] = v
+		}
+	}
 	cmd.Env = mergeEnvWithOverrides(
 		buildBaseNodeEnv(artifactPolicyFromExecution(execCtx)),
-		BuildStageRuntimeEnv(execCtx, node.ID),
+		toolEnv,
 	)
 	// Put the command in its own process group so a context cancel can kill
 	// the entire tree (not just the shell). Without this, a cancelled

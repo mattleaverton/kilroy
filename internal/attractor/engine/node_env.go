@@ -97,12 +97,15 @@ func BuildStageRuntimeEnv(execCtx *Execution, nodeID string) map[string]string {
 		out[worktreeDirEnvKey] = worktree
 		out[dataDirEnvKey] = filepath.Join(worktree, kilroyDir)
 	}
-	// Add structured input env vars (KILROY_INPUT_*).
-	if execCtx.Engine != nil {
-		for k, v := range InputEnvVars(execCtx.Engine.Options.Inputs) {
-			out[k] = v
-		}
-	}
+	// Structured input env vars (KILROY_INPUT_*) are intentionally NOT
+	// added here. They are only meaningful for tool_command shell scripts
+	// (e.g. build-test) and have the agent path pay a huge tax: agent CLI
+	// nodes inherit the full inputs (task packets, plans) as env, which
+	// overflows tmux's command-line limit on real-sized goals
+	// (`tmux new-session ... -e KEY=<value> ...: command too long`).
+	// Tool handlers merge InputEnvVars in directly; agent paths don't
+	// need them (the prompt and inputs manifest already carry the
+	// content).
 	if execCtx.Engine != nil && execCtx.Engine.inputMaterializationEnabled() {
 		manifestPath := strings.TrimSpace(execCtx.Engine.currentInputManifestPath)
 		if manifestPath == "" && strings.TrimSpace(execCtx.LogsRoot) != "" && strings.TrimSpace(nodeID) != "" {
