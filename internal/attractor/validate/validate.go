@@ -852,6 +852,10 @@ func lintStatusContractInPrompt(g *model.Graph) []Diagnostic {
 			// Empty prompt — defer to the existing prompt_on_llm_nodes rule.
 			continue
 		}
+		// one_shot nodes with auto_status=true succeed without writing status.json.
+		if strings.EqualFold(strings.TrimSpace(n.Attr("auto_status", "false")), "true") {
+			continue
+		}
 		if strings.Contains(prompt, "KILROY_STAGE_STATUS_PATH") ||
 			strings.Contains(prompt, "KILROY_STAGE_STATUS_FALLBACK_PATH") {
 			continue

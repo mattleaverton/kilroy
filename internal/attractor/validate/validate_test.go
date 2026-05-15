@@ -1091,6 +1091,25 @@ digraph G {
 	}
 }
 
+// (f) shape=box with auto_status=true → no warning even without status path in prompt.
+func TestValidate_StatusContractInPrompt_AutoStatus_NoWarning(t *testing.T) {
+	g, err := dot.Parse([]byte(`
+digraph G {
+  start [shape=Mdiamond]
+  exit  [shape=Msquare]
+  impl  [shape=box, llm_provider=anthropic, llm_model=claude-sonnet-4-6,
+         agent_mode="one_shot", auto_status="true",
+         prompt="Classify this goal and output only JSON."]
+  start -> impl -> exit
+}
+`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	diags := Validate(g)
+	assertNoRule(t, diags, "status_contract_in_prompt")
+}
+
 // --- Tests for orphan_custom_outcome_hint lint rule (G5) ---
 
 // (a) Node with condition="outcome=approved" edge (custom) + no unconditional fallback -> WARNING fires.

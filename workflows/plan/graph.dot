@@ -1,3 +1,6 @@
+// plan: intake/classify via single API call, then fan out to three parallel
+// planning agents when the goal is ready to implement.
+
 digraph plan {
     graph [
         inputs="goal",
@@ -7,18 +10,86 @@ digraph plan {
         "
     ]
 
-    start   [shape=Mdiamond, label="Start"]
-    planner [shape=box, label="Plan Intake", agent_class="quick_easy",
-             prompt="You are Kilroy's fast intake and planning station. Read .kilroy/INPUT.md. Your job is to either ask for the most important missing clarification or produce a manufacturable task packet.\n\nFirst-pass clarification gate: if there is no ## clarifications section, and the ## goal section does not explicitly say something like 'do not ask questions', 'use your judgment', 'proceed without clarification', or 'dealer's choice', you MUST write status NEEDS_CLARIFICATION. This is true even when the bug or likely fix appears obvious. Ask at most 3 high-leverage questions, and each question must include a recommended default answer that would let the user proceed quickly. Do not write READY_TO_IMPLEMENT on a first pass unless the user already supplied clarifications or explicitly waived questions.\n\nNever reject a request because it is large. For very large work, use NEEDS_DECOMPOSITION and describe the first decomposition wave, budget/risk assumptions, and what must be planned before implementation.\n\nRisk rule: if the next step could spend meaningful money, deploy to prod/staging, delete data, rewrite history, or otherwise cause harm, use ESCALATE_RISK unless the input explicitly authorizes that class of action.\n\nCommand rule: before naming npm scripts in testing-plan.md or validation-plan.md, inspect package.json if it exists. Never invent scripts such as test:e2e unless they are listed in package.json. Prefer an existing check script such as turbo:check, check, typecheck, lint, or test.\n\nAlways write these files at the workspace root:\n1. plan-status.json with schema: {\"status\":\"NEEDS_CLARIFICATION|READY_TO_IMPLEMENT|NEEDS_DECOMPOSITION|ESCALATE_RISK\",\"classification\":\"bug|feature|investigation|greenfield|validation|maintenance|unknown\",\"questions\":[{\"question\":\"...\",\"recommended_default\":\"...\",\"why_it_matters\":\"...\"}],\"assumptions\":[\"...\"],\"risk_flags\":[\"...\"],\"session_notes\":\"...\"}\n2. task-packet.md using sections: Intent, Source, Scope, Non-goals, Starting evidence, Implementation direction, No-op/escalation rules, Budget/risk.\n3. testing-plan.md with unit/integration/build checks the implement loop should use.\n4. validation-plan.md with external behavior/evidence requirements for the validate workflow.\n\nIf status is NEEDS_CLARIFICATION, task-packet/testing/validation may be partial but should preserve useful assumptions and recommended defaults. If status is READY_TO_IMPLEMENT, make them concrete enough that a coding loop can proceed without reading your mind. Keep output concise and practical.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."]
-    ensure_outputs [shape=parallelogram, label="ensure outputs",
-                    tool_command="bash .kilroy/package/scripts/ensure-outputs.sh"]
-    done    [shape=Msquare, label="Done"]
-    failed  [shape=Msquare, terminal_status="fail", label="Failed",
-             failure_reason="plan_failed"]
+    start [shape=Mdiamond, label="Start"]
 
-    start          -> planner
-    planner        -> ensure_outputs [condition="outcome=success"]
-    planner        -> failed         [condition="outcome!=success"]
-    ensure_outputs -> done           [condition="outcome=success"]
-    ensure_outputs -> failed         [condition="outcome!=success"]
+    // Single API call: classify the goal and output plan-status.json JSON.
+    // auto_status skips the status.json requirement since one_shot can't write files.
+    // Input materialization preamble injects goal/clarifications/preferences content.
+    classifier [
+        shape=box,
+        label="Classify",
+        agent_mode="one_shot",
+        auto_status="true",
+        llm_provider="anthropic",
+        llm_model="claude-sonnet-4-6",
+        prompt="Classify this goal and produce a plan-status.json response.\n\nThe inputs section above contains the goal and any clarifications or preferences the user provided.\n\nClassification rules:\n- If no clarifications are present AND the goal does not say 'proceed', 'no questions', 'use your judgment', 'dealer's choice', or similar: status MUST be NEEDS_CLARIFICATION. Ask at most 3 high-leverage questions, each with a recommended default that would let the user proceed quickly.\n- If clarifications are present or the goal explicitly waives questions: classify as READY_TO_IMPLEMENT (or NEEDS_DECOMPOSITION / ESCALATE_RISK if warranted).\n- NEEDS_DECOMPOSITION: the work is too large for a single implement run; describe the first decomposition wave.\n- ESCALATE_RISK: the next step could spend meaningful money, deploy to prod, delete data, or cause irreversible harm without explicit authorization.\n- READY_TO_IMPLEMENT: the goal is concrete, scoped, and safe to hand to implement.\n\nOutput ONLY valid JSON — no markdown, no explanation, no code fences. The JSON must match this schema exactly:\n{\n  \"status\": \"NEEDS_CLARIFICATION\" | \"READY_TO_IMPLEMENT\" | \"NEEDS_DECOMPOSITION\" | \"ESCALATE_RISK\",\n  \"classification\": \"bug\" | \"feature\" | \"investigation\" | \"greenfield\" | \"validation\" | \"maintenance\" | \"unknown\",\n  \"questions\": [{\"question\": \"...\", \"recommended_default\": \"...\", \"why_it_matters\": \"...\"}],\n  \"assumptions\": [\"...\"],\n  \"risk_flags\": [\"...\"],\n  \"session_notes\": \"...\"\n}\n\nquestions must be an array even when empty. All fields are required."
+    ]
+
+    // Read classifier response from logs, write plan-status.json, route on readiness.
+    gate [
+        shape=parallelogram,
+        label="Gate",
+        tool_command="bash .kilroy/package/scripts/gate.sh"
+    ]
+
+    // Concurrent fan-out: three parallel planning agents in the same workspace.
+    fan_out [shape=pentagon, concurrent_id="planning", label="Plan Fan-out"]
+
+    task_planner [
+        shape=box,
+        label="Task Planner",
+        agent_class="quick_easy",
+        prompt="Write task-packet.md for the coding implement workflow.\n\nRead .kilroy/INPUT.md and plan-status.json. The ## goal section (and ## clarifications / ## preferences if present) describe what to build.\n\nWrite task-packet.md with these sections:\n## Intent\nWhat should become true when this task is complete? (2-4 sentences)\n\n## Source\nWhere did this come from? User request / bug / ticket / prior run.\n\n## Scope\nExact repos, packages, files, or features in scope.\n\n## Non-goals\nWhat to leave alone. Be specific.\n\n## Starting Evidence\nHow to reproduce the bug or observe current behavior. Concrete commands, logs, URLs if known. If nothing is known, say so.\n\n## Implementation Direction\nThe approach to take. Specific enough that a coding agent can start without guessing.\n\n## No-op / Escalation Rules\nWhen no code change is the right answer. When a human must approve.\n\n## Budget / Risk\nAllowed network, external API calls, destructive actions, staging/prod deploys.\n\nKeep each section concrete and actionable. Do not pad with generic advice.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    test_planner [
+        shape=box,
+        label="Test Planner",
+        agent_class="quick_easy",
+        prompt="Write testing-plan.md for the coding implement workflow.\n\nRead .kilroy/INPUT.md and plan-status.json. The ## goal section describes what is being built.\n\nBefore writing, if there is a package.json in the workspace, read it and list only the scripts that actually exist. Never invent npm script names.\n\nWrite testing-plan.md with these sections:\n## Unit / Integration Tests\nSpecific test files or test commands to run. Name the actual test runner (pytest, go test, jest, etc.). If the repo has no test framework, say so.\n\n## Build Check\nThe exact command to verify the project builds (go build ./..., npm run check, cargo build, etc.). Prefer existing CI-level check scripts over raw compilers.\n\n## Lint / Type Check\nIf the project has a lint or type-check command, name it. If not, say so.\n\n## Coverage Obligation\nWhat the implement loop MUST verify passes before the critic can say COMPLETE. Be specific: 'go test ./... must pass' beats 'tests should pass'.\n\n## Known Gaps\nThings we cannot test automatically and why.\n\nDo not invent scripts. Ground every command in what the project actually has.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    validation_planner [
+        shape=box,
+        label="Validation Planner",
+        agent_class="quick_easy",
+        prompt="Write validation-plan.md for the external validate workflow.\n\nRead .kilroy/INPUT.md and plan-status.json. The ## goal section describes what is being built.\n\nThe validate workflow runs AFTER implementation, in a real environment, using real interactions. It is NOT about unit tests — it is about proving the delivered behavior works from the outside, the same way a real user or operator would interact with it.\n\nWrite validation-plan.md with these sections:\n## What Success Looks Like\n2-4 sentences: what observable, external behavior proves the task is done?\n\n## Validation Scenarios\nNumbered list of concrete scenarios. Each scenario must specify:\n- Starting condition\n- Action to take (exact CLI command, curl call, browser step, log to check)\n- Expected result\n\n## Environment Requirements\nWhat must be running, installed, or configured for validation to succeed? (server started, DB seeded, env vars set, etc.)\n\n## Validation Commands\nIf validation can be partially or fully automated, list the exact commands. Prefer curl, CLI invocations, or script runs over vague 'check the UI' instructions.\n\n## Residual Risk\nWhat this plan cannot prove, and why. What would require a human to verify.\n\nThe validate workflow will have access to shell, curl, and browser tools. Write the plan so a validate agent can follow it step by step without guessing.\n\nWhen finished, write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails."
+    ]
+
+    fan_in [shape=cylinder, concurrent_id="planning", label="Plan Fan-in"]
+
+    ensure_outputs [
+        shape=parallelogram,
+        label="Ensure Outputs",
+        tool_command="bash .kilroy/package/scripts/ensure-outputs.sh"
+    ]
+
+    // Reached when gate exits non-zero (NEEDS_CLARIFICATION / NEEDS_DECOMPOSITION / ESCALATE_RISK).
+    // Not a fail terminal — the run succeeded; it returned a structured non-ready status.
+    clarified [shape=Msquare, label="Clarification Needed"]
+
+    done   [shape=Msquare, label="Done"]
+    failed [shape=Msquare, terminal_status="fail", label="Failed",
+            failure_reason="plan_failed"]
+
+    start      -> classifier
+    classifier -> gate       [condition="outcome=success"]
+    classifier -> failed     [condition="outcome!=success"]
+
+    gate -> fan_out   [condition="outcome=success"]
+    gate -> clarified [condition="outcome!=success"]
+
+    fan_out -> task_planner
+    fan_out -> test_planner
+    fan_out -> validation_planner
+
+    task_planner       -> fan_in
+    test_planner       -> fan_in
+    validation_planner -> fan_in
+
+    fan_in -> ensure_outputs [condition="outcome=success"]
+    fan_in -> failed         [condition="outcome!=success"]
+
+    ensure_outputs -> done   [condition="outcome=success"]
+    ensure_outputs -> failed [condition="outcome!=success"]
 }

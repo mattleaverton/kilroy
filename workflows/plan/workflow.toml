@@ -1,14 +1,15 @@
-# Plan workflow: fast intake/clarification plus task-packet generation.
-# Public factory entrypoint for turning a user goal into implementation,
-# testing, and validation artifacts.
+# Plan workflow: single-API-call classifier gates a three-way parallel
+# planning fan-out that produces the full factory task packet.
 
 [workflow]
 name              = "plan"
 version           = "1"
 description       = """
-Classify a user goal, ask high-leverage clarification questions by default,
-or produce a manufacturable task packet with testing and validation plans
-when the goal is ready to implement.
+Classify a user goal via a single Anthropic API call, then fan out to three
+parallel agents that produce task-packet.md, testing-plan.md, and
+validation-plan.md when the goal is ready. Exits cleanly with
+NEEDS_CLARIFICATION / NEEDS_DECOMPOSITION / ESCALATE_RISK when the goal
+is not yet actionable.
 """
 agent_description = "Classify a goal and produce plan-status.json plus task/testing/validation plans."
 default_class     = "quick_easy"
@@ -60,8 +61,9 @@ writes_files   = true
 network_egress = false
 idempotent     = true
 
-[nodes.planner]
-class = "quick_easy"
+[nodes.classifier]
+provider = "anthropic"
+model    = "claude-sonnet-4-6"
 
 [defaults]
 labels = { workflow = "plan" }

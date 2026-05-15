@@ -1,15 +1,17 @@
-# Validate workflow: run declared validation commands and capture evidence.
-# Public factory station for proving a task result against its packet.
+# Validate workflow: agentic validation station that executes the validation
+# plan using real tools (shell, curl, browser) and produces evidence artifacts.
 
 [workflow]
 name              = "validate"
 version           = "1"
 description       = """
-Validate a completed worktree/patch against a task packet and validation
-plan. Runs optional commands, captures git state, and writes evidence.md
-plus evidence.json.
+Execute the validation plan produced by the plan workflow using an agentic
+claude CLI runner. The agent uses shell, curl, and browser tools to run
+real scenarios against the implementation. Reads .validation/ project
+conventions if present. Writes evidence.md and evidence.json with
+terminal_state VALIDATED or FAILED_VALIDATION.
 """
-agent_description = "Run validation and produce evidence artifacts."
+agent_description = "Execute the validation plan and produce evidence.md + evidence.json."
 graph             = "graph.dot"
 
 [inputs.task_packet]

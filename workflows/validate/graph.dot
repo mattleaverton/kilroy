@@ -1,17 +1,27 @@
+// validate: agentic validation station. Reads the validation plan and executes
+// it using real tools (shell, curl, browser). Writes evidence.md and evidence.json.
+
 digraph validate {
     graph [
         inputs="task_packet",
         outputs="evidence.md,evidence.json"
     ]
 
-    start    [shape=Mdiamond, label="Start"]
-    validate [shape=parallelogram, label="validate",
-              tool_command="bash .kilroy/package/scripts/validate.sh"]
-    done     [shape=Msquare, label="Done"]
-    failed   [shape=Msquare, terminal_status="fail", label="Failed",
-              failure_reason="validation_failed"]
+    start [shape=Mdiamond, label="Start"]
 
-    start    -> validate
-    validate -> done   [condition="outcome=success"]
-    validate -> failed [condition="outcome!=success"]
+    validator [
+        shape=box,
+        label="Validator",
+        agent_tool="claude",
+        agent_class="deep_investigation",
+        prompt="You are Kilroy's validation agent. Execute the validation plan and produce trustworthy evidence.\n\nDo NOT modify source code. You are a read-only observer and test runner.\n\nSteps:\n1. Read .kilroy/INPUT.md. Extract:\n   - ## task_packet: what the implementation was supposed to do\n   - ## validation_plan: how to verify it (if present)\n   - ## validation_command: specific commands to run (if present)\n   - ## target: what is being validated (if present)\n\n2. Check for .validation/ in the current directory. If it exists, read any files there (SETUP.md, SCENARIOS.md, README.md, run.sh, etc.) — treat them as authoritative instructions for how to start and interact with this project.\n\n3. Execute the validation plan as written:\n   - Run the specified commands and capture their output\n   - If the plan requires starting a service or server, start it\n   - If the plan requires HTTP calls, use curl or similar\n   - If the plan requires checking logs or files, read them\n   - If the plan requires browser interaction, use your browser tools\n   - For each scenario: state what you expected, what you got, and whether it passed\n\n4. Write evidence.md at the workspace root with:\n   # Validation Evidence\n   **Terminal state:** VALIDATED | FAILED_VALIDATION\n\n   ## Task\n   (1-3 sentences from task_packet)\n\n   ## What Was Tested\n   (numbered list of scenarios run)\n\n   ## Results\n   (for each: pass/fail, command run, actual output)\n\n   ## Residual Risk\n   (what this run could not prove and why)\n\n5. Write evidence.json at the workspace root:\n   {\n     \"terminal_state\": \"VALIDATED\" or \"FAILED_VALIDATION\",\n     \"scenarios_run\": N,\n     \"pass_count\": N,\n     \"fail_count\": N,\n     \"gaps\": [\"...\"]\n   }\n\n6. Write {\"status\":\"success\"} to $KILROY_STAGE_STATUS_PATH or $KILROY_STAGE_STATUS_FALLBACK_PATH if that fails.\n\nNote: terminal_state in evidence.json is the validation verdict, not the stage outcome. Write stage status=success even when evidence shows FAILED_VALIDATION — a clean failure is a valid result."
+    ]
+
+    done   [shape=Msquare, label="Done"]
+    failed [shape=Msquare, terminal_status="fail", label="Failed",
+            failure_reason="validation_agent_did_not_complete"]
+
+    start     -> validator
+    validator -> done   [condition="outcome=success"]
+    validator -> failed [condition="outcome!=success"]
 }
