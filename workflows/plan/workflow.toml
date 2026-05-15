@@ -5,14 +5,13 @@
 name              = "plan"
 version           = "1"
 description       = """
-Classify a user goal via a single Anthropic API call, then fan out to three
+Classify a user goal via a single LLM API call, then fan out to three
 parallel agents that produce task-packet.md, testing-plan.md, and
 validation-plan.md when the goal is ready. Exits cleanly with
 NEEDS_CLARIFICATION / NEEDS_DECOMPOSITION / ESCALATE_RISK when the goal
 is not yet actionable.
 """
 agent_description = "Classify a goal and produce plan-status.json plus task/testing/validation plans."
-default_class     = "quick_easy"
 graph             = "graph.dot"
 
 [inputs.goal]
@@ -60,10 +59,6 @@ mutates_git    = false
 writes_files   = true
 network_egress = false
 idempotent     = true
-
-[nodes.classifier]
-provider = "anthropic"
-model    = "claude-sonnet-4-6"
 
 [defaults]
 labels = { workflow = "plan" }

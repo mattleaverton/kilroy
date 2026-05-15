@@ -75,6 +75,48 @@ description = "Maximum reasoning depth for complex multi-file coding tasks."
     method   = "api_key"
 
 # ══════════════════════════════════════════════════════════════════
+# CLASS: quickapi
+# Fast, cheap, single-call API work — classification, gating, routing
+# decisions. The SDK-backed sibling of quick_easy: every candidate is
+# an http/SDK driver, so a one_shot node stays a single fast HTTP call
+# instead of resolving to a CLI agentic loop. Gemini Flash first
+# (verified fast + accurate on structured-JSON tasks), Haiku 4.5 then
+# Sonnet 4.6 over the API as cross-provider fallbacks.
+# ══════════════════════════════════════════════════════════════════
+[classes.quickapi]
+description = "Fast, cheap, single-call API tasks (classification, gating, routing) — SDK-backed so one_shot stays one HTTP call."
+
+  [[classes.quickapi.chain]]
+  model_id     = "gemini-2.5-flash"
+  driver       = "google_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:cheap", "cross_provider"]
+    [classes.quickapi.chain.requires]
+    provider = "google"
+    method   = "api_key"
+
+  [[classes.quickapi.chain]]
+  model_id     = "claude-haiku-4-5"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:cheap"]
+    [classes.quickapi.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
+
+  [[classes.quickapi.chain]]
+  model_id     = "claude-sonnet-4-6"
+  driver       = "anthropic_sdk"
+  transport    = "http"
+  history_sink = "jsonl_local"
+  tags         = ["api_key", "tier:mid"]
+    [classes.quickapi.chain.requires]
+    provider = "anthropic"
+    method   = "api_key"
+
+# ══════════════════════════════════════════════════════════════════
 # CLASS: quick_easy
 # Low-latency tasks: Haiku first (subscription then API key) for
 # minimal cost and fast round-trips. Gemini Flash as a cheap

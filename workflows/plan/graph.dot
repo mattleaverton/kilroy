@@ -4,28 +4,29 @@
 digraph plan {
     graph [
         inputs="goal",
-        outputs="plan-status.json,task-packet.md,testing-plan.md,validation-plan.md",
-        model_stylesheet="
-            * { agent_class: quick_easy; }
-        "
+        outputs="plan-status.json,task-packet.md,testing-plan.md,validation-plan.md"
     ]
 
     start [shape=Mdiamond, label="Start"]
 
     // Single API call: classify the goal and output plan-status.json JSON.
-    // auto_status skips the status.json requirement since one_shot can't write files.
-    // Input materialization preamble injects goal/clarifications/preferences content.
+    // agent_class="quickapi" resolves to a fast SDK/API model with a
+    // cross-provider fallback chain; agent_mode="one_shot" keeps it a single
+    // HTTP call. auto_status skips the status.json requirement since one_shot
+    // can't write files. Input materialization preamble injects
+    // goal/clarifications/preferences content.
     classifier [
         shape=box,
         label="Classify",
         agent_mode="one_shot",
         auto_status="true",
-        llm_provider="anthropic",
-        llm_model="claude-sonnet-4-6",
-        prompt="Classify this goal and produce a plan-status.json response.\n\nThe inputs section above contains the goal and any clarifications or preferences the user provided.\n\nClassification rules:\n- If no clarifications are present AND the goal does not say 'proceed', 'no questions', 'use your judgment', 'dealer's choice', or similar: status MUST be NEEDS_CLARIFICATION. Ask at most 3 high-leverage questions, each with a recommended default that would let the user proceed quickly.\n- If clarifications are present or the goal explicitly waives questions: classify as READY_TO_IMPLEMENT (or NEEDS_DECOMPOSITION / ESCALATE_RISK if warranted).\n- NEEDS_DECOMPOSITION: the work is too large for a single implement run; describe the first decomposition wave.\n- ESCALATE_RISK: the next step could spend meaningful money, deploy to prod, delete data, or cause irreversible harm without explicit authorization.\n- READY_TO_IMPLEMENT: the goal is concrete, scoped, and safe to hand to implement.\n\nOutput ONLY valid JSON — no markdown, no explanation, no code fences. The JSON must match this schema exactly:\n{\n  \"status\": \"NEEDS_CLARIFICATION\" | \"READY_TO_IMPLEMENT\" | \"NEEDS_DECOMPOSITION\" | \"ESCALATE_RISK\",\n  \"classification\": \"bug\" | \"feature\" | \"investigation\" | \"greenfield\" | \"validation\" | \"maintenance\" | \"unknown\",\n  \"questions\": [{\"question\": \"...\", \"recommended_default\": \"...\", \"why_it_matters\": \"...\"}],\n  \"assumptions\": [\"...\"],\n  \"risk_flags\": [\"...\"],\n  \"session_notes\": \"...\"\n}\n\nquestions must be an array even when empty. All fields are required."
+        agent_class="quickapi",
+        prompt="Classify this goal and output a single JSON object — nothing else.\n\nThe inputs section above contains the goal and any clarifications or preferences the user provided.\n\nClassification rules:\n- If no clarifications are present AND the goal does not say 'proceed', 'no questions', 'use your judgment', 'dealer's choice', or similar: status MUST be NEEDS_CLARIFICATION. Ask at most 3 high-leverage questions, each with a recommended default that would let the user proceed quickly.\n- If clarifications are present or the goal explicitly waives questions: classify as READY_TO_IMPLEMENT (or NEEDS_DECOMPOSITION / ESCALATE_RISK if warranted).\n- NEEDS_DECOMPOSITION: the work is too large for a single implement run; describe the first decomposition wave.\n- ESCALATE_RISK: the next step could spend meaningful money, deploy to prod, delete data, or cause irreversible harm without explicit authorization.\n- READY_TO_IMPLEMENT: the goal is concrete, scoped, and safe to hand to implement.\n\nYour entire response must be a single JSON object. Start with { and end with }. No preamble, no explanation, no code fences.\n\nSchema:\n{\n  \"status\": \"NEEDS_CLARIFICATION\" | \"READY_TO_IMPLEMENT\" | \"NEEDS_DECOMPOSITION\" | \"ESCALATE_RISK\",\n  \"classification\": \"bug\" | \"feature\" | \"investigation\" | \"greenfield\" | \"validation\" | \"maintenance\" | \"unknown\",\n  \"questions\": [{\"question\": \"...\", \"recommended_default\": \"...\", \"why_it_matters\": \"...\"}],\n  \"assumptions\": [\"...\"],\n  \"risk_flags\": [\"...\"],\n  \"session_notes\": \"...\"\n}\n\nquestions must be an array even when empty. All fields are required."
     ]
 
-    // Read classifier response from logs, write plan-status.json, route on readiness.
+    // Parse the classifier's raw response into plan-status.json. Prints "ready"
+    // or "clarify" to stdout (surfaced as context.tool.output for routing); a
+    // genuine error (missing/unparseable response) exits non-zero -> outcome=fail.
     gate [
         shape=parallelogram,
         label="Gate",
@@ -64,7 +65,7 @@ digraph plan {
         tool_command="bash .kilroy/package/scripts/ensure-outputs.sh"
     ]
 
-    // Reached when gate exits non-zero (NEEDS_CLARIFICATION / NEEDS_DECOMPOSITION / ESCALATE_RISK).
+    // Reached when the gate routes "clarify" (NEEDS_CLARIFICATION / NEEDS_DECOMPOSITION / ESCALATE_RISK).
     // Not a fail terminal — the run succeeded; it returned a structured non-ready status.
     clarified [shape=Msquare, label="Clarification Needed"]
 
@@ -76,8 +77,11 @@ digraph plan {
     classifier -> gate       [condition="outcome=success"]
     classifier -> failed     [condition="outcome!=success"]
 
-    gate -> fan_out   [condition="outcome=success"]
-    gate -> clarified [condition="outcome!=success"]
+    gate -> clarified [condition="context.tool.output=clarify"]
+    gate -> failed    [condition="outcome=fail"]
+    // Unconditional fallback: proceed to planning. The gate prints "ready" to
+    // route here; "clarify" and genuine errors are caught by the edges above.
+    gate -> fan_out
 
     fan_out -> task_planner
     fan_out -> test_planner
