@@ -5,6 +5,32 @@ description: "Use when operating Kilroy from a project repository: classifying w
 
 # Using Kilroy
 
+## The Contract
+
+Kilroy's implicit contract with the user: **drop a note, walk away, come back
+to validated code.** Generating code is the default. Investigation — "tell me
+what's wrong, don't change anything" — is an explicit opt-out the user has to
+ask for in plain language ("read-only", "don't touch the code", "just tell
+me"). A diagnostic-phrased goal ("find what's wrong with X", "see why Y is
+broken") is still a request to ship a fix.
+
+Three rules fall out of this contract that you MUST follow when Kilroy is the
+worker:
+
+1. **Don't bail to local work.** While a Kilroy run is in flight, do not
+   author code, tests, or run verification locally in parallel. Do not
+   `kilroy stop` a progressing run and redo it. Wait for the worker, or
+   escalate to the user. Local work is for orchestration and integration
+   only.
+2. **Don't end a turn with a question at a terminal state.** A successful
+   Kilroy chain produces landed code, not "want me to apply the fix?". If
+   plan → implement → validate succeeded, integrate. If something blocked
+   integration, say what's blocking and what's needed — don't pause for
+   permission to take the obvious next step.
+3. **Investigation is opt-in.** Don't pivot to `kilroy run investigate` on
+   your own judgment because a goal looks diagnostic. Only use `investigate`
+   when the user explicitly says they want a report and no code changes.
+
 Kilroy is a local worker-runner for software repositories. The normal alpha
 surface is packaged workflows by name:
 
