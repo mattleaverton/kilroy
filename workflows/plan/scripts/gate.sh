@@ -47,49 +47,10 @@ if [ "$PLAN_STATUS" = "READY_TO_IMPLEMENT" ]; then
     exit 0
 fi
 
-# Non-ready: write structured stubs so the clarified terminal has stable artifacts.
-# The three planning files are stub seeds — useful as templates when the user supplies
-# clarifications and re-runs plan.
-if [ ! -s task-packet.md ]; then
-    cat > task-packet.md << EOF
-# Task Packet Seed (plan-status: $PLAN_STATUS)
-
-See \`plan-status.json\` for clarification questions or blocking reason.
-Do not pass this artifact to \`implement\` until status is READY_TO_IMPLEMENT.
-
-## Intent
-What should become true when this task is complete?
-
-## Source
-User request / bug / ticket / prior run.
-
-## Scope
-Exact repos, packages, files, or features in scope.
-
-## Non-goals
-What to leave alone.
-
-## Starting Evidence
-How to reproduce the bug or observe current behavior.
-
-## Implementation Direction
-The approach to take.
-
-## No-op / Escalation Rules
-When no code change is the right answer. When a human must approve.
-
-## Budget / Risk
-Allowed network, external API calls, destructive actions.
-EOF
-fi
-
-if [ ! -s testing-plan.md ]; then
-    printf '# Testing Plan Seed (plan-status: %s)\n\nSee `plan-status.json`. Not ready for use.\n' "$PLAN_STATUS" > testing-plan.md
-fi
-
-if [ ! -s validation-plan.md ]; then
-    printf '# Validation Plan Seed (plan-status: %s)\n\nSee `plan-status.json`. Not ready for use.\n' "$PLAN_STATUS" > validation-plan.md
-fi
+# Non-ready: write minimal stubs so the clarified terminal has stable output files.
+[ -s task-packet.md ]      || printf '# NOT READY (plan-status: %s)\n\nSee plan-status.json.\n' "$PLAN_STATUS" > task-packet.md
+[ -s testing-plan.md ]     || printf '# NOT READY (plan-status: %s)\n\nSee plan-status.json.\n' "$PLAN_STATUS" > testing-plan.md
+[ -s validation-plan.md ]  || printf '# NOT READY (plan-status: %s)\n\nSee plan-status.json.\n' "$PLAN_STATUS" > validation-plan.md
 
 # Non-ready: exit 1 to route to the clarification terminal.
 printf '{"status":"fail","failure_reason":"not_ready_to_implement","plan_status":"%s"}\n' "$PLAN_STATUS" > "$STATUS"
