@@ -74,7 +74,7 @@ For the **first release** (no previous tag), derive notes from the full project 
 
 ## Version Number
 
-Kilroy uses semver. The canonical version lives in `internal/version/version.go` as `var Version = "X.Y.Z"`. This is the version all builds see — source, binary, and Homebrew. goreleaser also injects it from the git tag at build time via ldflags (belt and suspenders).
+Kilroy uses semver. The canonical version lives in `internal/version/version.go` as `var Version = "X.Y.Z"`. This is the version all builds see. goreleaser also injects it from the git tag at build time via ldflags (belt and suspenders).
 
 Bump this file as part of release prep (step 5). The CI workflow verifies that `version.go` matches the git tag — a mismatch fails the release.
 
@@ -172,7 +172,6 @@ git push origin vX.Y.Z
 #   - Runs go test ./...
 #   - Builds cross-platform binaries (linux/darwin/windows x amd64/arm64)
 #   - Creates GitHub release with archives and checksums
-#   - Updates Homebrew formula in Formula/kilroy.rb
 ```
 
 ### 8. Verify the release
@@ -180,12 +179,7 @@ git push origin vX.Y.Z
 1. Watch GitHub Actions: https://github.com/danshapiro/kilroy/actions
 2. Confirm the GitHub release has 6 platform archives + checksums.txt
 3. Confirm the release notes appear on the GitHub release page
-4. Test Homebrew install:
-   ```bash
-   brew tap danshapiro/kilroy
-   brew install kilroy
-   kilroy --version  # should print the new version
-   ```
+4. Download an archive and verify `kilroy --version` prints the new version.
 
 ### 9. Clean up
 

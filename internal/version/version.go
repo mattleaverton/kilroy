@@ -1,6 +1,6 @@
 // Package version holds the Kilroy release version.
 //
-// Version is the canonical version for all builds (source, binary, Homebrew).
+// Version is the canonical version for source and binary builds.
 // goreleaser also injects it at build time via ldflags from the git tag.
 package version
 
